@@ -3,32 +3,32 @@ from typing import Optional
 import os
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Secure Chat Platform"
+    PROJECT_NAME: str = "Freebird Chat"
     API_V1_STR: str = "/api/v1"
-    
-    # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "changethis_in_production_to_a_long_random_string")
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    # Master Key for DB Encryption (Must be 32 bytes URL-safe base64)
-    # Generate with: cryptography.fernet.Fernet.generate_key()
-    MASTER_KEY: str = os.getenv("MASTER_KEY", "change_this_to_a_valid_fernet_key_in_prod=")
 
     # Clerk Auth
     CLERK_ISSUER: str = os.getenv("CLERK_ISSUER", "https://your-clerk-domain.clerk.accounts.dev")
-    # Audience is often empty or specific in Clerk, usually the generic claim checks are enough
     CLERK_AUDIENCE: Optional[str] = None
 
     # Database
-    # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/securechat")
 
-    # External services
+    # HuggingFace Configuration
     HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN")
-    LLM_ENDPOINT_URL: Optional[str] = os.getenv("LLM_ENDPOINT_URL")
+    # Using HuggingFace Inference Providers router (OpenAI-compatible)
+    HF_API_URL: str = os.getenv("HF_API_URL", "https://router.huggingface.co/v1")
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()
+
+# Available models for the frontend selector
+# Models confirmed to work via HuggingFace Inference Providers (serverless)
+AVAILABLE_MODELS = [
+    {"id": "Qwen/Qwen2.5-72B-Instruct", "name": "Qwen 2.5 72B"},
+    {"id": "meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B"},
+    {"id": "google/gemma-2-2b-it", "name": "Gemma 2 2B"},
+    {"id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "name": "DeepSeek R1 32B"},
+]

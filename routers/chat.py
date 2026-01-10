@@ -1,75 +1,179 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import asc
 from pydantic import BaseModel
-from core.database import get_db
+from typing import List
+import json
+from core.database import get_db, async_session_factory
 from core.auth import get_current_user
-from core.security import encryption_service
 from core.llm import llm_service
-from models.user import User
+from core.config import AVAILABLE_MODELS
 from models.user import User
 from models.session import Session
 from models.message import Message, MessageRole
 
 router = APIRouter()
 
+
 class ChatRequest(BaseModel):
-    message: str # Plaintext from frontend (we encrypt it here)
+    message: str
     session_id: str | None = None
+    model: str | None = None
 
-class ChatResponse(BaseModel):
-    response: str
-    session_id: str
 
-@router.post("/", response_model=ChatResponse)
-async def chat_endpoint(
+class MessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+
+    class Config:
+        from_attributes = True
+
+
+class SessionOut(BaseModel):
+    id: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class ModelOut(BaseModel):
+    id: str
+    name: str
+
+
+@router.get("/models", response_model=List[ModelOut])
+async def get_available_models():
+    """Get list of available LLM models."""
+    return AVAILABLE_MODELS
+
+
+@router.get("/sessions", response_model=List[SessionOut])
+async def get_sessions(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all chat sessions for the current user."""
+    user_id = current_user["sub"]
+    result = await db.execute(
+        select(Session).filter(Session.user_id == user_id).order_by(Session.created_at.desc())
+    )
+    sessions = result.scalars().all()
+    return sessions
+
+
+@router.get("/sessions/{session_id}/messages", response_model=List[MessageOut])
+async def get_session_messages(
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all messages for a specific session."""
+    user_id = current_user["sub"]
+
+    # Verify session belongs to user
+    session_result = await db.execute(
+        select(Session).filter(Session.id == session_id, Session.user_id == user_id)
+    )
+    session = session_result.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    result = await db.execute(
+        select(Message)
+        .filter(Message.session_id == session_id)
+        .order_by(asc(Message.timestamp))
+    )
+    messages = result.scalars().all()
+    return messages
+
+
+@router.post("/stream")
+async def chat_stream_endpoint(
     request: ChatRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """Stream chat response using Server-Sent Events."""
     user_id = current_user["sub"]
-    
-    # 1. Get User's Key (Decrypted)
+
+    # Verify user exists
     result = await db.execute(select(User).filter(User.id == user_id))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Please sync first.")
-        
-    user_key = encryption_service.decrypt_user_key(user.encrypted_key)
 
-    # 2. Get or Create Session
+    # Get or create session
     session_id = request.session_id
     if not session_id:
-        # Create new session if none provided
         new_session = Session(user_id=user_id, name=request.message[:30])
         db.add(new_session)
         await db.flush()
         session_id = str(new_session.id)
-    
-    # 3. Encrypt & Save User Message
-    encrypted_user_msg = encryption_service.encrypt_message(request.message, user_key)
-    user_message_Entry = Message(
+
+    # Fetch conversation history for context
+    history_result = await db.execute(
+        select(Message)
+        .filter(Message.session_id == session_id)
+        .order_by(asc(Message.timestamp))
+    )
+    history_messages = history_result.scalars().all()
+
+    # Build history with model attribution for assistant messages
+    history = []
+    for msg in history_messages:
+        if msg.role == MessageRole.USER:
+            history.append({"role": "user", "content": msg.content})
+        else:
+            model_name = msg.model_used or "unknown"
+            attributed_content = f"[Response from {model_name}]\n{msg.content}"
+            history.append({"role": "assistant", "content": attributed_content})
+
+    # Save user message
+    user_message = Message(
         session_id=session_id,
         role=MessageRole.USER,
-        content=encrypted_user_msg,
-        model="hf-dedicated"
+        content=request.message,
+        model_used=request.model or "default"
     )
-    db.add(user_message_Entry)
-    
-    # 4. Call LLM (Send plaintext prompt)
-    # In a real RAG app, you'd fetch history here, decrypt it, and append to prompt.
-    llm_response_text = await llm_service.generate_response(request.message)
-
-    # 5. Encrypt & Save AI Response
-    encrypted_ai_msg = encryption_service.encrypt_message(llm_response_text, user_key)
-    ai_message_entry = Message(
-        session_id=session_id,
-        role=MessageRole.ASSISTANT,
-        content=encrypted_ai_msg,
-        model="hf-dedicated"
-    )
-    db.add(ai_message_entry)
-    
+    db.add(user_message)
     await db.commit()
 
-    return ChatResponse(response=llm_response_text, session_id=session_id)
+    async def generate():
+        full_response = ""
+
+        # Send session_id first
+        yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+
+        async for chunk in llm_service.generate_response_stream(
+            current_message=request.message,
+            history=history,
+            model=request.model
+        ):
+            full_response += chunk
+            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+        # Save assistant response after streaming completes
+        async with async_session_factory() as save_db:
+            assistant_message = Message(
+                session_id=session_id,
+                role=MessageRole.ASSISTANT,
+                content=full_response,
+                model_used=request.model or "default"
+            )
+            save_db.add(assistant_message)
+            await save_db.commit()
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
