@@ -4,6 +4,7 @@ Shared test fixtures for Freebird backend tests.
 Tests use a real PostgreSQL database to match production behavior.
 Run `docker-compose up -d` before running tests to start the database.
 """
+import json
 import os
 import uuid
 from typing import AsyncGenerator, Generator
@@ -14,19 +15,25 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from core.auth import AuthContext
 from models.base import Base
+from models.context_store import ContextStore
 from models.message import Message
-from models.session import Session
-from models.user import User
 from models.organization import Organization
 from models.organization_membership import OrganizationMembership
-from models.context_store import ContextStore
-from core.auth import AuthContext
+from models.session import Session
+from models.user import User
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/securechat"
 )
+
+
+def parse_sse_events(response_text: str) -> list[dict]:
+    """Parse SSE events from response text into list of event dicts."""
+    lines = [line for line in response_text.split("\n") if line.startswith("data:")]
+    return [json.loads(line.replace("data: ", "")) for line in lines]
 
 
 @pytest.fixture
@@ -64,18 +71,18 @@ def override_get_db(db_session):
 
 
 class _TestSessionContext:
-    """Async context manager that returns the test db_session."""
+    """Async context manager wrapper for test db_session."""
 
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    def __call__(self):
+    def __call__(self) -> "_TestSessionContext":
         return self
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> AsyncSession:
         return self._session
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, *_) -> None:
         pass
 
 
@@ -190,78 +197,61 @@ def client(app, override_get_db, mock_current_user) -> Generator:
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-async def async_client(app, override_get_db, override_get_session_factory, mock_current_user) -> AsyncGenerator:
-    """Async test client with mocked auth and database (personal mode)."""
+async def _create_async_client(
+    app, override_get_db, override_get_session_factory, auth_override=None
+) -> AsyncGenerator[AsyncClient, None]:
+    """Create an async test client with specified dependency overrides."""
     from core.auth import get_current_user
     from core.database import get_db, get_session_factory
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_session_factory] = override_get_session_factory
-    app.dependency_overrides[get_current_user] = mock_current_user
+    if auth_override:
+        app.dependency_overrides[get_current_user] = auth_override
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def async_client(app, override_get_db, override_get_session_factory, mock_current_user) -> AsyncGenerator:
+    """Async test client with mocked auth and database (personal mode)."""
+    async for client in _create_async_client(app, override_get_db, override_get_session_factory, mock_current_user):
+        yield client
 
 
 @pytest.fixture
 async def async_client_org(app, override_get_db, override_get_session_factory, mock_current_user_org) -> AsyncGenerator:
     """Async test client with org member context."""
-    from core.auth import get_current_user
-    from core.database import get_db, get_session_factory
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_session_factory] = override_get_session_factory
-    app.dependency_overrides[get_current_user] = mock_current_user_org
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
+    async for client in _create_async_client(app, override_get_db, override_get_session_factory, mock_current_user_org):
+        yield client
 
 
 @pytest.fixture
 async def async_client_org_admin(app, override_get_db, override_get_session_factory, mock_current_user_org_admin) -> AsyncGenerator:
     """Async test client with org admin context."""
-    from core.auth import get_current_user
-    from core.database import get_db, get_session_factory
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_session_factory] = override_get_session_factory
-    app.dependency_overrides[get_current_user] = mock_current_user_org_admin
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
+    async for client in _create_async_client(app, override_get_db, override_get_session_factory, mock_current_user_org_admin):
+        yield client
 
 
 @pytest.fixture
 def unauthenticated_client(app, override_get_db) -> Generator:
-    """Synchronous test client without auth mocking (for testing auth failures)."""
+    """Synchronous test client without auth mocking (for auth failure tests)."""
     from core.database import get_db
 
     app.dependency_overrides[get_db] = override_get_db
-
     with TestClient(app) as test_client:
         yield test_client
-
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
-async def unauthenticated_async_client(app, override_get_db) -> AsyncGenerator:
-    """Async test client without auth mocking (for testing auth failures)."""
-    from core.database import get_db
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
+async def unauthenticated_async_client(app, override_get_db, override_get_session_factory) -> AsyncGenerator:
+    """Async test client without auth mocking (for auth failure tests)."""
+    async for client in _create_async_client(app, override_get_db, override_get_session_factory, auth_override=None):
+        yield client
 
 
 @pytest.fixture

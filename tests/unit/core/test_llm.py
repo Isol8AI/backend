@@ -7,58 +7,7 @@ import pytest
 from core.llm import DEFAULT_MODEL, LLMService
 
 
-class TestLLMServiceBuildMessages:
-    """Tests for _build_messages method."""
-
-    def test_build_messages_empty_history(self):
-        """Build messages with empty history includes system and user message."""
-        service = LLMService()
-        messages = service._build_messages([], "Hello!")
-
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[1]["role"] == "user"
-        assert messages[1]["content"] == "Hello!"
-
-    def test_build_messages_with_history(self):
-        """Build messages includes history between system and new user message."""
-        service = LLMService()
-        history = [
-            {"role": "user", "content": "Hi"},
-            {"role": "assistant", "content": "Hello! How can I help?"},
-        ]
-        messages = service._build_messages(history, "What's the weather?")
-
-        assert len(messages) == 4
-        assert messages[0]["role"] == "system"
-        assert messages[1]["content"] == "Hi"
-        assert messages[2]["role"] == "assistant"
-        assert messages[3]["content"] == "What's the weather?"
-
-    def test_build_messages_system_prompt_content(self):
-        """System prompt contains expected content."""
-        service = LLMService()
-        messages = service._build_messages([], "Test")
-
-        system_content = messages[0]["content"]
-        assert "helpful AI assistant" in system_content
-
-    def test_build_messages_preserves_history_order(self):
-        """History messages maintain chronological order."""
-        service = LLMService()
-        history = [
-            {"role": "user", "content": "First"},
-            {"role": "assistant", "content": "Second"},
-            {"role": "user", "content": "Third"},
-            {"role": "assistant", "content": "Fourth"},
-        ]
-        messages = service._build_messages(history, "Fifth")
-
-        content_order = [m["content"] for m in messages[1:]]
-        assert content_order == ["First", "Second", "Third", "Fourth", "Fifth"]
-
-
-def _create_mock_stream_client(response: MagicMock = None, error: Exception = None):
+def create_mock_stream_client(response: MagicMock = None, error: Exception = None) -> MagicMock:
     """Create a mock httpx.AsyncClient configured for streaming."""
     mock_client = MagicMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -75,7 +24,7 @@ def _create_mock_stream_client(response: MagicMock = None, error: Exception = No
     return mock_client
 
 
-def _create_sse_response(lines: list[str], status_code: int = 200) -> MagicMock:
+def create_sse_response(lines: list[str], status_code: int = 200) -> MagicMock:
     """Create a mock SSE response with given lines."""
     async def mock_aiter_lines():
         for line in lines:
@@ -85,6 +34,55 @@ def _create_sse_response(lines: list[str], status_code: int = 200) -> MagicMock:
     mock_response.status_code = status_code
     mock_response.aiter_lines = mock_aiter_lines
     return mock_response
+
+
+class TestLLMServiceBuildMessages:
+    """Tests for _build_messages method."""
+
+    def test_empty_history_includes_system_and_user_message(self):
+        """Build messages with empty history includes system and user message."""
+        service = LLMService()
+        messages = service._build_messages([], "Hello!")
+
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+        assert messages[1]["content"] == "Hello!"
+
+    def test_with_history_includes_all_messages(self):
+        """Build messages includes history between system and new user message."""
+        service = LLMService()
+        history = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello! How can I help?"},
+        ]
+        messages = service._build_messages(history, "What's the weather?")
+
+        assert len(messages) == 4
+        assert messages[0]["role"] == "system"
+        assert messages[1]["content"] == "Hi"
+        assert messages[2]["role"] == "assistant"
+        assert messages[3]["content"] == "What's the weather?"
+
+    def test_system_prompt_content(self):
+        """System prompt contains expected content."""
+        service = LLMService()
+        messages = service._build_messages([], "Test")
+        assert "helpful AI assistant" in messages[0]["content"]
+
+    def test_preserves_history_order(self):
+        """History messages maintain chronological order."""
+        service = LLMService()
+        history = [
+            {"role": "user", "content": "First"},
+            {"role": "assistant", "content": "Second"},
+            {"role": "user", "content": "Third"},
+            {"role": "assistant", "content": "Fourth"},
+        ]
+        messages = service._build_messages(history, "Fifth")
+
+        content_order = [m["content"] for m in messages[1:]]
+        assert content_order == ["First", "Second", "Third", "Fourth", "Fifth"]
 
 
 class TestLLMServiceGenerateResponse:
@@ -124,10 +122,10 @@ class TestLLMServiceGenerateResponse:
             'data: {"choices":[{"delta":{"content":"!"}}]}',
             'data: [DONE]',
         ]
-        mock_response = _create_sse_response(sse_lines)
+        mock_response = create_sse_response(sse_lines)
 
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = _create_mock_stream_client(mock_response)
+            mock_client_class.return_value = create_mock_stream_client(mock_response)
 
             chunks = [chunk async for chunk in service_with_token.generate_response_stream("Hi")]
 
@@ -141,7 +139,7 @@ class TestLLMServiceGenerateResponse:
         mock_response.aread = AsyncMock(return_value=b"Internal Server Error")
 
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = _create_mock_stream_client(mock_response)
+            mock_client_class.return_value = create_mock_stream_client(mock_response)
 
             chunks = [chunk async for chunk in service_with_token.generate_response_stream("Hi")]
 
@@ -152,7 +150,7 @@ class TestLLMServiceGenerateResponse:
     async def test_stream_handles_timeout(self, service_with_token):
         """Timeout yields appropriate error message."""
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = _create_mock_stream_client(error=httpx.ReadTimeout("Timeout"))
+            mock_client_class.return_value = create_mock_stream_client(error=httpx.ReadTimeout("Timeout"))
 
             chunks = [chunk async for chunk in service_with_token.generate_response_stream("Hi")]
 
@@ -163,7 +161,7 @@ class TestLLMServiceGenerateResponse:
     async def test_stream_handles_generic_exception(self, service_with_token):
         """Generic exception yields error message."""
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = _create_mock_stream_client(error=Exception("Network failure"))
+            mock_client_class.return_value = create_mock_stream_client(error=Exception("Network failure"))
 
             chunks = [chunk async for chunk in service_with_token.generate_response_stream("Hi")]
 
@@ -173,10 +171,10 @@ class TestLLMServiceGenerateResponse:
     @pytest.mark.asyncio
     async def test_stream_uses_default_model(self, service_with_token):
         """Default model is used when none specified."""
-        mock_response = _create_sse_response(['data: [DONE]'])
+        mock_response = create_sse_response(['data: [DONE]'])
 
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client = _create_mock_stream_client(mock_response)
+            mock_client = create_mock_stream_client(mock_response)
             mock_client_class.return_value = mock_client
 
             async for _ in service_with_token.generate_response_stream("Hi"):
@@ -189,10 +187,10 @@ class TestLLMServiceGenerateResponse:
     @pytest.mark.asyncio
     async def test_stream_uses_specified_model(self, service_with_token):
         """Specified model is used instead of default."""
-        mock_response = _create_sse_response(['data: [DONE]'])
+        mock_response = create_sse_response(['data: [DONE]'])
 
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client = _create_mock_stream_client(mock_response)
+            mock_client = create_mock_stream_client(mock_response)
             mock_client_class.return_value = mock_client
 
             custom_model = "meta-llama/Llama-3.3-70B-Instruct"
@@ -212,10 +210,10 @@ class TestLLMServiceGenerateResponse:
             'data: {"choices":[{"delta":{"content":"!"}}]}',
             'data: [DONE]',
         ]
-        mock_response = _create_sse_response(sse_lines)
+        mock_response = create_sse_response(sse_lines)
 
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = _create_mock_stream_client(mock_response)
+            mock_client_class.return_value = create_mock_stream_client(mock_response)
 
             chunks = [chunk async for chunk in service_with_token.generate_response_stream("Hi")]
 
@@ -231,10 +229,10 @@ class TestLLMServiceGenerateResponse:
             'data: {"choices":[{"delta":{"content":"!"}}]}',
             'data: [DONE]',
         ]
-        mock_response = _create_sse_response(sse_lines)
+        mock_response = create_sse_response(sse_lines)
 
         with patch("core.llm.httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = _create_mock_stream_client(mock_response)
+            mock_client_class.return_value = create_mock_stream_client(mock_response)
 
             chunks = [chunk async for chunk in service_with_token.generate_response_stream("Hi")]
 

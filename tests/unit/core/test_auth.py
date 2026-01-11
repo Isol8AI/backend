@@ -6,10 +6,31 @@ import pytest
 from fastapi import HTTPException
 from jose import jwt
 
-from core.auth import get_current_user, AuthContext, require_org_context, require_org_admin
+from core.auth import AuthContext, get_current_user, require_org_admin, require_org_context
 
 TEST_ISSUER = "https://test.clerk.accounts.dev"
-TEST_RSA_N = "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
+TEST_RSA_N = (
+    "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_"
+    "BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_"
+    "FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4"
+    "vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
+)
+
+
+def create_mock_httpx_client(jwks_response: dict = None, error: Exception = None) -> MagicMock:
+    """Create a mock httpx.AsyncClient with configured JWKS response."""
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    if error:
+        mock_client.get = AsyncMock(side_effect=error)
+    else:
+        mock_response = MagicMock()
+        mock_response.json.return_value = jwks_response
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+    return mock_client
 
 
 class TestAuthContext:
@@ -123,25 +144,6 @@ class TestRequireOrgAdmin:
         assert exc_info.value.status_code == 403
 
 
-def _create_mock_httpx_client(
-    jwks_response: dict | None = None,
-    error: Exception | None = None,
-) -> MagicMock:
-    """Create a mock httpx.AsyncClient with configured JWKS response."""
-    mock_client = MagicMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-
-    if error:
-        mock_client.get = AsyncMock(side_effect=error)
-    else:
-        mock_response = MagicMock()
-        mock_response.json.return_value = jwks_response
-        mock_client.get = AsyncMock(return_value=mock_response)
-
-    return mock_client
-
-
 class TestGetCurrentUser:
     """Tests for get_current_user authentication function."""
 
@@ -177,7 +179,7 @@ class TestGetCurrentUser:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
             mock_decode.return_value = payload
 
@@ -197,7 +199,7 @@ class TestGetCurrentUser:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
             mock_decode.side_effect = jwt.ExpiredSignatureError("Token expired")
 
@@ -217,7 +219,7 @@ class TestGetCurrentUser:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
             mock_decode.side_effect = jwt.JWTClaimsError("Invalid claims")
 
@@ -236,7 +238,7 @@ class TestGetCurrentUser:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "unknown-key-id", "alg": "RS256"}
 
             with pytest.raises(HTTPException) as exc_info:
@@ -252,7 +254,7 @@ class TestGetCurrentUser:
              patch("core.auth.settings") as mock_settings:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
-            mock_client_class.return_value = _create_mock_httpx_client(error=Exception("Network error"))
+            mock_client_class.return_value = create_mock_httpx_client(error=Exception("Network error"))
 
             with pytest.raises(HTTPException) as exc_info:
                 await get_current_user(mock_credentials)
@@ -268,7 +270,7 @@ class TestGetCurrentUser:
              patch("core.auth.settings") as mock_settings:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.side_effect = Exception("Unexpected error")
 
             with pytest.raises(HTTPException) as exc_info:
@@ -295,7 +297,7 @@ class TestGetCurrentUser:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
             mock_decode.return_value = payload
 
@@ -327,7 +329,7 @@ class TestGetCurrentUser:
 
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
-            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
             mock_decode.return_value = payload
 

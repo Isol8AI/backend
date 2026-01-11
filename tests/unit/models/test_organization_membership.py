@@ -7,7 +7,6 @@ from sqlalchemy.exc import IntegrityError
 
 from models.organization import Organization
 from models.organization_membership import OrganizationMembership
-from models.user import User
 
 
 class TestOrganizationMembershipModel:

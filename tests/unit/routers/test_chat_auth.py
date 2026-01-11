@@ -6,7 +6,6 @@ These tests verify that:
 - Sessions are scoped to the current context (personal vs org)
 """
 import pytest
-from sqlalchemy import select
 
 from models.session import Session
 
