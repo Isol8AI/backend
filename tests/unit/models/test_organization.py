@@ -1,7 +1,4 @@
 """Unit tests for Organization model."""
-import uuid
-from datetime import datetime
-
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError

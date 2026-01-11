@@ -1,5 +1,4 @@
 """Unit tests for chat router."""
-import json
 import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -8,6 +7,7 @@ import pytest
 
 from core.config import AVAILABLE_MODELS
 from models.session import Session
+from tests.conftest import parse_sse_events
 
 
 class TestGetAvailableModels:
@@ -144,12 +144,6 @@ class TestGetSessionMessages:
         assert response.status_code in [401, 403]
 
 
-def _parse_sse_events(response_text: str) -> list[dict]:
-    """Parse SSE events from response text."""
-    lines = [line for line in response_text.split("\n") if line.startswith("data:")]
-    return [json.loads(line.replace("data: ", "")) for line in lines]
-
-
 class TestChatStream:
     """Tests for POST /api/v1/chat/stream endpoint."""
 
@@ -191,7 +185,7 @@ class TestChatStream:
         with patch("routers.chat.llm_service.generate_response_stream", mock_llm_response):
             response = await async_client.post("/api/v1/chat/stream", json={"message": "Test"})
 
-            events = _parse_sse_events(response.text)
+            events = parse_sse_events(response.text)
             assert events[0]["type"] == "session"
             assert "session_id" in events[0]
 
@@ -201,7 +195,7 @@ class TestChatStream:
         with patch("routers.chat.llm_service.generate_response_stream", mock_llm_response):
             response = await async_client.post("/api/v1/chat/stream", json={"message": "Test"})
 
-            events = _parse_sse_events(response.text)
+            events = parse_sse_events(response.text)
             content_chunks = [e["content"] for e in events if e.get("type") == "content"]
 
             assert len(content_chunks) == 3
@@ -213,7 +207,7 @@ class TestChatStream:
         with patch("routers.chat.llm_service.generate_response_stream", mock_llm_response):
             response = await async_client.post("/api/v1/chat/stream", json={"message": "Test"})
 
-            events = _parse_sse_events(response.text)
+            events = parse_sse_events(response.text)
             assert events[-1]["type"] == "done"
 
     @pytest.mark.asyncio

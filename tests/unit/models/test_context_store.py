@@ -6,8 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from models.context_store import ContextStore
-from models.organization import Organization
-from models.user import User
 
 
 class TestContextStoreModel:
