@@ -1,6 +1,6 @@
-# Test factories package
-from .user_factory import UserFactory
+"""Test factories for creating model instances."""
+from .message_factory import AssistantMessageFactory, MessageFactory
 from .session_factory import SessionFactory
-from .message_factory import MessageFactory
+from .user_factory import UserFactory
 
-__all__ = ["UserFactory", "SessionFactory", "MessageFactory"]
+__all__ = ["AssistantMessageFactory", "MessageFactory", "SessionFactory", "UserFactory"]

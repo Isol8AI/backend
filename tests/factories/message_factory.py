@@ -1,12 +1,13 @@
 """Factory for creating Message test instances."""
 import uuid
-from datetime import datetime
+
 import factory
+
 from models.message import Message, MessageRole
 
 
 class MessageFactory(factory.Factory):
-    """Factory for creating Message model instances for testing."""
+    """Factory for creating Message model instances."""
 
     class Meta:
         model = Message
@@ -16,18 +17,10 @@ class MessageFactory(factory.Factory):
     role = MessageRole.USER.value
     content = factory.Sequence(lambda n: f"Test message content {n}")
     model_used = None
-    timestamp = factory.LazyFunction(datetime.utcnow)
-
-
-class UserMessageFactory(MessageFactory):
-    """Factory specifically for user messages."""
-
-    role = MessageRole.USER.value
-    model_used = None
 
 
 class AssistantMessageFactory(MessageFactory):
-    """Factory specifically for assistant messages."""
+    """Factory for assistant messages with model attribution."""
 
     role = MessageRole.ASSISTANT.value
     model_used = "Qwen/Qwen2.5-72B-Instruct"
