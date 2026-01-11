@@ -1,18 +1,18 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy import asc
 from pydantic import BaseModel
-from typing import List
-import json
-from core.database import get_db, get_session_factory
-from core.auth import get_current_user
-from core.llm import llm_service
+from sqlalchemy import asc, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from core.auth import AuthContext, get_current_user
 from core.config import AVAILABLE_MODELS
-from models.user import User
-from models.session import Session
+from core.database import get_db, get_session_factory
+from core.llm import llm_service
 from models.message import Message, MessageRole
+from models.session import Session
+from models.user import User
 
 router = APIRouter()
 
@@ -45,39 +45,55 @@ class ModelOut(BaseModel):
     name: str
 
 
-@router.get("/models", response_model=List[ModelOut])
-async def get_available_models():
+@router.get("/models", response_model=list[ModelOut])
+async def get_available_models() -> list[ModelOut]:
     """Get list of available LLM models."""
     return AVAILABLE_MODELS
 
 
-@router.get("/sessions", response_model=List[SessionOut])
+@router.get("/sessions", response_model=list[SessionOut])
 async def get_sessions(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get all chat sessions for the current user."""
-    user_id = current_user["sub"]
-    result = await db.execute(
-        select(Session).filter(Session.user_id == user_id).order_by(Session.created_at.desc())
-    )
-    sessions = result.scalars().all()
-    return sessions
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SessionOut]:
+    """Get all chat sessions for the current user in the current context.
+
+    Sessions are scoped to the current context:
+    - Personal mode: Only sessions with org_id=None
+    - Org mode: Only sessions with matching org_id
+    """
+    query = select(Session).filter(Session.user_id == auth.user_id)
+
+    if auth.is_org_context:
+        query = query.filter(Session.org_id == auth.org_id)
+    else:
+        query = query.filter(Session.org_id.is_(None))
+
+    result = await db.execute(query.order_by(Session.created_at.desc()))
+    return result.scalars().all()
 
 
-@router.get("/sessions/{session_id}/messages", response_model=List[MessageOut])
+@router.get("/sessions/{session_id}/messages", response_model=list[MessageOut])
 async def get_session_messages(
     session_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get all messages for a specific session."""
-    user_id = current_user["sub"]
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[MessageOut]:
+    """Get all messages for a specific session.
 
-    # Verify session belongs to user
-    session_result = await db.execute(
-        select(Session).filter(Session.id == session_id, Session.user_id == user_id)
+    Session must belong to user AND match current context (personal vs org).
+    """
+    query = select(Session).filter(
+        Session.id == session_id,
+        Session.user_id == auth.user_id,
     )
+
+    if auth.is_org_context:
+        query = query.filter(Session.org_id == auth.org_id)
+    else:
+        query = query.filter(Session.org_id.is_(None))
+
+    session_result = await db.execute(query)
     session = session_result.scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -87,22 +103,19 @@ async def get_session_messages(
         .filter(Message.session_id == session_id)
         .order_by(asc(Message.timestamp))
     )
-    messages = result.scalars().all()
-    return messages
+    return result.scalars().all()
 
 
 @router.post("/stream")
 async def chat_stream_endpoint(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_user),
+    auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    session_factory = Depends(get_session_factory)
-):
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> StreamingResponse:
     """Stream chat response using Server-Sent Events."""
-    user_id = current_user["sub"]
-
     # Verify user exists
-    result = await db.execute(select(User).filter(User.id == user_id))
+    result = await db.execute(select(User).filter(User.id == auth.user_id))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Please sync first.")
@@ -110,7 +123,12 @@ async def chat_stream_endpoint(
     # Get or create session
     session_id = request.session_id
     if not session_id:
-        new_session = Session(user_id=user_id, name=request.message[:30])
+        # Create session with org_id from current context
+        new_session = Session(
+            user_id=auth.user_id,
+            org_id=auth.org_id,  # None for personal, org_id for org context
+            name=request.message[:30]
+        )
         db.add(new_session)
         await db.flush()
         session_id = str(new_session.id)
