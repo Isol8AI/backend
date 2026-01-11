@@ -19,6 +19,16 @@ class TestSessionModel:
         assert session.user_id == "user_123"
         assert session.name == "Test Chat"
 
+    def test_session_has_org_id(self):
+        """Session has optional org_id field."""
+        session = Session(id=str(uuid.uuid4()), user_id="user_123", org_id="org_123")
+        assert session.org_id == "org_123"
+
+    def test_session_org_id_default_none(self):
+        """Session org_id defaults to None (personal session)."""
+        session = Session(id=str(uuid.uuid4()), user_id="user_123")
+        assert session.org_id is None
+
     def test_session_tablename(self):
         """Session model uses correct table name."""
         assert Session.__tablename__ == "sessions"
@@ -82,3 +92,82 @@ class TestSessionModel:
 
         result = await db_session.execute(select(Message).where(Message.id == message_id))
         assert result.scalar_one_or_none() is None
+
+    @pytest.mark.asyncio
+    async def test_session_with_org_persistence(self, db_session, test_user, test_organization):
+        """Session with org_id can be persisted and retrieved."""
+        session = Session(
+            id=str(uuid.uuid4()),
+            user_id=test_user.id,
+            org_id=test_organization.id,
+            name="Org Session"
+        )
+        db_session.add(session)
+        await db_session.flush()
+
+        result = await db_session.execute(select(Session).where(Session.id == session.id))
+        fetched = result.scalar_one()
+
+        assert fetched.org_id == test_organization.id
+        assert fetched.user_id == test_user.id
+
+    @pytest.mark.asyncio
+    async def test_session_org_foreign_key(self, db_session, test_user):
+        """Session requires valid org_id foreign key if provided."""
+        session = Session(
+            id=str(uuid.uuid4()),
+            user_id=test_user.id,
+            org_id="nonexistent_org",
+            name="Invalid Org Session"
+        )
+        db_session.add(session)
+
+        with pytest.raises(IntegrityError):
+            await db_session.flush()
+
+    @pytest.mark.asyncio
+    async def test_filter_personal_sessions(self, db_session, test_user, test_organization):
+        """Can filter sessions by org_id IS NULL for personal sessions."""
+        personal = Session(id=str(uuid.uuid4()), user_id=test_user.id, name="Personal")
+        org_session = Session(
+            id=str(uuid.uuid4()),
+            user_id=test_user.id,
+            org_id=test_organization.id,
+            name="Org"
+        )
+        db_session.add(personal)
+        db_session.add(org_session)
+        await db_session.flush()
+
+        result = await db_session.execute(
+            select(Session).where(Session.user_id == test_user.id, Session.org_id == None)
+        )
+        personal_sessions = result.scalars().all()
+
+        assert len(personal_sessions) == 1
+        assert personal_sessions[0].name == "Personal"
+
+    @pytest.mark.asyncio
+    async def test_filter_org_sessions(self, db_session, test_user, test_organization):
+        """Can filter sessions by specific org_id."""
+        personal = Session(id=str(uuid.uuid4()), user_id=test_user.id, name="Personal")
+        org_session = Session(
+            id=str(uuid.uuid4()),
+            user_id=test_user.id,
+            org_id=test_organization.id,
+            name="Org"
+        )
+        db_session.add(personal)
+        db_session.add(org_session)
+        await db_session.flush()
+
+        result = await db_session.execute(
+            select(Session).where(
+                Session.user_id == test_user.id,
+                Session.org_id == test_organization.id
+            )
+        )
+        org_sessions = result.scalars().all()
+
+        assert len(org_sessions) == 1
+        assert org_sessions[0].name == "Org"

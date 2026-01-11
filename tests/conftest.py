@@ -18,6 +18,10 @@ from models.base import Base
 from models.message import Message
 from models.session import Session
 from models.user import User
+from models.organization import Organization
+from models.organization_membership import OrganizationMembership
+from models.context_store import ContextStore
+from core.auth import AuthContext
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -42,6 +46,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with session_factory() as cleanup_session:
         await cleanup_session.execute(Message.__table__.delete())
         await cleanup_session.execute(Session.__table__.delete())
+        await cleanup_session.execute(ContextStore.__table__.delete())
+        await cleanup_session.execute(OrganizationMembership.__table__.delete())
+        await cleanup_session.execute(Organization.__table__.delete())
         await cleanup_session.execute(User.__table__.delete())
         await cleanup_session.commit()
 
@@ -94,10 +101,56 @@ def mock_user_payload() -> dict:
 
 
 @pytest.fixture
-def mock_current_user(mock_user_payload):
-    """Dependency override for get_current_user with mock payload."""
+def mock_auth_context() -> AuthContext:
+    """Default mock auth context for personal mode (no org)."""
+    return AuthContext(user_id="user_test_123")
+
+
+@pytest.fixture
+def mock_org_auth_context() -> AuthContext:
+    """Mock auth context for organization mode."""
+    return AuthContext(
+        user_id="user_test_123",
+        org_id="org_test_123",
+        org_role="org:member",
+        org_slug="test-org",
+        org_permissions=[]
+    )
+
+
+@pytest.fixture
+def mock_org_admin_auth_context() -> AuthContext:
+    """Mock auth context for organization admin mode."""
+    return AuthContext(
+        user_id="user_test_123",
+        org_id="org_test_123",
+        org_role="org:admin",
+        org_slug="test-org",
+        org_permissions=["org:read", "org:write"]
+    )
+
+
+@pytest.fixture
+def mock_current_user(mock_auth_context):
+    """Dependency override for get_current_user with mock AuthContext (personal mode)."""
     async def _mock_get_current_user():
-        return mock_user_payload
+        return mock_auth_context
+    return _mock_get_current_user
+
+
+@pytest.fixture
+def mock_current_user_org(mock_org_auth_context):
+    """Dependency override for get_current_user with org context (member)."""
+    async def _mock_get_current_user():
+        return mock_org_auth_context
+    return _mock_get_current_user
+
+
+@pytest.fixture
+def mock_current_user_org_admin(mock_org_admin_auth_context):
+    """Dependency override for get_current_user with org context (admin)."""
+    async def _mock_get_current_user():
+        return mock_org_admin_auth_context
     return _mock_get_current_user
 
 
@@ -139,13 +192,45 @@ def client(app, override_get_db, mock_current_user) -> Generator:
 
 @pytest.fixture
 async def async_client(app, override_get_db, override_get_session_factory, mock_current_user) -> AsyncGenerator:
-    """Async test client with mocked auth and database."""
+    """Async test client with mocked auth and database (personal mode)."""
     from core.auth import get_current_user
     from core.database import get_db, get_session_factory
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_session_factory] = override_get_session_factory
     app.dependency_overrides[get_current_user] = mock_current_user
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def async_client_org(app, override_get_db, override_get_session_factory, mock_current_user_org) -> AsyncGenerator:
+    """Async test client with org member context."""
+    from core.auth import get_current_user
+    from core.database import get_db, get_session_factory
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = override_get_session_factory
+    app.dependency_overrides[get_current_user] = mock_current_user_org
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def async_client_org_admin(app, override_get_db, override_get_session_factory, mock_current_user_org_admin) -> AsyncGenerator:
+    """Async test client with org admin context."""
+    from core.auth import get_current_user
+    from core.database import get_db, get_session_factory
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = override_get_session_factory
+    app.dependency_overrides[get_current_user] = mock_current_user_org_admin
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
@@ -198,6 +283,52 @@ async def other_user(db_session) -> User:
 
 
 @pytest.fixture
+async def test_organization(db_session) -> Organization:
+    """Create a test organization."""
+    org = Organization(id="org_test_123", name="Test Organization", slug="test-org")
+    db_session.add(org)
+    await db_session.flush()
+    return org
+
+
+@pytest.fixture
+async def other_organization(db_session) -> Organization:
+    """Create another organization for authorization tests."""
+    org = Organization(id="org_other_456", name="Other Organization", slug="other-org")
+    db_session.add(org)
+    await db_session.flush()
+    return org
+
+
+@pytest.fixture
+async def test_membership(db_session, test_user, test_organization) -> OrganizationMembership:
+    """Create a membership for test user in test organization."""
+    membership = OrganizationMembership(
+        id=f"mem_{test_user.id}_{test_organization.id}",
+        user_id=test_user.id,
+        org_id=test_organization.id,
+        role="org:member"
+    )
+    db_session.add(membership)
+    await db_session.flush()
+    return membership
+
+
+@pytest.fixture
+async def test_admin_membership(db_session, test_user, test_organization) -> OrganizationMembership:
+    """Create an admin membership for test user in test organization."""
+    membership = OrganizationMembership(
+        id=f"mem_admin_{test_user.id}_{test_organization.id}",
+        user_id=test_user.id,
+        org_id=test_organization.id,
+        role="org:admin"
+    )
+    db_session.add(membership)
+    await db_session.flush()
+    return membership
+
+
+@pytest.fixture
 async def test_session(db_session, test_user) -> Session:
     """Create a chat session for the test user."""
     session = Session(id=str(uuid.uuid4()), user_id=test_user.id, name="Test Session")
@@ -210,6 +341,34 @@ async def test_session(db_session, test_user) -> Session:
 async def other_user_session(db_session, other_user) -> Session:
     """Create a session belonging to another user for authorization tests."""
     session = Session(id=str(uuid.uuid4()), user_id=other_user.id, name="Other User's Session")
+    db_session.add(session)
+    await db_session.flush()
+    return session
+
+
+@pytest.fixture
+async def test_org_session(db_session, test_user, test_organization) -> Session:
+    """Create a session for test user within an organization."""
+    session = Session(
+        id=str(uuid.uuid4()),
+        user_id=test_user.id,
+        org_id=test_organization.id,
+        name="Org Session"
+    )
+    db_session.add(session)
+    await db_session.flush()
+    return session
+
+
+@pytest.fixture
+async def other_user_org_session(db_session, other_user, test_organization) -> Session:
+    """Create a session for another user within the same organization."""
+    session = Session(
+        id=str(uuid.uuid4()),
+        user_id=other_user.id,
+        org_id=test_organization.id,
+        name="Other User's Org Session"
+    )
     db_session.add(session)
     await db_session.flush()
     return session

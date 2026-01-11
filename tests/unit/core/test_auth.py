@@ -6,13 +6,127 @@ import pytest
 from fastapi import HTTPException
 from jose import jwt
 
-from core.auth import get_current_user
+from core.auth import get_current_user, AuthContext, require_org_context, require_org_admin
 
 TEST_ISSUER = "https://test.clerk.accounts.dev"
 TEST_RSA_N = "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
 
 
-def _create_mock_httpx_client(jwks_response: dict | None = None, error: Exception | None = None):
+class TestAuthContext:
+    """Tests for AuthContext data class."""
+
+    def test_auth_context_creation_personal(self):
+        """AuthContext can be created for personal context (no org)."""
+        ctx = AuthContext(user_id="user_123")
+        assert ctx.user_id == "user_123"
+        assert ctx.org_id is None
+        assert ctx.org_role is None
+        assert ctx.org_slug is None
+        assert ctx.org_permissions == []
+
+    def test_auth_context_creation_with_org(self):
+        """AuthContext can be created with organization claims."""
+        ctx = AuthContext(
+            user_id="user_123",
+            org_id="org_456",
+            org_role="org:admin",
+            org_slug="acme-corp",
+            org_permissions=["org:read", "org:write"]
+        )
+        assert ctx.user_id == "user_123"
+        assert ctx.org_id == "org_456"
+        assert ctx.org_role == "org:admin"
+        assert ctx.org_slug == "acme-corp"
+        assert ctx.org_permissions == ["org:read", "org:write"]
+
+    def test_is_org_context_true_when_org_id_present(self):
+        """is_org_context returns True when org_id is set."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456")
+        assert ctx.is_org_context is True
+
+    def test_is_org_context_false_when_no_org_id(self):
+        """is_org_context returns False when org_id is None."""
+        ctx = AuthContext(user_id="user_123")
+        assert ctx.is_org_context is False
+
+    def test_is_personal_context_true_when_no_org_id(self):
+        """is_personal_context returns True when org_id is None."""
+        ctx = AuthContext(user_id="user_123")
+        assert ctx.is_personal_context is True
+
+    def test_is_personal_context_false_when_org_id_present(self):
+        """is_personal_context returns False when org_id is set."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456")
+        assert ctx.is_personal_context is False
+
+    def test_is_org_admin_true_for_admin_role(self):
+        """is_org_admin returns True for org:admin role."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456", org_role="org:admin")
+        assert ctx.is_org_admin is True
+
+    def test_is_org_admin_false_for_member_role(self):
+        """is_org_admin returns False for org:member role."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456", org_role="org:member")
+        assert ctx.is_org_admin is False
+
+    def test_is_org_admin_false_when_no_role(self):
+        """is_org_admin returns False when no role is set."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456")
+        assert ctx.is_org_admin is False
+
+
+class TestRequireOrgContext:
+    """Tests for require_org_context dependency."""
+
+    @pytest.mark.asyncio
+    async def test_require_org_context_raises_without_org(self):
+        """require_org_context raises 403 when no org context."""
+        ctx = AuthContext(user_id="user_123")
+        with pytest.raises(HTTPException) as exc_info:
+            await require_org_context(ctx)
+        assert exc_info.value.status_code == 403
+        assert "active organization context" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_require_org_context_passes_with_org(self):
+        """require_org_context returns auth context when org is present."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456")
+        result = await require_org_context(ctx)
+        assert result == ctx
+
+
+class TestRequireOrgAdmin:
+    """Tests for require_org_admin dependency."""
+
+    @pytest.mark.asyncio
+    async def test_require_org_admin_raises_for_member(self):
+        """require_org_admin raises 403 for non-admin roles."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456", org_role="org:member")
+        with pytest.raises(HTTPException) as exc_info:
+            await require_org_admin(ctx)
+        assert exc_info.value.status_code == 403
+        assert "admin privileges" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_require_org_admin_passes_for_admin(self):
+        """require_org_admin returns auth context for admin role."""
+        ctx = AuthContext(user_id="user_123", org_id="org_456", org_role="org:admin")
+        result = await require_org_admin(ctx)
+        assert result == ctx
+
+    @pytest.mark.asyncio
+    async def test_require_org_admin_raises_without_org_context(self):
+        """require_org_admin raises 403 when no org context."""
+        ctx = AuthContext(user_id="user_123")
+        with pytest.raises(HTTPException) as exc_info:
+            await require_org_admin(ctx)
+        assert exc_info.value.status_code == 403
+
+
+def _create_mock_httpx_client(
+    jwks_response: dict | None = None,
+    error: Exception | None = None,
+) -> MagicMock:
     """Create a mock httpx.AsyncClient with configured JWKS response."""
     mock_client = MagicMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -46,9 +160,9 @@ class TestGetCurrentUser:
         }
 
     @pytest.mark.asyncio
-    async def test_valid_token_returns_payload(self, mock_credentials, valid_jwks):
-        """Valid JWT token returns decoded payload."""
-        expected_payload = {
+    async def test_valid_token_calls_jwt_decode(self, mock_credentials, valid_jwks):
+        """Valid JWT token triggers jwt.decode with correct parameters."""
+        payload = {
             "sub": "user_123",
             "email": "test@example.com",
             "iss": TEST_ISSUER,
@@ -65,11 +179,12 @@ class TestGetCurrentUser:
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
             mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
-            mock_decode.return_value = expected_payload
+            mock_decode.return_value = payload
 
             result = await get_current_user(mock_credentials)
 
-            assert result == expected_payload
+            assert isinstance(result, AuthContext)
+            assert result.user_id == "user_123"
             mock_decode.assert_called_once()
 
     @pytest.mark.asyncio
@@ -128,7 +243,7 @@ class TestGetCurrentUser:
                 await get_current_user(mock_credentials)
 
             assert exc_info.value.status_code == 401
-            assert exc_info.value.detail == "Could not validate credentials"
+            assert exc_info.value.detail == "Invalid token headers"
 
     @pytest.mark.asyncio
     async def test_jwks_fetch_failure_raises_401(self, mock_credentials):
@@ -161,3 +276,68 @@ class TestGetCurrentUser:
 
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Could not validate credentials"
+
+    @pytest.mark.asyncio
+    async def test_returns_auth_context(self, mock_credentials, valid_jwks):
+        """get_current_user returns AuthContext object."""
+        payload = {
+            "sub": "user_123",
+            "email": "test@example.com",
+            "iss": TEST_ISSUER,
+            "exp": int(time.time()) + 3600,
+            "iat": int(time.time()),
+        }
+
+        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
+             patch("core.auth.jwt.get_unverified_header") as mock_header, \
+             patch("core.auth.jwt.decode") as mock_decode, \
+             patch("core.auth.settings") as mock_settings:
+
+            mock_settings.CLERK_ISSUER = TEST_ISSUER
+            mock_settings.CLERK_AUDIENCE = None
+            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
+            mock_decode.return_value = payload
+
+            result = await get_current_user(mock_credentials)
+
+            assert isinstance(result, AuthContext)
+            assert result.user_id == "user_123"
+            assert result.is_personal_context is True
+
+    @pytest.mark.asyncio
+    async def test_returns_auth_context_with_org_claims(self, mock_credentials, valid_jwks):
+        """get_current_user returns AuthContext with org claims from JWT."""
+        payload = {
+            "sub": "user_123",
+            "email": "test@example.com",
+            "iss": TEST_ISSUER,
+            "exp": int(time.time()) + 3600,
+            "iat": int(time.time()),
+            "org_id": "org_456",
+            "org_role": "org:admin",
+            "org_slug": "acme-corp",
+            "org_permissions": ["org:read", "org:write"],
+        }
+
+        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
+             patch("core.auth.jwt.get_unverified_header") as mock_header, \
+             patch("core.auth.jwt.decode") as mock_decode, \
+             patch("core.auth.settings") as mock_settings:
+
+            mock_settings.CLERK_ISSUER = TEST_ISSUER
+            mock_settings.CLERK_AUDIENCE = None
+            mock_client_class.return_value = _create_mock_httpx_client(valid_jwks)
+            mock_header.return_value = {"kid": "test-key-id", "alg": "RS256"}
+            mock_decode.return_value = payload
+
+            result = await get_current_user(mock_credentials)
+
+            assert isinstance(result, AuthContext)
+            assert result.user_id == "user_123"
+            assert result.org_id == "org_456"
+            assert result.org_role == "org:admin"
+            assert result.org_slug == "acme-corp"
+            assert result.org_permissions == ["org:read", "org:write"]
+            assert result.is_org_context is True
+            assert result.is_org_admin is True

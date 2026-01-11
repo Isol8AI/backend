@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from core.database import engine
 from models import Base
@@ -12,7 +13,11 @@ async def init_models(reset: bool = False):
             async with engine.begin() as conn:
                 if reset:
                     print("Dropping all tables...")
-                    await conn.run_sync(Base.metadata.drop_all)
+                    # Drop schema and recreate to ensure clean slate
+                    await conn.execute(text("DROP SCHEMA public CASCADE"))
+                    await conn.execute(text("CREATE SCHEMA public"))
+                    await conn.execute(text("GRANT ALL ON SCHEMA public TO postgres"))
+                    await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
                 await conn.run_sync(Base.metadata.create_all)
             print("Database tables created.")
             return
