@@ -1,5 +1,8 @@
 """Unit tests for User model."""
 import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
 from models.user import User
 
 
@@ -22,13 +25,11 @@ class TestUserModel:
 
     @pytest.mark.asyncio
     async def test_user_persistence(self, db_session):
-        """User can be persisted to database."""
+        """User can be persisted and retrieved from database."""
         user = User(id="user_persist_test")
         db_session.add(user)
         await db_session.flush()
 
-        # Query it back
-        from sqlalchemy import select
         result = await db_session.execute(select(User).where(User.id == "user_persist_test"))
         fetched_user = result.scalar_one()
 
@@ -37,8 +38,6 @@ class TestUserModel:
     @pytest.mark.asyncio
     async def test_user_unique_id(self, db_session):
         """User IDs must be unique."""
-        from sqlalchemy.exc import IntegrityError
-
         user1 = User(id="duplicate_id")
         db_session.add(user1)
         await db_session.flush()
