@@ -14,3 +14,11 @@ async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
+
+def get_session_factory():
+    """Dependency that returns the session factory.
+
+    This allows tests to override the session factory used in streaming endpoints.
+    """
+    return async_session_factory

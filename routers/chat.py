@@ -6,7 +6,7 @@ from sqlalchemy import asc
 from pydantic import BaseModel
 from typing import List
 import json
-from core.database import get_db, async_session_factory
+from core.database import get_db, get_session_factory
 from core.auth import get_current_user
 from core.llm import llm_service
 from core.config import AVAILABLE_MODELS
@@ -95,7 +95,8 @@ async def get_session_messages(
 async def chat_stream_endpoint(
     request: ChatRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    session_factory = Depends(get_session_factory)
 ):
     """Stream chat response using Server-Sent Events."""
     user_id = current_user["sub"]
@@ -157,7 +158,7 @@ async def chat_stream_endpoint(
             yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
 
         # Save assistant response after streaming completes
-        async with async_session_factory() as save_db:
+        async with session_factory() as save_db:
             assistant_message = Message(
                 session_id=session_id,
                 role=MessageRole.ASSISTANT,
