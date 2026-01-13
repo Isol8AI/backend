@@ -1,4 +1,7 @@
+import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Optional
 
 import httpx
 from fastapi import Depends, HTTPException
@@ -7,7 +10,40 @@ from jose import jwt
 
 from core.config import settings
 
+logger = logging.getLogger(__name__)
 security = HTTPBearer()
+
+# JWKS cache with TTL
+_jwks_cache: dict = {"data": None, "expires_at": None}
+JWKS_CACHE_TTL = timedelta(hours=1)
+
+
+async def _get_cached_jwks(jwks_url: str) -> dict:
+    """Fetch JWKS with TTL-based caching to avoid hitting Clerk on every request."""
+    now = datetime.utcnow()
+
+    # Return cached data if still valid
+    if _jwks_cache["data"] and _jwks_cache["expires_at"] and now < _jwks_cache["expires_at"]:
+        return _jwks_cache["data"]
+
+    # Fetch fresh JWKS
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(jwks_url, timeout=10.0)
+            response.raise_for_status()
+            jwks = response.json()
+
+        # Update cache
+        _jwks_cache["data"] = jwks
+        _jwks_cache["expires_at"] = now + JWKS_CACHE_TTL
+        logger.info("JWKS cache refreshed")
+        return jwks
+    except httpx.HTTPError as e:
+        # If fetch fails but we have stale cached data, use it as fallback
+        if _jwks_cache["data"]:
+            logger.warning(f"JWKS fetch failed, using stale cache: {e}")
+            return _jwks_cache["data"]
+        raise
 
 
 @dataclass
@@ -64,10 +100,8 @@ async def get_current_user(
     jwks_url = f"{settings.CLERK_ISSUER}/.well-known/jwks.json"
 
     try:
-        # Fetch JWKS (In production, cache this!)
-        async with httpx.AsyncClient() as client:
-            response = await client.get(jwks_url)
-            jwks = response.json()
+        # Fetch JWKS with caching
+        jwks = await _get_cached_jwks(jwks_url)
 
         # Find RSA key matching the token's key ID
         unverified_header = jwt.get_unverified_header(token)
@@ -97,9 +131,13 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.JWTClaimsError:
         raise HTTPException(status_code=401, detail="Invalid claims")
+    except httpx.HTTPError as e:
+        logger.error(f"Failed to fetch JWKS: {e}")
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        logger.error(f"JWT validation error: {e}")
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
 

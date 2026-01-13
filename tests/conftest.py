@@ -20,7 +20,7 @@ from models.base import Base
 from models.context_store import ContextStore
 from models.message import Message
 from models.organization import Organization
-from models.organization_membership import OrganizationMembership
+from models.organization_membership import OrganizationMembership, MemberRole
 from models.session import Session
 from models.user import User
 
@@ -264,6 +264,26 @@ async def test_user(db_session) -> User:
 
 
 @pytest.fixture
+async def test_user_with_keys(db_session) -> User:
+    """Create a test user with encryption keys set up."""
+    user = User(id="user_test_encrypted_123")
+    user.set_encryption_keys(
+        public_key="aa" * 32,  # 64 hex chars
+        encrypted_private_key="bb" * 48,  # Variable length
+        iv="cc" * 16,  # 32 hex chars
+        tag="dd" * 16,  # 32 hex chars
+        salt="ee" * 32,  # 64 hex chars
+        recovery_encrypted_private_key="ff" * 48,
+        recovery_iv="11" * 16,
+        recovery_tag="22" * 16,
+        recovery_salt="33" * 32,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return user
+
+
+@pytest.fixture
 async def other_user(db_session) -> User:
     """Create another user for authorization tests."""
     user = User(id="user_other_456")
@@ -297,7 +317,7 @@ async def test_membership(db_session, test_user, test_organization) -> Organizat
         id=f"mem_{test_user.id}_{test_organization.id}",
         user_id=test_user.id,
         org_id=test_organization.id,
-        role="org:member"
+        role=MemberRole.MEMBER
     )
     db_session.add(membership)
     await db_session.flush()
@@ -311,7 +331,7 @@ async def test_admin_membership(db_session, test_user, test_organization) -> Org
         id=f"mem_admin_{test_user.id}_{test_organization.id}",
         user_id=test_user.id,
         org_id=test_organization.id,
-        role="org:admin"
+        role=MemberRole.ADMIN
     )
     db_session.add(membership)
     await db_session.flush()
@@ -366,12 +386,19 @@ async def other_user_org_session(db_session, other_user, test_organization) -> S
 
 @pytest.fixture
 async def test_message(db_session, test_session) -> Message:
-    """Create a single user message in the test session."""
+    """Create a single encrypted user message in the test session."""
+    from tests.factories.message_factory import generate_encrypted_payload
+
+    payload = generate_encrypted_payload("Hello, this is a test message")
     message = Message(
         id=str(uuid.uuid4()),
         session_id=test_session.id,
         role="user",
-        content="Hello, this is a test message",
+        ephemeral_public_key=payload["ephemeral_public_key"],
+        iv=payload["iv"],
+        ciphertext=payload["ciphertext"],
+        auth_tag=payload["auth_tag"],
+        hkdf_salt=payload["hkdf_salt"],
     )
     db_session.add(message)
     await db_session.flush()
@@ -380,17 +407,45 @@ async def test_message(db_session, test_session) -> Message:
 
 @pytest.fixture
 async def test_conversation(db_session, test_session) -> list[Message]:
-    """Create a multi-message conversation in the test session."""
+    """Create a multi-message encrypted conversation in the test session."""
+    from tests.factories.message_factory import generate_encrypted_payload
+
+    payload1 = generate_encrypted_payload("Hello!")
+    payload2 = generate_encrypted_payload("Hi there! How can I help you today?")
+    payload3 = generate_encrypted_payload("What's the weather like?")
+
     messages = [
-        Message(id=str(uuid.uuid4()), session_id=test_session.id, role="user", content="Hello!"),
+        Message(
+            id=str(uuid.uuid4()),
+            session_id=test_session.id,
+            role="user",
+            ephemeral_public_key=payload1["ephemeral_public_key"],
+            iv=payload1["iv"],
+            ciphertext=payload1["ciphertext"],
+            auth_tag=payload1["auth_tag"],
+            hkdf_salt=payload1["hkdf_salt"],
+        ),
         Message(
             id=str(uuid.uuid4()),
             session_id=test_session.id,
             role="assistant",
-            content="Hi there! How can I help you today?",
+            ephemeral_public_key=payload2["ephemeral_public_key"],
+            iv=payload2["iv"],
+            ciphertext=payload2["ciphertext"],
+            auth_tag=payload2["auth_tag"],
+            hkdf_salt=payload2["hkdf_salt"],
             model_used="Qwen/Qwen2.5-72B-Instruct",
         ),
-        Message(id=str(uuid.uuid4()), session_id=test_session.id, role="user", content="What's the weather like?"),
+        Message(
+            id=str(uuid.uuid4()),
+            session_id=test_session.id,
+            role="user",
+            ephemeral_public_key=payload3["ephemeral_public_key"],
+            iv=payload3["iv"],
+            ciphertext=payload3["ciphertext"],
+            auth_tag=payload3["auth_tag"],
+            hkdf_salt=payload3["hkdf_salt"],
+        ),
     ]
     for msg in messages:
         db_session.add(msg)

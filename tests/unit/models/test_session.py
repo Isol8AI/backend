@@ -73,16 +73,28 @@ class TestSessionModel:
         session = result.scalar_one()
 
         assert len(session.messages) == 1
-        assert session.messages[0].content == test_message.content
+        assert session.messages[0].ciphertext == test_message.ciphertext
 
     @pytest.mark.asyncio
     async def test_session_cascade_delete(self, db_session, test_user):
         """Deleting session cascades to delete associated messages."""
+        from tests.factories.message_factory import generate_encrypted_payload
+
         session = Session(id=str(uuid.uuid4()), user_id=test_user.id, name="Session to Delete")
         db_session.add(session)
         await db_session.flush()
 
-        message = Message(id=str(uuid.uuid4()), session_id=session.id, role="user", content="To be deleted")
+        payload = generate_encrypted_payload("To be deleted")
+        message = Message(
+            id=str(uuid.uuid4()),
+            session_id=session.id,
+            role="user",
+            ephemeral_public_key=payload["ephemeral_public_key"],
+            iv=payload["iv"],
+            ciphertext=payload["ciphertext"],
+            auth_tag=payload["auth_tag"],
+            hkdf_salt=payload["hkdf_salt"],
+        )
         db_session.add(message)
         await db_session.flush()
         message_id = message.id

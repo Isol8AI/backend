@@ -150,8 +150,10 @@ class TestSessionMessageAuthorization:
         response = await async_client.get(f"/api/v1/chat/sessions/{test_session.id}/messages")
 
         assert response.status_code == 200
-        messages = response.json()
-        assert len(messages) == 1
+        data = response.json()
+        # New format: {"session_id": ..., "messages": [...]}
+        assert data["session_id"] == test_session.id
+        assert len(data["messages"]) == 1
 
     @pytest.mark.asyncio
     async def test_cannot_access_other_users_session_messages(

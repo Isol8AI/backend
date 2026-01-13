@@ -1,0 +1,94 @@
+{
+  "version": "1.0",
+  "description": "Cross-platform crypto test vectors",
+  "passcode_derivation": [
+    {
+      "description": "6-digit passcode",
+      "passcode": "123456",
+      "salt_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "time_cost": 1,
+      "memory_cost": 16384,
+      "parallelism": 1,
+      "expected_key_hex": "4d96d4174016045b33ec657e5f11d656cec9041e668a7e62a37cced7a7fe1d41"
+    },
+    {
+      "description": "Different passcode same salt",
+      "passcode": "654321",
+      "salt_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "time_cost": 1,
+      "memory_cost": 16384,
+      "parallelism": 1,
+      "expected_key_hex": "aa1e657f99404e0ae9aed8bcee831af9d01d8d4bee3a2628611cda805b5df144"
+    },
+    {
+      "description": "Alphanumeric passcode",
+      "passcode": "admin123",
+      "salt_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "time_cost": 1,
+      "memory_cost": 16384,
+      "parallelism": 1,
+      "expected_key_hex": "2fa9eb8326c69dd278c3b773de9235f7867c471d6329c9ae295d8218f198b932"
+    }
+  ],
+  "ecdh_derivation": [
+    {
+      "description": "Basic ECDH",
+      "private_key_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+      "public_key_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+      "context": "test-context",
+      "salt_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected_key_hex": "01fb75e5729e6de652f1e68381f46fc832ee8b26fc0b5521cce72de25b635109"
+    },
+    {
+      "description": "ECDH with transport context",
+      "private_key_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+      "public_key_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+      "context": "client-to-enclave-transport",
+      "salt_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected_key_hex": "1e0306eafbcd33da1f613d27240f73fa0611a19be823d58e123d780549e5d772"
+    },
+    {
+      "description": "ECDH with storage context",
+      "private_key_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+      "public_key_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+      "context": "user-message-storage",
+      "salt_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected_key_hex": "979cab9e1b0ebc242ff4673251b96b7f1ee32fa5164539edb7600fee692b06dc"
+    },
+    {
+      "description": "ECDH with org-key-distribution context",
+      "private_key_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+      "public_key_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+      "context": "org-key-distribution",
+      "salt_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected_key_hex": "6b269f827a8b2b2c7702aa808f8135f88060a5eeac18729bd1df177e0a98476e"
+    }
+  ],
+  "aes_gcm": [
+    {
+      "description": "Simple encryption",
+      "key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "iv_hex": "11111111111111111111111111111111",
+      "plaintext_hex": "48656c6c6f2c20576f726c6421",
+      "ciphertext_hex": "9b2ee55288f111f35e648a71bb",
+      "auth_tag_hex": "b60febd361c3d05ee4ac80ec98dc5232"
+    },
+    {
+      "description": "Encryption with AAD",
+      "key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "iv_hex": "11111111111111111111111111111111",
+      "plaintext_hex": "48656c6c6f2c20576f726c6421",
+      "ciphertext_hex": "9b2ee55288f111f35e648a71bb",
+      "auth_tag_hex": "45beff23d7f2c9eebfc3e91e671ca37e",
+      "aad_hex": "61757468656e746963617465642064617461"
+    },
+    {
+      "description": "Longer message",
+      "key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "iv_hex": "11111111111111111111111111111111",
+      "plaintext_hex": "546869732069732061206c6f6e676572206d65737361676520666f722074657374696e67204145532d47434d20656e6372797074696f6e2077697468206d6f726520646174612e",
+      "ciphertext_hex": "8723e04dc7b4428450368a7af42a0cec327cf599e18f0a80ff629606302b011f798947bd3744856aede4f5244eaa3d237b0f8931d795f7fa44146990e868c91e6224689ee5eb8f",
+      "auth_tag_hex": "30a2b4a027c328bb6366620b437fc5fc"
+    }
+  ]
+}

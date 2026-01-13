@@ -1,15 +1,36 @@
-"""Organizations router for managing Clerk organizations."""
-from fastapi import APIRouter, Depends
+"""Organizations router for managing Clerk organizations and encryption."""
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from core.auth import AuthContext, get_current_user, require_org_admin, require_org_context
-from core.database import get_session_factory
+from core.database import get_db, get_session_factory
+from core.services.org_key_service import (
+    OrgKeyService,
+    OrgKeyServiceError,
+    OrgKeysAlreadyExistError,
+    OrgKeysNotFoundError,
+    MembershipNotFoundError,
+    NotAdminError,
+)
 from models.context_store import ContextStore
 from models.organization import Organization
-from models.organization_membership import OrganizationMembership
+from models.organization_membership import MemberRole, OrganizationMembership
+from schemas.encryption import EncryptedPayload
+from schemas.organization_encryption import (
+    CreateOrgKeysRequest,
+    OrgEncryptionStatusResponse,
+    DistributeOrgKeyRequest,
+    PendingDistributionResponse,
+    PendingDistributionsResponse,
+    MembershipWithKeyResponse,
+)
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 
@@ -98,8 +119,9 @@ async def sync_organization(
                 org.slug = request.slug
             status = "updated"
 
-        # Handle membership - use role from JWT if available, otherwise default
-        role = auth.org_role or "org:member"
+        # Handle membership - use Clerk role directly (enum values match Clerk format)
+        # Default to MEMBER if no role info from JWT (e.g., syncing from personal context)
+        member_role = MemberRole(auth.org_role) if auth.org_role else MemberRole.MEMBER
 
         result = await session.execute(
             select(OrganizationMembership).where(
@@ -115,13 +137,13 @@ async def sync_organization(
                 id=f"mem_{auth.user_id}_{org_id}",
                 user_id=auth.user_id,
                 org_id=org_id,
-                role=role
+                role=member_role
             )
             session.add(membership)
         else:
-            # Update role if changed and we have role info
-            if auth.org_role and membership.role != auth.org_role:
-                membership.role = auth.org_role
+            # Update role if changed and we have role info from JWT
+            if auth.org_role and membership.role != member_role:
+                membership.role = member_role
 
         await session.commit()
 
@@ -248,3 +270,259 @@ async def update_org_context(
         await session.refresh(context_store)
 
         return OrgContextResponse(context_data=context_store.context_data)
+
+
+# =============================================================================
+# Organization Encryption Endpoints
+# =============================================================================
+
+def _handle_org_key_service_error(e: OrgKeyServiceError):
+    """Convert service errors to HTTP exceptions."""
+    if isinstance(e, OrgKeysAlreadyExistError):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    elif isinstance(e, (OrgKeysNotFoundError, MembershipNotFoundError)):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    elif isinstance(e, NotAdminError):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/{org_id}/encryption-status", response_model=OrgEncryptionStatusResponse)
+async def get_encryption_status(
+    org_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get organization's encryption status.
+
+    Any authenticated user can check status, but only members see full details.
+    """
+    service = OrgKeyService(db)
+    try:
+        status_data = await service.get_org_encryption_status(org_id)
+        return OrgEncryptionStatusResponse(**status_data)
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.post("/{org_id}/keys", status_code=status.HTTP_201_CREATED)
+async def create_org_keys(
+    org_id: str,
+    request: CreateOrgKeysRequest,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create organization encryption keys (admin only).
+
+    The admin creates the org keypair client-side, encrypts the private key
+    with the org passcode, and sends the encrypted blobs to the server.
+    """
+    service = OrgKeyService(db)
+    try:
+        org = await service.create_org_keys(
+            org_id=org_id,
+            admin_user_id=auth.user_id,
+            org_public_key=request.org_public_key,
+            admin_encrypted_private_key=request.admin_encrypted_private_key,
+            admin_iv=request.admin_iv,
+            admin_tag=request.admin_tag,
+            admin_salt=request.admin_salt,
+            admin_member_key_ephemeral=request.admin_member_encrypted_key.ephemeral_public_key,
+            admin_member_key_iv=request.admin_member_encrypted_key.iv,
+            admin_member_key_ciphertext=request.admin_member_encrypted_key.ciphertext,
+            admin_member_key_tag=request.admin_member_encrypted_key.auth_tag,
+            admin_member_key_hkdf_salt=request.admin_member_encrypted_key.hkdf_salt,
+        )
+        return {"status": "created", "org_public_key": request.org_public_key}
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.get("/{org_id}/pending-distributions", response_model=PendingDistributionsResponse)
+async def get_pending_distributions(
+    org_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get members needing org key distribution (admin only).
+
+    Returns members who have personal encryption keys but haven't
+    received the org key yet.
+    """
+    service = OrgKeyService(db)
+    try:
+        pending = await service.get_pending_distributions(org_id, auth.user_id)
+        return PendingDistributionsResponse(
+            org_id=org_id,
+            pending=[PendingDistributionResponse(**p) for p in pending],
+            total_count=len(pending),
+        )
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.post("/{org_id}/distribute-key")
+async def distribute_org_key(
+    org_id: str,
+    request: DistributeOrgKeyRequest,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Distribute org key to a member (admin only).
+
+    The admin decrypts their copy of the org key, re-encrypts it to
+    the member's public key, and sends it here for storage.
+    """
+    service = OrgKeyService(db)
+    try:
+        membership = await service.distribute_org_key(
+            org_id=org_id,
+            admin_user_id=auth.user_id,
+            membership_id=request.membership_id,
+            ephemeral_public_key=request.encrypted_org_key.ephemeral_public_key,
+            iv=request.encrypted_org_key.iv,
+            ciphertext=request.encrypted_org_key.ciphertext,
+            auth_tag=request.encrypted_org_key.auth_tag,
+            hkdf_salt=request.encrypted_org_key.hkdf_salt,
+        )
+        return {"status": "distributed", "membership_id": membership.id}
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.get("/{org_id}/my-membership", response_model=MembershipWithKeyResponse)
+async def get_my_membership(
+    org_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get current user's membership with encrypted org key.
+
+    Used by members to retrieve their encrypted copy of the org key
+    for client-side decryption.
+    """
+    service = OrgKeyService(db)
+    try:
+        membership = await service.get_membership(auth.user_id, org_id)
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Not a member of this organization"
+            )
+
+        encrypted_key = None
+        if membership.has_org_key:
+            payload = membership.encrypted_org_key_payload
+            encrypted_key = EncryptedPayload(**payload)
+
+        return MembershipWithKeyResponse(
+            id=membership.id,
+            org_id=org_id,
+            role=membership.role.value,
+            has_org_key=membership.has_org_key,
+            encrypted_org_key=encrypted_key,
+            key_distributed_at=membership.key_distributed_at,
+            joined_at=membership.joined_at,
+            created_at=membership.created_at,
+        )
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.post("/{org_id}/revoke-key/{member_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_member_key(
+    org_id: str,
+    member_user_id: str,
+    reason: str = None,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Revoke a member's org key (admin only).
+
+    The member will no longer be able to decrypt org messages.
+    """
+    service = OrgKeyService(db)
+    try:
+        await service.revoke_member_org_key(
+            org_id=org_id,
+            admin_user_id=auth.user_id,
+            member_user_id=member_user_id,
+            reason=reason,
+        )
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.get("/{org_id}/admin-recovery-key")
+async def get_admin_recovery_key(
+    org_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get admin-encrypted org key for recovery (admin only).
+
+    Used when admin needs to recover org key using org passcode.
+    """
+    service = OrgKeyService(db)
+    try:
+        return await service.get_admin_recovery_key(auth.user_id, org_id)
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.get("/{org_id}/members")
+async def list_org_members(
+    org_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all organization members (admin only).
+
+    Returns all members with their key distribution status.
+    """
+    service = OrgKeyService(db)
+
+    # Verify user is admin
+    try:
+        await service.verify_admin(auth.user_id, org_id)
+    except NotAdminError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+    # Load memberships with user data
+    result = await db.execute(
+        select(OrganizationMembership)
+        .where(OrganizationMembership.org_id == org_id)
+        .options(selectinload(OrganizationMembership.user))
+    )
+    memberships = result.scalars().all()
+
+    return {
+        "org_id": org_id,
+        "members": [
+            {
+                "membership_id": m.id,
+                "user_id": m.user_id,
+                "role": m.role.value if hasattr(m.role, 'value') else str(m.role),
+                "has_personal_keys": m.user.has_encryption_keys if m.user else False,
+                "has_org_key": m.has_org_key,
+                "key_distributed_at": m.key_distributed_at.isoformat() if m.key_distributed_at else None,
+                "joined_at": m.joined_at.isoformat() if m.joined_at else None,
+            }
+            for m in memberships
+        ],
+        "total_count": len(memberships),
+    }

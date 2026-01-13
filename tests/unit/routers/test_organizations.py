@@ -3,7 +3,7 @@ import pytest
 from sqlalchemy import select
 
 from models.organization import Organization
-from models.organization_membership import OrganizationMembership
+from models.organization_membership import OrganizationMembership, MemberRole
 
 
 class TestSyncOrganization:
@@ -61,7 +61,7 @@ class TestSyncOrganization:
         )
         membership = result.scalar_one_or_none()
         assert membership is not None
-        assert membership.role == "org:member"
+        assert membership.role == MemberRole.MEMBER
 
     @pytest.mark.asyncio
     async def test_sync_updates_membership_role(self, async_client_org_admin, db_session, test_user, test_membership):
@@ -81,7 +81,7 @@ class TestSyncOrganization:
             )
         )
         membership = result.scalar_one()
-        assert membership.role == "org:admin"
+        assert membership.role == MemberRole.ADMIN
 
     @pytest.mark.asyncio
     async def test_sync_works_from_personal_context(self, async_client, db_session, test_user):
@@ -139,7 +139,7 @@ class TestGetCurrentOrg:
         assert data["org_id"] == "org_test_123"
         assert data["org_name"] == "Test Organization"
         assert data["org_slug"] == "test-org"
-        assert data["org_role"] == "org:member"
+        assert data["org_role"] == "org:member"  # From Clerk JWT claims, not DB
         assert data["is_personal_context"] is False
 
     @pytest.mark.asyncio
@@ -151,7 +151,7 @@ class TestGetCurrentOrg:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["org_role"] == "org:admin"
+        assert data["org_role"] == "org:admin"  # From Clerk JWT claims, not DB
         assert data["is_org_admin"] is True
 
     @pytest.mark.asyncio
@@ -185,7 +185,7 @@ class TestListOrganizations:
             id="mem_other",
             user_id="user_test_123",
             org_id="org_other_456",
-            role="org:member"
+            role=MemberRole.MEMBER
         )
         db_session.add(other_membership)
         await db_session.flush()
@@ -218,7 +218,7 @@ class TestListOrganizations:
             id="mem_other_user",
             user_id=other_user.id,
             org_id=test_organization.id,
-            role="org:member"
+            role=MemberRole.MEMBER
         )
         db_session.add(other_membership)
         await db_session.flush()

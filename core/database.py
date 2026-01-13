@@ -2,7 +2,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import sessionmaker
 from core.config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=True)
+# Only echo SQL in debug mode to avoid log pollution in production
+engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
 
 AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
