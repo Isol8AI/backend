@@ -106,13 +106,19 @@ class TestGetEncryptionStatus:
         assert status["encryption_created_at"] is not None
 
     @pytest.mark.asyncio
-    async def test_raises_error_for_nonexistent_user(self, mock_db):
-        """Raises error when user doesn't exist."""
+    async def test_returns_default_for_nonexistent_user(self, mock_db):
+        """Returns default status when user doesn't exist (handles race condition)."""
         mock_db.execute = AsyncMock(return_value=mock_execute_result(None))
 
         service = UserKeyService(mock_db)
-        with pytest.raises(UserKeyServiceError, match="not found"):
-            await service.get_encryption_status("nonexistent_user")
+        status = await service.get_encryption_status("nonexistent_user")
+
+        # Should return default "not set up" status instead of raising error
+        # This handles race condition where encryption status is checked
+        # before user sync completes
+        assert status["has_encryption_keys"] is False
+        assert status["public_key"] is None
+        assert status["encryption_created_at"] is None
 
 
 # =============================================================================

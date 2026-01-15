@@ -58,13 +58,17 @@ class UserKeyService:
 
         Returns:
             Dict with has_encryption_keys, public_key, encryption_created_at
-
-        Raises:
-            UserKeyServiceError: If user not found
         """
         user = await self.get_user(user_id)
         if not user:
-            raise UserKeyServiceError(f"User {user_id} not found")
+            # User doesn't exist yet - return "not set up" status
+            # This handles race condition where encryption status is checked
+            # before user sync completes
+            return {
+                "has_encryption_keys": False,
+                "public_key": None,
+                "encryption_created_at": None,
+            }
 
         return {
             "has_encryption_keys": user.has_encryption_keys,
@@ -112,6 +116,10 @@ class UserKeyService:
         user = await self.get_user(user_id)
         if not user:
             raise UserKeyServiceError(f"User {user_id} not found")
+
+        # Force refresh from database to avoid stale session cache
+        # This fixes race conditions where a recent DELETE hasn't propagated
+        await self.db.refresh(user)
 
         if user.has_encryption_keys and not allow_overwrite:
             raise KeysAlreadyExistError(

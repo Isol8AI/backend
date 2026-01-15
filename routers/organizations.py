@@ -395,7 +395,7 @@ async def distribute_org_key(
         _handle_org_key_service_error(e)
 
 
-@router.get("/{org_id}/my-membership", response_model=MembershipWithKeyResponse)
+@router.get("/{org_id}/membership", response_model=MembershipWithKeyResponse)
 async def get_my_membership(
     org_id: str,
     auth: AuthContext = Depends(get_current_user),
