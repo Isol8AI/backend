@@ -21,7 +21,8 @@ class AuditEventType(str, PyEnum):
 
     # User key events
     USER_KEYS_CREATED = "user_keys_created"
-    USER_KEYS_RECOVERED = "user_keys_recovered"  # Recovery code used
+    USER_KEYS_RECOVERED = "user_keys_recovered"  # Recovery code used to restore keys
+    RECOVERY_KEYS_FETCHED = "recovery_keys_fetched"  # Recovery keys fetched (before actual recovery)
     USER_KEYS_DELETED = "user_keys_deleted"
 
     # Org key events
@@ -39,6 +40,7 @@ class AuditEventType(str, PyEnum):
 
     # Session events
     ENCRYPTED_SESSION_CREATED = "encrypted_session_created"
+    SESSION_DELETED = "session_deleted"  # For GDPR compliance
 
     # Authentication events (from Clerk webhooks)
     USER_SIGNED_IN = "user_signed_in"
@@ -170,6 +172,15 @@ class AuditLog(Base):
         return cls.create(
             id=id,
             event_type=AuditEventType.USER_KEYS_RECOVERED,
+            actor_user_id=user_id,
+        )
+
+    @classmethod
+    def log_recovery_keys_fetched(cls, id: str, user_id: str) -> "AuditLog":
+        """Log when recovery keys are fetched (before actual recovery)."""
+        return cls.create(
+            id=id,
+            event_type=AuditEventType.RECOVERY_KEYS_FETCHED,
             actor_user_id=user_id,
         )
 
@@ -316,6 +327,23 @@ class AuditLog(Base):
         return cls.create(
             id=id,
             event_type=AuditEventType.ENCRYPTED_SESSION_CREATED,
+            actor_user_id=user_id,
+            org_id=org_id,
+            event_data={"session_id": session_id},
+        )
+
+    @classmethod
+    def log_session_deleted(
+        cls,
+        id: str,
+        user_id: str,
+        session_id: str,
+        org_id: Optional[str] = None,
+    ) -> "AuditLog":
+        """Log session deletion (GDPR compliance)."""
+        return cls.create(
+            id=id,
+            event_type=AuditEventType.SESSION_DELETED,
             actor_user_id=user_id,
             org_id=org_id,
             event_data={"session_id": session_id},

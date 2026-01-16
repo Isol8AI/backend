@@ -38,8 +38,11 @@ class SessionResponse(BaseModel):
 
 
 class SessionListResponse(BaseModel):
-    """List of user's chat sessions."""
+    """Paginated list of user's chat sessions."""
     sessions: list[SessionResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class SessionMessagesResponse(BaseModel):
@@ -81,3 +84,8 @@ class StreamCompleteResponse(BaseModel):
 class ModelsResponse(BaseModel):
     """Available LLM models."""
     models: list[dict]
+
+
+class DeleteSessionsResponse(BaseModel):
+    """Response for bulk session deletion."""
+    deleted_count: int

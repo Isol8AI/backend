@@ -1,6 +1,6 @@
 """Tests for UserKeyService."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from core.services.user_key_service import (
     UserKeyService,

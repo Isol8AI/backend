@@ -518,8 +518,8 @@ class MockEnclave(EnclaveInterface):
             # 1. Decrypt the new user message
             print("\n📥 STEP 1: Decrypt User Message from Client")
             print("-" * 60)
-            print(f"Enclave Private Key: [HELD SECURELY IN ENCLAVE]")
-            print(f"Encrypted Message:")
+            print("Enclave Private Key: [HELD SECURELY IN ENCLAVE]")
+            print("Encrypted Message:")
             print(f"  ephemeral_public_key: {encrypted_message.ephemeral_public_key.hex()[:32]}...")
             print(f"  iv: {encrypted_message.iv.hex()}")
             print(f"  ciphertext: {encrypted_message.ciphertext.hex()[:32]}...")
@@ -538,14 +538,14 @@ class MockEnclave(EnclaveInterface):
                 print(f"  [{i}] {msg.role}: {msg.content[:50]}..." if len(msg.content) > 50 else f"  [{i}] {msg.role}: {msg.content}")
 
             # 3. Stream LLM inference, encrypting each chunk for transport
-            print(f"\n🤖 STEP 3: Call LLM Inference")
+            print("\n🤖 STEP 3: Call LLM Inference")
             print("-" * 60)
             print(f"Model: {model}")
             print(f"Messages count: {len(history) + 1}")
 
             full_response = ""
             chunk_count = 0
-            print(f"\n📤 STEP 4: Stream Encrypted Chunks to Client")
+            print("\n📤 STEP 4: Stream Encrypted Chunks to Client")
             print("-" * 60)
             print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
@@ -564,7 +564,7 @@ class MockEnclave(EnclaveInterface):
             print(f"Full response: {full_response[:100]}..." if len(full_response) > 100 else f"Full response: {full_response}")
 
             # 4. Build final encrypted messages for storage
-            print(f"\n💾 STEP 5: Encrypt Messages for Storage")
+            print("\n💾 STEP 5: Encrypt Messages for Storage")
             print("-" * 60)
             print(f"Storage Public Key: {storage_public_key.hex()[:32]}...")
 
@@ -574,10 +574,10 @@ class MockEnclave(EnclaveInterface):
             stored_user = self.encrypt_for_storage(user_bytes, storage_public_key, is_assistant=False)
             stored_assistant = self.encrypt_for_storage(assistant_bytes, storage_public_key, is_assistant=True)
 
-            print(f"User message encrypted for storage:")
+            print("User message encrypted for storage:")
             print(f"  ephemeral_public_key: {stored_user.ephemeral_public_key.hex()[:32]}...")
             print(f"  ciphertext length: {len(stored_user.ciphertext)} bytes")
-            print(f"Assistant message encrypted for storage:")
+            print("Assistant message encrypted for storage:")
             print(f"  ephemeral_public_key: {stored_assistant.ephemeral_public_key.hex()[:32]}...")
             print(f"  ciphertext length: {len(stored_assistant.ciphertext)} bytes")
 
@@ -585,7 +585,7 @@ class MockEnclave(EnclaveInterface):
             estimated_input_tokens = len(user_content) // 4 + sum(len(m.content) for m in history) // 4
             estimated_output_tokens = len(full_response) // 4
 
-            print(f"\n📋 FINAL SUMMARY")
+            print("\n📋 FINAL SUMMARY")
             print("-" * 60)
             print(f"Input tokens (estimated): {estimated_input_tokens}")
             print(f"Output tokens (estimated): {estimated_output_tokens}")

@@ -3,11 +3,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 
-from core.services.chat_service import ChatService
+from core.services.chat_service import ChatService, StorageKeyNotFoundError
 from core.crypto import EncryptedPayload
 from models.user import User
 from models.session import Session
-from models.message import Message, MessageRole
+from models.message import MessageRole
 from models.organization import Organization
 from models.organization_membership import OrganizationMembership, MemberRole
 
@@ -365,14 +365,15 @@ class TestKeyResolution:
 
     @pytest.mark.asyncio
     async def test_get_storage_key_no_keys(self, mock_db):
-        """Returns None when user has no keys."""
+        """Raises StorageKeyNotFoundError when user has no keys."""
         user = User(id="user_123")
         mock_db.execute = AsyncMock(return_value=mock_execute_result(user))
 
         service = ChatService(mock_db)
-        key = await service.get_storage_public_key(user_id="user_123")
+        with pytest.raises(StorageKeyNotFoundError) as exc_info:
+            await service.get_storage_public_key(user_id="user_123")
 
-        assert key is None
+        assert "User user_123 has not set up encryption keys" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_get_user_public_key(self, mock_db):

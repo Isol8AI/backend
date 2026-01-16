@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 from models.organization import Organization
 from models.organization_membership import OrganizationMembership, MemberRole
-from models.user import User
 
 
 class TestOrganizationEncryption:

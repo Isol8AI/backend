@@ -6,9 +6,12 @@ Security Note:
 - Server never sees plaintext private keys
 """
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+if TYPE_CHECKING:
+    from core.crypto import EncryptedPayload as CryptoEncryptedPayload
 
 
 def validate_hex_string(value: str, expected_length: Optional[int] = None) -> str:

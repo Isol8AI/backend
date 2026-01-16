@@ -8,7 +8,7 @@ These tests verify:
 - Message processing flow (without actual LLM calls)
 """
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from core.crypto import (
     EncryptedPayload,
@@ -737,7 +737,7 @@ class TestEnclaveIntegration:
 
         # 4. Simulate LLM response
         assistant_response = b"Org confidential answer"
-        stored_assistant = enclave.encrypt_for_storage(
+        enclave.encrypt_for_storage(
             assistant_response,
             org.public_key,  # Org storage key
             is_assistant=True,

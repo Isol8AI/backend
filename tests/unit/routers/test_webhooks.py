@@ -1,7 +1,6 @@
 """Tests for Clerk webhooks router."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import json
 
 from fastapi.testclient import TestClient
 

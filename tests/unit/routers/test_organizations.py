@@ -84,25 +84,82 @@ class TestSyncOrganization:
         assert membership.role == MemberRole.ADMIN
 
     @pytest.mark.asyncio
-    async def test_sync_works_from_personal_context(self, async_client, db_session, test_user):
-        """Sync works from personal context (org_id from request body)."""
+    async def test_sync_first_time_access_with_db_membership(self, async_client, db_session, test_user):
+        """First-time sync works when DB membership exists but JWT has no org claims.
+
+        This tests the first-time org access scenario:
+        1. User accepts Clerk invite -> webhook creates membership in DB
+        2. User's JWT may not yet have org claims refreshed
+        3. Frontend calls /sync with org_id in request body
+        4. Backend validates via DB membership check
+        """
+        # Create org and membership in DB (simulating webhook created it)
+        org = Organization(id="org_new_789", name="New Organization", slug="new-org")
+        membership = OrganizationMembership(
+            id="mem_user_test_123_org_new_789",
+            user_id="user_test_123",
+            org_id="org_new_789",
+            role=MemberRole.MEMBER
+        )
+        db_session.add(org)
+        db_session.add(membership)
+        await db_session.flush()
+
+        # Call sync without JWT org claims (async_client uses personal context)
         response = await async_client.post(
             "/api/v1/organizations/sync",
-            json={"org_id": "org_new_789", "name": "New Organization", "slug": "new-org"}
+            json={"org_id": "org_new_789", "name": "Updated Org Name", "slug": "new-org"}
+        )
+
+        # Should succeed because DB membership exists
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "updated"
+        assert data["org_id"] == "org_new_789"
+
+    @pytest.mark.asyncio
+    async def test_sync_rejected_without_membership(self, async_client, db_session, test_user):
+        """Sync is rejected when user has no membership (no JWT org_id AND no DB membership)."""
+        response = await async_client.post(
+            "/api/v1/organizations/sync",
+            json={"org_id": "org_unknown_999", "name": "Unknown Org", "slug": "unknown"}
+        )
+
+        assert response.status_code == 403
+        assert "Not a member" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_sync_rejected_when_jwt_org_mismatch(self, async_client_org, db_session, test_user, test_organization, test_membership):
+        """Sync is rejected when JWT org_id doesn't match request org_id.
+
+        async_client_org has JWT with org_id="org_test_123".
+        Request has org_id="org_other_456" -> should be rejected.
+        """
+        # Create another org that the user is NOT trying to sync to
+        other_org = Organization(id="org_other_456", name="Other Org", slug="other-org")
+        db_session.add(other_org)
+        await db_session.flush()
+
+        response = await async_client_org.post(
+            "/api/v1/organizations/sync",
+            json={"org_id": "org_other_456", "name": "Other Org", "slug": "other-org"}
+        )
+
+        assert response.status_code == 403
+        assert "Cannot sync org you're not a member of" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_sync_succeeds_when_jwt_org_matches(self, async_client_org, db_session, test_user, test_organization, test_membership):
+        """Sync succeeds when JWT org_id matches request org_id."""
+        response = await async_client_org.post(
+            "/api/v1/organizations/sync",
+            json={"org_id": "org_test_123", "name": "Updated Name", "slug": "test-org"}
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "created"
-        assert data["org_id"] == "org_new_789"
-
-        # Verify organization was created
-        result = await db_session.execute(
-            select(Organization).where(Organization.id == "org_new_789")
-        )
-        org = result.scalar_one_or_none()
-        assert org is not None
-        assert org.name == "New Organization"
+        assert data["status"] == "updated"
+        assert data["org_id"] == "org_test_123"
 
     @pytest.mark.asyncio
     async def test_sync_requires_authentication(self, unauthenticated_async_client):

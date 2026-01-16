@@ -9,15 +9,16 @@ Security Note:
 """
 import logging
 from datetime import datetime
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Tuple
 from uuid import uuid4
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.crypto import EncryptedPayload
-from core.enclave import get_enclave, EncryptionContext
+from core.enclave import get_enclave
 from core.enclave.mock_enclave import StreamChunk
+from models.audit_log import AuditLog
 from models.message import Message, MessageRole
 from models.session import Session
 from models.user import User
@@ -25,6 +26,11 @@ from models.organization import Organization
 from models.organization_membership import OrganizationMembership
 
 logger = logging.getLogger(__name__)
+
+
+class StorageKeyNotFoundError(ValueError):
+    """Raised when encryption key cannot be found for storage."""
+    pass
 
 
 class ChatService:
@@ -154,28 +160,45 @@ class ChatService:
         self,
         user_id: str,
         org_id: Optional[str] = None,
-    ) -> list[Session]:
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Tuple[list[Session], int]:
         """
-        List sessions for user in current context.
+        List sessions for user in current context with pagination.
 
         Args:
             user_id: User's sessions to list
             org_id: Filter by org (None for personal sessions)
+            limit: Maximum number of sessions to return (default 50)
+            offset: Number of sessions to skip (default 0)
 
         Returns:
-            List of sessions, newest first
+            Tuple of (sessions list, total count)
         """
-        query = select(Session).where(Session.user_id == user_id)
-
+        # Build base query conditions
+        base_conditions = [Session.user_id == user_id]
         if org_id:
-            query = query.where(Session.org_id == org_id)
+            base_conditions.append(Session.org_id == org_id)
         else:
-            query = query.where(Session.org_id.is_(None))
+            base_conditions.append(Session.org_id.is_(None))
 
-        query = query.order_by(Session.updated_at.desc())
+        # Get total count
+        count_query = select(func.count()).select_from(Session).where(and_(*base_conditions))
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
 
+        # Get paginated results
+        query = (
+            select(Session)
+            .where(and_(*base_conditions))
+            .order_by(Session.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        sessions = list(result.scalars().all())
+
+        return sessions, total
 
     async def update_session_timestamp(self, session_id: str) -> None:
         """Update session's updated_at timestamp."""
@@ -186,6 +209,86 @@ class ChatService:
         if session:
             session.updated_at = datetime.utcnow()
             await self.db.commit()
+
+    async def delete_session(
+        self,
+        session_id: str,
+        user_id: str,
+        org_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Delete a session and all its messages (GDPR compliance).
+
+        The Session model has cascade="all, delete-orphan" for messages,
+        so deleting a session automatically deletes all its messages.
+
+        Args:
+            session_id: Session to delete
+            user_id: User requesting deletion (for ownership check)
+            org_id: Current org context
+
+        Returns:
+            True if session was deleted, False if not found/unauthorized
+        """
+        session = await self.get_session(session_id, user_id, org_id)
+        if not session:
+            return False
+
+        # Audit log the deletion
+        audit_log = AuditLog.log_session_deleted(
+            id=str(uuid4()),
+            user_id=user_id,
+            session_id=session_id,
+            org_id=org_id,
+        )
+        self.db.add(audit_log)
+
+        # Delete session (messages cascade)
+        await self.db.delete(session)
+        await self.db.commit()
+
+        logger.info("Deleted session %s for user %s", session_id, user_id)
+        return True
+
+    async def delete_all_sessions(
+        self,
+        user_id: str,
+        org_id: Optional[str] = None,
+    ) -> int:
+        """
+        Delete all sessions for user in current context (GDPR compliance).
+
+        Args:
+            user_id: User whose sessions to delete
+            org_id: Organization context (None for personal sessions)
+
+        Returns:
+            Number of sessions deleted
+        """
+        # Get all sessions first (for audit logging)
+        sessions, _ = await self.list_sessions(user_id, org_id, limit=10000, offset=0)
+
+        if not sessions:
+            return 0
+
+        for session in sessions:
+            # Audit log each deletion
+            audit_log = AuditLog.log_session_deleted(
+                id=str(uuid4()),
+                user_id=user_id,
+                session_id=session.id,
+                org_id=org_id,
+            )
+            self.db.add(audit_log)
+            await self.db.delete(session)
+
+        await self.db.commit()
+
+        logger.warning(
+            "Deleted %d sessions for user %s (org: %s)",
+            len(sessions), user_id, org_id
+        )
+        return len(sessions)
 
     # =========================================================================
     # Message Operations
@@ -290,7 +393,7 @@ class ChatService:
         self,
         user_id: str,
         org_id: Optional[str] = None,
-    ) -> Optional[bytes]:
+    ) -> bytes:
         """
         Get the public key for encrypting stored messages.
 
@@ -302,7 +405,10 @@ class ChatService:
             org_id: Organization ID (None for personal)
 
         Returns:
-            Public key bytes, or None if not found
+            Public key bytes
+
+        Raises:
+            StorageKeyNotFoundError: If encryption keys not found
         """
         if org_id:
             # Org session - use org's key
@@ -310,20 +416,26 @@ class ChatService:
                 select(Organization).where(Organization.id == org_id)
             )
             org = result.scalar_one_or_none()
-            if org and org.has_encryption_keys:
-                return bytes.fromhex(org.org_public_key)
-            logger.warning("Org %s has no encryption keys", org_id)
-            return None
+            if not org:
+                raise StorageKeyNotFoundError(f"Organization {org_id} not found")
+            if not org.has_encryption_keys:
+                raise StorageKeyNotFoundError(
+                    f"Organization {org_id} has no encryption keys configured"
+                )
+            return bytes.fromhex(org.org_public_key)
         else:
             # Personal session - use user's key
             result = await self.db.execute(
                 select(User).where(User.id == user_id)
             )
             user = result.scalar_one_or_none()
-            if user and user.has_encryption_keys:
-                return bytes.fromhex(user.public_key)
-            logger.warning("User %s has no encryption keys", user_id)
-            return None
+            if not user:
+                raise StorageKeyNotFoundError(f"User {user_id} not found")
+            if not user.has_encryption_keys:
+                raise StorageKeyNotFoundError(
+                    f"User {user_id} has not set up encryption keys"
+                )
+            return bytes.fromhex(user.public_key)
 
     async def get_user_public_key(self, user_id: str) -> Optional[bytes]:
         """
@@ -386,9 +498,8 @@ class ChatService:
             ValueError: If keys not found
         """
         # Get storage key (user or org public key for storing messages)
+        # Raises StorageKeyNotFoundError if keys not configured
         storage_key = await self.get_storage_public_key(user_id, org_id)
-        if not storage_key:
-            raise ValueError("No storage key available. User must set up encryption first.")
 
         # Use the client's ephemeral transport key for response encryption
         # Convert from hex string to bytes

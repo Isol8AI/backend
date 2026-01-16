@@ -13,7 +13,6 @@ from core.crypto.primitives import (
     KeyPair,
     EncryptedPayload,
     generate_x25519_keypair,
-    derive_key_from_passcode,
     derive_key_from_ecdh,
     encrypt_aes_gcm,
     decrypt_aes_gcm,
@@ -23,6 +22,7 @@ from core.crypto.primitives import (
     generate_recovery_code,
     secure_compare,
 )
+from tests.utils.crypto_test_utils import derive_key_from_passcode
 
 
 # =============================================================================
