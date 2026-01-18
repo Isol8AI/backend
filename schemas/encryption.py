@@ -291,6 +291,10 @@ class SendEncryptedMessageRequest(BaseModel):
         None,
         description="Previous messages re-encrypted to enclave for context"
     )
+    encrypted_memories: Optional[list[EncryptedPayload]] = Field(
+        None,
+        description="Relevant memories re-encrypted to enclave for context injection"
+    )
     client_transport_public_key: str = Field(
         ...,
         min_length=64,

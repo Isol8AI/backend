@@ -87,12 +87,14 @@ class StreamChunk:
     Used for SSE streaming where each chunk may contain:
     - encrypted_content: Encrypted chunk for client (during streaming)
     - stored_messages: Final encrypted messages for storage (at end)
+    - extracted_memories: Memories extracted from conversation (at end)
     - is_final: True for the last chunk
     - error: Error message if something went wrong
     """
     encrypted_content: Optional[EncryptedPayload] = None
     stored_user_message: Optional[EncryptedPayload] = None
     stored_assistant_message: Optional[EncryptedPayload] = None
+    extracted_memories: Optional[List["ExtractedMemory"]] = None  # Forward reference
     model_used: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
@@ -123,6 +125,21 @@ class EnclaveInfo:
                 self.attestation_document.hex() if self.attestation_document else None
             ),
         }
+
+
+@dataclass
+class ExtractedMemory:
+    """
+    A memory extracted from conversation and ready for storage.
+
+    This is returned by the enclave's extract_memories method.
+    The content is already encrypted to the storage key.
+    """
+    encrypted_content: EncryptedPayload
+    embedding: List[float]
+    sector: str  # episodic, semantic, procedural, emotional, reflective
+    tags: List[str]
+    metadata: Dict  # Contains iv, auth_tag for decryption
 
 
 # =============================================================================
@@ -268,6 +285,12 @@ class MockEnclave(EnclaveInterface):
     - In production (Nitro), the private key never leaves the enclave
     """
 
+    # Model for memory extraction (uses Gemma 2 2B by default)
+    EXTRACTION_MODEL = "google/gemma-2-2b-it"
+
+    # Embedding model for generating embeddings from plaintext
+    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
     def __init__(
         self,
         inference_url: str = "https://router.huggingface.co/v1",
@@ -289,6 +312,9 @@ class MockEnclave(EnclaveInterface):
         self._inference_url = inference_url
         self._inference_token = inference_token
         self._inference_timeout = inference_timeout
+
+        # Embedding model (lazy loaded)
+        self._embedding_model = None
 
         logger.info(
             "MockEnclave initialized with public key: %s",
@@ -494,6 +520,7 @@ class MockEnclave(EnclaveInterface):
         self,
         encrypted_message: EncryptedPayload,
         encrypted_history: List[EncryptedPayload],
+        encrypted_memories: List[EncryptedPayload],
         storage_public_key: bytes,
         client_public_key: bytes,
         session_id: str,
@@ -504,6 +531,15 @@ class MockEnclave(EnclaveInterface):
 
         This is the main streaming API for routes. Each chunk's content
         is encrypted to the client's public key for secure transport.
+
+        Args:
+            encrypted_message: User's message encrypted to enclave
+            encrypted_history: Previous messages re-encrypted to enclave
+            encrypted_memories: Relevant memories re-encrypted to enclave for context
+            storage_public_key: Key for storage encryption (user or org)
+            client_public_key: Client's ephemeral key for response encryption
+            session_id: Session ID for logging
+            model: LLM model to use
 
         Yields:
             StreamChunk objects with encrypted content or final stored messages
@@ -537,11 +573,23 @@ class MockEnclave(EnclaveInterface):
             for i, msg in enumerate(history):
                 print(f"  [{i}] {msg.role}: {msg.content[:50]}..." if len(msg.content) > 50 else f"  [{i}] {msg.role}: {msg.content}")
 
+            # 2b. Decrypt memories for context injection
+            memories = []
+            if encrypted_memories:
+                print(f"\n🧠 STEP 2b: Decrypt Memories ({len(encrypted_memories)} memories)")
+                print("-" * 60)
+                memories = self._decrypt_memories(encrypted_memories)
+                for i, mem in enumerate(memories):
+                    preview = mem[:60] + "..." if len(mem) > 60 else mem
+                    print(f"  [{i}] {preview}")
+                print(f"✅ Decrypted {len(memories)} memories for context injection")
+
             # 3. Stream LLM inference, encrypting each chunk for transport
             print("\n🤖 STEP 3: Call LLM Inference")
             print("-" * 60)
             print(f"Model: {model}")
             print(f"Messages count: {len(history) + 1}")
+            print(f"Memories injected: {len(memories)}")
 
             full_response = ""
             chunk_count = 0
@@ -549,7 +597,7 @@ class MockEnclave(EnclaveInterface):
             print("-" * 60)
             print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
-            async for chunk in self._call_inference_stream(user_content, history, model):
+            async for chunk in self._call_inference_stream(user_content, history, model, memories):
                 full_response += chunk
                 chunk_count += 1
                 # Encrypt this chunk for transport to client
@@ -585,16 +633,36 @@ class MockEnclave(EnclaveInterface):
             estimated_input_tokens = len(user_content) // 4 + sum(len(m.content) for m in history) // 4
             estimated_output_tokens = len(full_response) // 4
 
+            # 5. Extract memories from conversation (async - runs in background)
+            print("\n🧠 STEP 6: Extract Memories from Conversation")
+            print("-" * 60)
+            extracted_memories = []
+            try:
+                extracted_memories = await self.extract_memories(
+                    user_message=user_content,
+                    assistant_response=full_response,
+                    storage_public_key=storage_public_key,
+                )
+                print(f"Extracted {len(extracted_memories)} memories")
+                for mem in extracted_memories:
+                    print(f"  - [{mem.sector}] {mem.tags}")
+            except Exception as e:
+                logger.warning(f"Memory extraction failed (non-fatal): {e}")
+                print(f"  Memory extraction failed (non-fatal): {e}")
+
             print("\n📋 FINAL SUMMARY")
             print("-" * 60)
+            print(f"Memories injected into context: {len(memories)}")
             print(f"Input tokens (estimated): {estimated_input_tokens}")
             print(f"Output tokens (estimated): {estimated_output_tokens}")
+            print(f"New memories extracted: {len(extracted_memories)}")
             print("=" * 80 + "\n")
 
-            # 5. Final chunk with stored messages
+            # 6. Final chunk with stored messages and extracted memories
             yield StreamChunk(
                 stored_user_message=stored_user,
                 stored_assistant_message=stored_assistant,
+                extracted_memories=extracted_memories if extracted_memories else None,
                 model_used=model,
                 input_tokens=estimated_input_tokens,
                 output_tokens=estimated_output_tokens,
@@ -630,6 +698,35 @@ class MockEnclave(EnclaveInterface):
                 content=plaintext.decode("utf-8"),
             ))
         return history
+
+    def _decrypt_memories(
+        self,
+        encrypted_memories: List[EncryptedPayload],
+    ) -> List[str]:
+        """
+        Decrypt memories for context injection.
+
+        Memories are re-encrypted to the enclave by the client,
+        so we use the CLIENT_TO_ENCLAVE context for decryption.
+
+        Returns:
+            List of decrypted memory texts
+        """
+        from . import EncryptionContext
+
+        memories = []
+        for payload in encrypted_memories:
+            try:
+                plaintext = decrypt_with_private_key(
+                    self._keypair.private_key,
+                    payload,
+                    EncryptionContext.CLIENT_TO_ENCLAVE.value,
+                )
+                memories.append(plaintext.decode("utf-8"))
+            except Exception as e:
+                logger.warning(f"Failed to decrypt memory (skipping): {e}")
+                continue
+        return memories
 
     def _build_processed_message(
         self,
@@ -671,20 +768,41 @@ class MockEnclave(EnclaveInterface):
         self,
         user_message: str,
         history: List[DecryptedMessage],
+        memories: Optional[List[str]] = None,
     ) -> List[Dict[str, str]]:
         """
         Build OpenAI-compatible messages array for LLM.
+
+        Args:
+            user_message: The current user message
+            history: Previous conversation messages
+            memories: Optional list of relevant memory texts to inject
+
+        Returns:
+            List of messages in OpenAI format
         """
+        # Build system prompt with optional memory context
+        system_content = (
+            "You are a helpful AI assistant. Note: Previous assistant "
+            "messages may contain '[Response from model-name]' prefixes - "
+            "these are internal metadata annotations showing which AI model "
+            "generated that response. Do not include such prefixes in your "
+            "own responses; just respond naturally."
+        )
+
+        # Inject memories into system prompt if available
+        if memories:
+            memory_context = "\n\n## Relevant Context (from memory)\n"
+            memory_context += "The following facts are relevant to this conversation:\n"
+            for i, memory in enumerate(memories, 1):
+                memory_context += f"- {memory}\n"
+            memory_context += "\nUse this context naturally in your response when relevant, but don't explicitly mention that you're using memories."
+            system_content += memory_context
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are a helpful AI assistant. Note: Previous assistant "
-                    "messages may contain '[Response from model-name]' prefixes - "
-                    "these are internal metadata annotations showing which AI model "
-                    "generated that response. Do not include such prefixes in your "
-                    "own responses; just respond naturally."
-                ),
+                "content": system_content,
             }
         ]
 
@@ -706,6 +824,7 @@ class MockEnclave(EnclaveInterface):
         user_message: str,
         history: List[DecryptedMessage],
         model: str,
+        memories: Optional[List[str]] = None,
     ) -> Tuple[str, int, int]:
         """
         Call LLM inference (non-streaming).
@@ -713,7 +832,7 @@ class MockEnclave(EnclaveInterface):
         Returns:
             Tuple of (response_content, input_tokens, output_tokens)
         """
-        messages = self._build_messages_for_inference(user_message, history)
+        messages = self._build_messages_for_inference(user_message, history, memories)
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -753,13 +872,14 @@ class MockEnclave(EnclaveInterface):
         user_message: str,
         history: List[DecryptedMessage],
         model: str,
+        memories: Optional[List[str]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Call LLM inference with streaming.
 
         Yields text chunks as they arrive.
         """
-        messages = self._build_messages_for_inference(user_message, history)
+        messages = self._build_messages_for_inference(user_message, history, memories)
 
         async with httpx.AsyncClient() as client:
             try:
@@ -811,6 +931,230 @@ class MockEnclave(EnclaveInterface):
             except Exception as e:
                 logger.error("Inference error: %s", str(e))
                 yield f"Error: {str(e)}"
+
+    # -------------------------------------------------------------------------
+    # Memory Extraction Methods
+    # -------------------------------------------------------------------------
+
+    def _get_embedding_model(self):
+        """
+        Lazy-load the sentence-transformers embedding model.
+
+        Only loads on first use to avoid startup delay.
+        """
+        if self._embedding_model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._embedding_model = SentenceTransformer(self.EMBEDDING_MODEL)
+                logger.info(f"Loaded embedding model: {self.EMBEDDING_MODEL}")
+            except ImportError:
+                logger.error("sentence-transformers not installed")
+                raise RuntimeError(
+                    "sentence-transformers package required for memory extraction. "
+                    "Install with: pip install sentence-transformers"
+                )
+        return self._embedding_model
+
+    def _generate_embedding(self, text: str) -> List[float]:
+        """
+        Generate embedding vector from plaintext.
+
+        Args:
+            text: Plaintext to embed
+
+        Returns:
+            List of floats (384-dimensional for all-MiniLM-L6-v2)
+        """
+        model = self._get_embedding_model()
+        embedding = model.encode(text, normalize_embeddings=True)
+        return embedding.tolist()
+
+    def _build_extraction_prompt(
+        self,
+        user_message: str,
+        assistant_response: str,
+    ) -> str:
+        """
+        Build the prompt for memory extraction LLM.
+        """
+        return f"""Extract memorable facts from this conversation as JSON.
+Only extract facts worth remembering long-term (preferences, facts about the user, how-to knowledge, etc.).
+If nothing is worth remembering, return an empty array [].
+
+Categorize each fact as one of:
+- semantic: Facts and knowledge (e.g., "User's favorite color is blue", "User works at Google")
+- episodic: Events and experiences (e.g., "User went to Paris last week")
+- procedural: How-to and preferences (e.g., "User prefers TypeScript over JavaScript")
+- emotional: Feelings and sentiments (e.g., "User is excited about their new project")
+- reflective: Meta-observations (e.g., "User tends to ask detailed follow-up questions")
+
+Conversation:
+User: {user_message}
+Assistant: {assistant_response}
+
+Output ONLY a valid JSON array with this exact format (no other text):
+[{{"text": "the memorable fact", "sector": "semantic|episodic|procedural|emotional|reflective", "tags": ["optional", "tags"]}}]
+
+If nothing memorable, output: []"""
+
+    async def _call_extraction_llm(self, prompt: str) -> List[Dict]:
+        """
+        Call the extraction LLM to parse memories from conversation.
+
+        Returns:
+            List of extracted memories with text, sector, and tags
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self._inference_url}/chat/completions",
+                    json={
+                        "model": self.EXTRACTION_MODEL,
+                        "messages": [
+                            {"role": "user", "content": prompt}
+                        ],
+                        "max_tokens": 1024,
+                        "temperature": 0.3,  # Lower temp for structured output
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self._inference_token}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=60.0,
+                )
+
+                if response.status_code != 200:
+                    logger.error(
+                        "Extraction LLM error %d: %s",
+                        response.status_code,
+                        response.text,
+                    )
+                    return []
+
+                data = response.json()
+                content = data["choices"][0]["message"]["content"].strip()
+
+                # Parse JSON from response
+                # Handle potential markdown code blocks
+                if content.startswith("```"):
+                    content = content.split("```")[1]
+                    if content.startswith("json"):
+                        content = content[4:]
+                    content = content.strip()
+
+                extracted = json.loads(content)
+
+                if not isinstance(extracted, list):
+                    logger.warning("Extraction LLM returned non-list: %s", content)
+                    return []
+
+                return extracted
+
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to parse extraction JSON: %s", str(e))
+            return []
+        except Exception as e:
+            logger.error("Extraction LLM error: %s", str(e))
+            return []
+
+    def encrypt_for_memory_storage(
+        self,
+        plaintext: bytes,
+        storage_public_key: bytes,
+    ) -> EncryptedPayload:
+        """
+        Encrypt memory content for storage.
+
+        Uses MEMORY_STORAGE context for domain separation.
+        """
+        from . import EncryptionContext
+
+        return encrypt_to_public_key(
+            storage_public_key,
+            plaintext,
+            EncryptionContext.MEMORY_STORAGE.value,
+        )
+
+    async def extract_memories(
+        self,
+        user_message: str,
+        assistant_response: str,
+        storage_public_key: bytes,
+    ) -> List[ExtractedMemory]:
+        """
+        Extract memories from a conversation turn.
+
+        This method:
+        1. Calls the extraction LLM to identify memorable facts
+        2. Generates embeddings from plaintext (for vector search)
+        3. Encrypts the memory text to the storage key
+        4. Returns ExtractedMemory objects ready for storage
+
+        Args:
+            user_message: Plaintext user message
+            assistant_response: Plaintext assistant response
+            storage_public_key: Public key for encrypting memory content
+                               (user's key for personal, org's key for org context)
+
+        Returns:
+            List of ExtractedMemory objects
+        """
+        # 1. Call extraction LLM
+        prompt = self._build_extraction_prompt(user_message, assistant_response)
+        extracted = await self._call_extraction_llm(prompt)
+
+        if not extracted:
+            logger.debug("No memories extracted from conversation")
+            return []
+
+        logger.info(f"Extracted {len(extracted)} potential memories")
+
+        memories = []
+        for item in extracted:
+            try:
+                text = item.get("text", "")
+                sector = item.get("sector", "semantic")
+                tags = item.get("tags", [])
+
+                if not text:
+                    continue
+
+                # Validate sector
+                valid_sectors = ["episodic", "semantic", "procedural", "emotional", "reflective"]
+                if sector not in valid_sectors:
+                    sector = "semantic"
+
+                # 2. Generate embedding from plaintext
+                embedding = self._generate_embedding(text)
+
+                # 3. Encrypt the memory text
+                encrypted_content = self.encrypt_for_memory_storage(
+                    text.encode("utf-8"),
+                    storage_public_key,
+                )
+
+                # 4. Build ExtractedMemory object
+                memories.append(ExtractedMemory(
+                    encrypted_content=encrypted_content,
+                    embedding=embedding,
+                    sector=sector,
+                    tags=tags,
+                    metadata={
+                        "iv": encrypted_content.iv.hex(),
+                        "auth_tag": encrypted_content.auth_tag.hex(),
+                        "ephemeral_public_key": encrypted_content.ephemeral_public_key.hex(),
+                        "hkdf_salt": encrypted_content.hkdf_salt.hex(),
+                    },
+                ))
+
+                logger.debug(f"Extracted memory: {text[:50]}... (sector: {sector})")
+
+            except Exception as e:
+                logger.warning(f"Failed to process extracted memory: {e}")
+                continue
+
+        logger.info(f"Successfully processed {len(memories)} memories")
+        return memories
 
 
 # =============================================================================

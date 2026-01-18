@@ -270,12 +270,13 @@ async def chat_stream_encrypted(
     - error: {message} - Error occurred
     """
     logger.debug(
-        "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d",
+        "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d, memory_count=%d",
         auth.user_id,
         auth.org_id or "personal",
         request.model,
         request.session_id or "new",
         len(request.encrypted_history) if request.encrypted_history else 0,
+        len(request.encrypted_memories) if request.encrypted_memories else 0,
     )
 
     # Validate model
@@ -323,6 +324,11 @@ async def chat_stream_encrypted(
         for h in request.encrypted_history:
             encrypted_history.append(h.to_crypto_payload())
 
+    encrypted_memories = []
+    if request.encrypted_memories:
+        for m in request.encrypted_memories:
+            encrypted_memories.append(m.to_crypto_payload())
+
     async def generate():
         """Generate SSE stream with encrypted content."""
         logger.debug("SSE stream started for session_id=%s", session_id)
@@ -340,6 +346,7 @@ async def chat_stream_encrypted(
                     org_id=auth.org_id,
                     encrypted_message=encrypted_msg,
                     encrypted_history=encrypted_history,
+                    encrypted_memories=encrypted_memories,
                     model=request.model,
                     client_transport_public_key=request.client_transport_public_key,
                 ):

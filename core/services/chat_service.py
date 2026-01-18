@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.crypto import EncryptedPayload
 from core.enclave import get_enclave
 from core.enclave.mock_enclave import StreamChunk
+from core.services.memory_service import MemoryService
 from models.audit_log import AuditLog
 from models.message import Message, MessageRole
 from models.session import Session
@@ -469,6 +470,7 @@ class ChatService:
         org_id: Optional[str],
         encrypted_message: EncryptedPayload,
         encrypted_history: list[EncryptedPayload],
+        encrypted_memories: list[EncryptedPayload],
         model: str,
         client_transport_public_key: str,
     ) -> AsyncGenerator[StreamChunk, None]:
@@ -488,6 +490,7 @@ class ChatService:
             org_id: Organization context (if any)
             encrypted_message: User's message encrypted to enclave
             encrypted_history: Previous messages re-encrypted to enclave
+            encrypted_memories: Relevant memories re-encrypted to enclave for context
             model: LLM model to use
             client_transport_public_key: Client's ephemeral key for response encryption
 
@@ -511,12 +514,13 @@ class ChatService:
         async for chunk in enclave.process_message_streaming(
             encrypted_message=encrypted_message,
             encrypted_history=encrypted_history,
+            encrypted_memories=encrypted_memories,
             storage_public_key=storage_key,
             client_public_key=client_key,
             session_id=session_id,
             model=model,
         ):
-            # On final chunk, store the messages
+            # On final chunk, store the messages and memories
             if chunk.is_final and not chunk.error:
                 if chunk.stored_user_message and chunk.stored_assistant_message:
                     # Store user message
@@ -539,6 +543,14 @@ class ChatService:
 
                     # Update session timestamp
                     await self.update_session_timestamp(session_id)
+
+                # Store extracted memories (if any)
+                if chunk.extracted_memories:
+                    await self._store_extracted_memories(
+                        memories=chunk.extracted_memories,
+                        user_id=user_id,
+                        org_id=org_id,
+                    )
 
             yield chunk
 
@@ -568,6 +580,77 @@ class ChatService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def _store_extracted_memories(
+        self,
+        memories: list,
+        user_id: str,
+        org_id: Optional[str],
+    ) -> None:
+        """
+        Store extracted memories from conversation.
+
+        Args:
+            memories: List of ExtractedMemory objects from enclave
+            user_id: Clerk user ID (raw, without prefix)
+            org_id: Clerk org ID (raw, without prefix) or None for personal context
+        """
+        if not memories:
+            return
+
+        memory_service = MemoryService()
+
+        # Log the memory user_id for debugging (store_memory computes this internally)
+        memory_user_id = memory_service.get_memory_user_id(user_id, org_id)
+
+        stored_count = 0
+        skipped_count = 0
+
+        for memory in memories:
+            try:
+                # Convert the encrypted payload to the format expected by memory service
+                encrypted_content = memory.encrypted_content.ciphertext.hex()
+
+                # Pass raw user_id and org_id - store_memory adds the prefix internally
+                # store_memory returns None if memory is a duplicate
+                result = await memory_service.store_memory(
+                    encrypted_content=encrypted_content,
+                    embedding=memory.embedding,
+                    user_id=user_id,
+                    org_id=org_id,
+                    sector=memory.sector,
+                    tags=memory.tags,
+                    metadata={
+                        "iv": memory.metadata.get("iv"),
+                        "auth_tag": memory.metadata.get("auth_tag"),
+                        "ephemeral_public_key": memory.metadata.get("ephemeral_public_key"),
+                        "hkdf_salt": memory.metadata.get("hkdf_salt"),
+                    },
+                )
+
+                if result is not None:
+                    stored_count += 1
+                    logger.debug(
+                        "Stored memory for %s: sector=%s, tags=%s",
+                        memory_user_id,
+                        memory.sector,
+                        memory.tags,
+                    )
+                else:
+                    skipped_count += 1
+                    logger.debug("Skipped duplicate memory for %s", memory_user_id)
+
+            except Exception as e:
+                logger.warning(
+                    "Failed to store extracted memory (non-fatal): %s", str(e)
+                )
+
+        logger.info(
+            "Memories for %s: %d stored, %d skipped (duplicates)",
+            memory_user_id,
+            stored_count,
+            skipped_count,
+        )
 
     async def verify_can_send_encrypted(
         self,
