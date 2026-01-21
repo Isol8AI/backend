@@ -26,7 +26,7 @@ from models.user import User
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/securechat"
+    "postgresql+asyncpg://postgres:AnkleTaker2314_@db.asisbbkdmtioeowicepp.supabase.co:5432/postgres"
 )
 
 
@@ -36,21 +36,37 @@ def parse_sse_events(response_text: str) -> list[dict]:
     return [json.loads(line.replace("data: ", "")) for line in lines]
 
 
+TEST_SCHEMA = "test"
+
+
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create a database session for each test with automatic cleanup."""
+    """Create a database session for each test with automatic cleanup.
+
+    Uses a separate 'test' schema to isolate test data from production.
+    """
+    from sqlalchemy import text
+
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, pool_pre_ping=True)
 
+    # Create test schema and set search_path
     async with engine.begin() as conn:
+        await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {TEST_SCHEMA}"))
+        await conn.execute(text(f"SET search_path TO {TEST_SCHEMA}"))
         await conn.run_sync(Base.metadata.create_all)
 
+    # Create session factory with test schema
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with session_factory() as session:
+        # Set search_path for this session
+        await session.execute(text(f"SET search_path TO {TEST_SCHEMA}"))
         yield session
         await session.rollback()
 
+    # Cleanup: delete all test data
     async with session_factory() as cleanup_session:
+        await cleanup_session.execute(text(f"SET search_path TO {TEST_SCHEMA}"))
         await cleanup_session.execute(Message.__table__.delete())
         await cleanup_session.execute(Session.__table__.delete())
         await cleanup_session.execute(ContextStore.__table__.delete())

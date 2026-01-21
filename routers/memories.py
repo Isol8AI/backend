@@ -84,9 +84,10 @@ class StoreMemoryRequest(BaseModel):
 
 class StoreMemoryResponse(BaseModel):
     """Response after storing a memory."""
-    id: str
-    primary_sector: str
-    salience: float
+    id: Optional[str] = None
+    primary_sector: Optional[str] = None
+    salience: Optional[float] = None
+    duplicate: bool = False
 
 
 class SearchMemoriesRequest(BaseModel):
@@ -135,7 +136,7 @@ class DeleteMemoriesRequest(BaseModel):
 # Endpoints
 # =============================================================================
 
-def get_memory_service() -> MemoryService:
+async def get_memory_service() -> MemoryService:
     """Dependency to get memory service instance."""
     return MemoryService()
 
@@ -162,6 +163,10 @@ async def store_memory(
             tags=request.tags,
             metadata=request.metadata,
         )
+
+        if result is None:
+            # Duplicate memory detected, return success but flag it
+            return StoreMemoryResponse(duplicate=True)
 
         return StoreMemoryResponse(
             id=result.get("id", ""),
@@ -198,7 +203,7 @@ async def search_memories(
 
         memories = [
             MemoryItem(
-                id=r.get("id", ""),
+                id=str(r.get("id", "")),  # Convert UUID to string
                 content=r.get("content", ""),
                 primary_sector=r.get("primary_sector", "semantic"),
                 tags=parse_tags(r),
@@ -243,7 +248,7 @@ async def list_memories(
 
         memories = [
             MemoryItem(
-                id=r.get("id", ""),
+                id=str(r.get("id", "")),  # Convert UUID to string
                 content=r.get("content", ""),
                 primary_sector=r.get("primary_sector", "semantic"),
                 tags=parse_tags(r),
@@ -275,9 +280,10 @@ async def get_memory(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
 
     # Verify user has access
-    # Clerk IDs already have prefixes (user_XXX, org_XXX)
+    # Memory user_id has prefixes (user_XXX, org_XXX) from MemoryService.get_memory_user_id
     memory_user_id = result.get("user_id", "")
-    allowed_ids = [auth.user_id]  # auth.user_id is already 'user_XXX'
+    # Build allowed IDs using the same prefix pattern
+    allowed_ids = [MemoryService.get_memory_user_id(auth.user_id)]
     # Note: For org access, we'd need to verify org membership
     # For now, allow if it matches user or any org the user might belong to
 
@@ -287,7 +293,7 @@ async def get_memory(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     return MemoryItem(
-        id=result.get("id", ""),
+        id=str(result.get("id", "")),  # Convert UUID to string
         content=result.get("content", ""),
         primary_sector=result.get("primary_sector", "semantic"),
         tags=result.get("tags", []) if isinstance(result.get("tags"), list) else [],

@@ -88,6 +88,7 @@ class StreamChunk:
     - encrypted_content: Encrypted chunk for client (during streaming)
     - stored_messages: Final encrypted messages for storage (at end)
     - extracted_memories: Memories extracted from conversation (at end)
+    - extracted_facts: Facts extracted from conversation (at end, encrypted for client)
     - is_final: True for the last chunk
     - error: Error message if something went wrong
     """
@@ -95,6 +96,7 @@ class StreamChunk:
     stored_user_message: Optional[EncryptedPayload] = None
     stored_assistant_message: Optional[EncryptedPayload] = None
     extracted_memories: Optional[List["ExtractedMemory"]] = None  # Forward reference
+    extracted_facts: Optional[List["ExtractedFact"]] = None  # Facts for client-side storage
     model_used: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
@@ -140,6 +142,24 @@ class ExtractedMemory:
     sector: str  # episodic, semantic, procedural, emotional, reflective
     tags: List[str]
     metadata: Dict  # Contains iv, auth_tag for decryption
+    salience: float = 0.5  # Importance score 0.0-1.0, computed from plaintext
+
+
+@dataclass
+class ExtractedFact:
+    """
+    A temporal fact extracted from conversation.
+
+    Facts are structured knowledge in subject-predicate-object form.
+    The encrypted_payload contains the full fact data, encrypted to the
+    client's transport key so they can decrypt and store locally.
+
+    Attributes:
+        encrypted_payload: Encrypted JSON containing {subject, predicate, object, confidence, type, entities}
+        fact_id: Unique identifier for the fact
+    """
+    encrypted_payload: EncryptedPayload
+    fact_id: str
 
 
 # =============================================================================
@@ -521,6 +541,7 @@ class MockEnclave(EnclaveInterface):
         encrypted_message: EncryptedPayload,
         encrypted_history: List[EncryptedPayload],
         encrypted_memories: List[EncryptedPayload],
+        facts_context: Optional[str],
         storage_public_key: bytes,
         client_public_key: bytes,
         session_id: str,
@@ -536,6 +557,7 @@ class MockEnclave(EnclaveInterface):
             encrypted_message: User's message encrypted to enclave
             encrypted_history: Previous messages re-encrypted to enclave
             encrypted_memories: Relevant memories re-encrypted to enclave for context
+            facts_context: Client-side formatted facts context (already decrypted, plaintext)
             storage_public_key: Key for storage encryption (user or org)
             client_public_key: Client's ephemeral key for response encryption
             session_id: Session ID for logging
@@ -584,12 +606,20 @@ class MockEnclave(EnclaveInterface):
                     print(f"  [{i}] {preview}")
                 print(f"✅ Decrypted {len(memories)} memories for context injection")
 
+            # 2c. Log facts context if provided
+            if facts_context:
+                print(f"\n📋 STEP 2c: Session Facts Context")
+                print("-" * 60)
+                preview = facts_context[:200] + "..." if len(facts_context) > 200 else facts_context
+                print(f"Facts context: {preview}")
+
             # 3. Stream LLM inference, encrypting each chunk for transport
             print("\n🤖 STEP 3: Call LLM Inference")
             print("-" * 60)
             print(f"Model: {model}")
             print(f"Messages count: {len(history) + 1}")
             print(f"Memories injected: {len(memories)}")
+            print(f"Facts context: {'Yes' if facts_context else 'No'}")
 
             full_response = ""
             chunk_count = 0
@@ -597,7 +627,7 @@ class MockEnclave(EnclaveInterface):
             print("-" * 60)
             print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
-            async for chunk in self._call_inference_stream(user_content, history, model, memories):
+            async for chunk in self._call_inference_stream(user_content, history, model, memories, facts_context):
                 full_response += chunk
                 chunk_count += 1
                 # Encrypt this chunk for transport to client
@@ -645,24 +675,44 @@ class MockEnclave(EnclaveInterface):
                 )
                 print(f"Extracted {len(extracted_memories)} memories")
                 for mem in extracted_memories:
-                    print(f"  - [{mem.sector}] {mem.tags}")
+                    print(f"  - [{mem.sector}]")
             except Exception as e:
                 logger.warning(f"Memory extraction failed (non-fatal): {e}")
                 print(f"  Memory extraction failed (non-fatal): {e}")
 
+            # 6. Extract facts from conversation (encrypted to client for local storage)
+            print("\n📝 STEP 7: Extract Facts from Conversation")
+            print("-" * 60)
+            extracted_facts = []
+            try:
+                extracted_facts = await self.extract_facts(
+                    user_message=user_content,
+                    assistant_response=full_response,
+                    client_public_key=client_public_key,
+                )
+                print(f"Extracted {len(extracted_facts)} facts")
+                for fact in extracted_facts:
+                    print(f"  - fact_id: {fact.fact_id[:8]}...")
+            except Exception as e:
+                logger.warning(f"Fact extraction failed (non-fatal): {e}")
+                print(f"  Fact extraction failed (non-fatal): {e}")
+
             print("\n📋 FINAL SUMMARY")
             print("-" * 60)
-            print(f"Memories injected into context: {len(memories)}")
+            print(f"Session facts injected: {'Yes' if facts_context else 'No'}")
+            print(f"Long-term memories injected: {len(memories)}")
             print(f"Input tokens (estimated): {estimated_input_tokens}")
             print(f"Output tokens (estimated): {estimated_output_tokens}")
             print(f"New memories extracted: {len(extracted_memories)}")
+            print(f"New facts extracted: {len(extracted_facts)}")
             print("=" * 80 + "\n")
 
-            # 6. Final chunk with stored messages and extracted memories
+            # 7. Final chunk with stored messages, memories, and facts
             yield StreamChunk(
                 stored_user_message=stored_user,
                 stored_assistant_message=stored_assistant,
                 extracted_memories=extracted_memories if extracted_memories else None,
+                extracted_facts=extracted_facts if extracted_facts else None,
                 model_used=model,
                 input_tokens=estimated_input_tokens,
                 output_tokens=estimated_output_tokens,
@@ -769,6 +819,7 @@ class MockEnclave(EnclaveInterface):
         user_message: str,
         history: List[DecryptedMessage],
         memories: Optional[List[str]] = None,
+        facts_context: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """
         Build OpenAI-compatible messages array for LLM.
@@ -776,12 +827,13 @@ class MockEnclave(EnclaveInterface):
         Args:
             user_message: The current user message
             history: Previous conversation messages
-            memories: Optional list of relevant memory texts to inject
+            memories: Optional list of relevant memory texts to inject (from long-term storage)
+            facts_context: Optional client-side formatted facts context string (session facts)
 
         Returns:
             List of messages in OpenAI format
         """
-        # Build system prompt with optional memory context
+        # Build system prompt with optional memory and facts context
         system_content = (
             "You are a helpful AI assistant. Note: Previous assistant "
             "messages may contain '[Response from model-name]' prefixes - "
@@ -790,10 +842,14 @@ class MockEnclave(EnclaveInterface):
             "own responses; just respond naturally."
         )
 
-        # Inject memories into system prompt if available
+        # Inject facts context (client-side session facts) if available
+        if facts_context:
+            system_content += f"\n\n{facts_context}"
+
+        # Inject memories (long-term storage) into system prompt if available
         if memories:
-            memory_context = "\n\n## Relevant Context (from memory)\n"
-            memory_context += "The following facts are relevant to this conversation:\n"
+            memory_context = "\n\n## Long-Term Memory\n"
+            memory_context += "The following facts are from long-term memory:\n"
             for i, memory in enumerate(memories, 1):
                 memory_context += f"- {memory}\n"
             memory_context += "\nUse this context naturally in your response when relevant, but don't explicitly mention that you're using memories."
@@ -825,6 +881,7 @@ class MockEnclave(EnclaveInterface):
         history: List[DecryptedMessage],
         model: str,
         memories: Optional[List[str]] = None,
+        facts_context: Optional[str] = None,
     ) -> Tuple[str, int, int]:
         """
         Call LLM inference (non-streaming).
@@ -832,7 +889,7 @@ class MockEnclave(EnclaveInterface):
         Returns:
             Tuple of (response_content, input_tokens, output_tokens)
         """
-        messages = self._build_messages_for_inference(user_message, history, memories)
+        messages = self._build_messages_for_inference(user_message, history, memories, facts_context)
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -873,13 +930,14 @@ class MockEnclave(EnclaveInterface):
         history: List[DecryptedMessage],
         model: str,
         memories: Optional[List[str]] = None,
+        facts_context: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Call LLM inference with streaming.
 
         Yields text chunks as they arrive.
         """
-        messages = self._build_messages_for_inference(user_message, history, memories)
+        messages = self._build_messages_for_inference(user_message, history, memories, facts_context)
 
         async with httpx.AsyncClient() as client:
             try:
@@ -988,12 +1046,21 @@ Categorize each fact as one of:
 - emotional: Feelings and sentiments (e.g., "User is excited about their new project")
 - reflective: Meta-observations (e.g., "User tends to ask detailed follow-up questions")
 
+Rate each fact's importance (salience) from 0.0 to 1.0:
+- 0.9-1.0: Critical personal info (name, job, location, core preferences)
+- 0.7-0.8: Important preferences or facts that affect future interactions
+- 0.5-0.6: Useful context that may be relevant later
+- 0.3-0.4: Minor observations, less likely to be needed
+
 Conversation:
 User: {user_message}
 Assistant: {assistant_response}
 
 Output ONLY a valid JSON array with this exact format (no other text):
-[{{"text": "the memorable fact", "sector": "semantic|episodic|procedural|emotional|reflective", "tags": ["optional", "tags"]}}]
+[{{"text": "the memorable fact", "sector": "semantic|episodic|procedural|emotional|reflective", "salience": 0.7}}]
+
+IMPORTANT: Do NOT include tags or any other metadata that could reveal content details.
+The sector and salience provide sufficient categorization.
 
 If nothing memorable, output: []"""
 
@@ -1114,7 +1181,9 @@ If nothing memorable, output: []"""
             try:
                 text = item.get("text", "")
                 sector = item.get("sector", "semantic")
-                tags = item.get("tags", [])
+                salience = item.get("salience", 0.5)
+                # Tags removed for security - they could reveal content details
+                # Sectors provide sufficient categorization
 
                 if not text:
                     continue
@@ -1123,6 +1192,13 @@ If nothing memorable, output: []"""
                 valid_sectors = ["episodic", "semantic", "procedural", "emotional", "reflective"]
                 if sector not in valid_sectors:
                     sector = "semantic"
+
+                # Validate salience (0.0-1.0)
+                try:
+                    salience = float(salience)
+                    salience = max(0.0, min(1.0, salience))
+                except (ValueError, TypeError):
+                    salience = 0.5
 
                 # 2. Generate embedding from plaintext
                 embedding = self._generate_embedding(text)
@@ -1134,20 +1210,22 @@ If nothing memorable, output: []"""
                 )
 
                 # 4. Build ExtractedMemory object
+                # Note: tags intentionally empty for security (content details stay encrypted)
                 memories.append(ExtractedMemory(
                     encrypted_content=encrypted_content,
                     embedding=embedding,
                     sector=sector,
-                    tags=tags,
+                    tags=[],  # Empty - content categorization via sector only
                     metadata={
                         "iv": encrypted_content.iv.hex(),
                         "auth_tag": encrypted_content.auth_tag.hex(),
                         "ephemeral_public_key": encrypted_content.ephemeral_public_key.hex(),
                         "hkdf_salt": encrypted_content.hkdf_salt.hex(),
                     },
+                    salience=salience,
                 ))
 
-                logger.debug(f"Extracted memory: {text[:50]}... (sector: {sector})")
+                logger.debug(f"Extracted memory: {text[:50]}... (sector: {sector}, salience: {salience})")
 
             except Exception as e:
                 logger.warning(f"Failed to process extracted memory: {e}")
@@ -1155,6 +1233,197 @@ If nothing memorable, output: []"""
 
         logger.info(f"Successfully processed {len(memories)} memories")
         return memories
+
+    async def extract_facts(
+        self,
+        user_message: str,
+        assistant_response: str,
+        client_public_key: bytes,
+    ) -> List[ExtractedFact]:
+        """
+        Extract temporal facts from a conversation turn.
+
+        Facts are structured knowledge (subject-predicate-object) that can be
+        queried later. They are encrypted to the client's transport key so
+        the client can decrypt and store them in local IndexedDB.
+
+        Args:
+            user_message: Plaintext user message
+            assistant_response: Plaintext assistant response
+            client_public_key: Client's transport key for encrypting facts
+
+        Returns:
+            List of ExtractedFact objects (encrypted for client)
+        """
+        import uuid
+
+        # Build fact extraction prompt
+        prompt = self._build_fact_extraction_prompt(user_message, assistant_response)
+
+        # Call extraction LLM with error handling
+        try:
+            extracted = await self._call_fact_extraction_llm(prompt)
+        except Exception as e:
+            logger.warning(f"Fact extraction LLM call failed: {e}")
+            return []
+
+        if not extracted:
+            logger.debug("No facts extracted from conversation")
+            return []
+
+        logger.info(f"Extracted {len(extracted)} potential facts")
+
+        facts = []
+        valid_predicates = {
+            "prefers", "works_at", "located_in", "interested_in",
+            "has_skill", "dislikes", "plans_to", "uses", "knows", "mentioned"
+        }
+        predicate_to_type = {
+            "prefers": "preference",
+            "works_at": "identity",
+            "located_in": "identity",
+            "interested_in": "preference",
+            "has_skill": "identity",
+            "dislikes": "preference",
+            "plans_to": "plan",
+            "uses": "preference",
+            "knows": "observation",
+            "mentioned": "observation",
+        }
+
+        for item in extracted:
+            try:
+                subject = item.get("subject", "").lower().strip()
+                predicate = item.get("predicate", "").lower().strip()
+                obj = item.get("object", "").strip()
+                confidence = item.get("confidence", 0.7)
+
+                if not subject or not predicate or not obj:
+                    continue
+
+                if predicate not in valid_predicates:
+                    continue
+
+                # Validate confidence
+                try:
+                    confidence = float(confidence)
+                    confidence = max(0.0, min(1.0, confidence))
+                except (ValueError, TypeError):
+                    confidence = 0.7
+
+                # Skip low confidence
+                if confidence < 0.5:
+                    continue
+
+                # Generate fact ID
+                fact_id = str(uuid.uuid4())
+
+                # Build fact data
+                fact_data = {
+                    "id": fact_id,
+                    "subject": subject,
+                    "predicate": predicate,
+                    "object": obj,
+                    "confidence": confidence,
+                    "type": predicate_to_type.get(predicate, "observation"),
+                    "source": "system",  # 'system' matches frontend FactSource type
+                    "entities": self._extract_entities(obj, predicate),
+                }
+
+                # Encrypt fact data to client's transport key
+                fact_json = json.dumps(fact_data).encode("utf-8")
+                encrypted_fact = encrypt_to_public_key(
+                    recipient_public_key=client_public_key,
+                    plaintext=fact_json,
+                    context="fact-extraction",
+                )
+
+                facts.append(ExtractedFact(
+                    encrypted_payload=encrypted_fact,
+                    fact_id=fact_id,
+                ))
+
+                logger.debug(f"Extracted fact: {subject} {predicate} {obj} (confidence: {confidence})")
+
+            except Exception as e:
+                logger.warning(f"Failed to process extracted fact: {e}")
+                continue
+
+        logger.info(f"Successfully processed {len(facts)} facts")
+        return facts
+
+    def _build_fact_extraction_prompt(self, user_message: str, assistant_response: str) -> str:
+        """Build prompt for fact extraction LLM."""
+        return f"""Extract facts from this conversation as JSON. Only extract facts worth remembering long-term.
+
+Valid predicates: prefers, works_at, located_in, interested_in, has_skill, dislikes, plans_to, uses, knows, mentioned
+
+Conversation:
+User: {user_message}
+Assistant: {assistant_response}
+
+Output ONLY a valid JSON array with this format (no other text):
+[{{"subject": "user", "predicate": "prefers", "object": "TypeScript", "confidence": 0.9}}]
+
+If no facts worth extracting, output: []"""
+
+    async def _call_fact_extraction_llm(self, prompt: str) -> List[Dict]:
+        """Call extraction LLM for facts."""
+        # Use the same LLM as memory extraction
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            # Use a smaller, faster model for extraction
+            model = "mistralai/Mistral-7B-Instruct-v0.3"
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.inference_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.inference_token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "max_tokens": 256,
+                        "temperature": 0.3,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+
+                # Parse JSON from response
+                import re
+                json_match = re.search(r'\[[\s\S]*?\]', content)
+                if json_match:
+                    return json.loads(json_match.group())
+                return []
+
+        except Exception as e:
+            logger.warning(f"Fact extraction LLM call failed: {e}")
+            return []
+
+    def _extract_entities(self, obj: str, predicate: str) -> List[str]:
+        """Extract entity tags from the object and predicate."""
+        import re
+        entities = []
+
+        # Normalize object
+        normalized = re.sub(r'[^a-z0-9\s]', '', obj.lower()).strip()
+        if len(normalized) > 2:
+            entities.append(normalized)
+
+        # Add predicate as category
+        entities.append(predicate)
+
+        # Split multi-word objects
+        words = [w for w in normalized.split() if len(w) > 3]
+        for word in words:
+            if word not in entities:
+                entities.append(word)
+
+        return entities
 
 
 # =============================================================================

@@ -22,7 +22,7 @@ def mock_openmemory():
     mock.get = AsyncMock()
     mock.delete = AsyncMock()
     mock.delete_all = AsyncMock()
-    mock.history = MagicMock()
+    mock.history = AsyncMock()
     return mock
 
 
@@ -80,19 +80,29 @@ class TestGetMemoryUserId:
     """Tests for get_memory_user_id static method."""
 
     def test_personal_context_returns_user_prefix(self):
-        """Personal context returns user_{user_id}."""
-        result = MemoryService.get_memory_user_id("clerk_user_123")
-        assert result == "user_clerk_user_123"
+        """Personal context adds user_ prefix if not present."""
+        result = MemoryService.get_memory_user_id("clerk_abc123")
+        assert result == "user_clerk_abc123"
+
+    def test_personal_context_preserves_existing_prefix(self):
+        """Personal context preserves existing user_ prefix (Clerk format)."""
+        result = MemoryService.get_memory_user_id("user_37uHETjuCsViqoAnQmG1tyzVWns")
+        assert result == "user_37uHETjuCsViqoAnQmG1tyzVWns"
 
     def test_org_context_returns_org_prefix(self):
-        """Org context returns org_{org_id}."""
-        result = MemoryService.get_memory_user_id("clerk_user_123", org_id="clerk_org_456")
+        """Org context adds org_ prefix if not present."""
+        result = MemoryService.get_memory_user_id("clerk_abc123", org_id="clerk_org_456")
         assert result == "org_clerk_org_456"
+
+    def test_org_context_preserves_existing_prefix(self):
+        """Org context preserves existing org_ prefix (Clerk format)."""
+        result = MemoryService.get_memory_user_id("user_123", org_id="org_2abc123def")
+        assert result == "org_2abc123def"
 
     def test_org_id_takes_precedence(self):
         """When org_id is provided, it takes precedence over user_id."""
         result = MemoryService.get_memory_user_id("user_123", org_id="org_456")
-        assert result == "org_org_456"
+        assert result == "org_456"
         assert "user_123" not in result
 
 
@@ -127,7 +137,8 @@ class TestStoreMemory:
         assert result["id"] == "mem_new"
         mock_openmemory.add_with_embedding.assert_called_once()
         call_kwargs = mock_openmemory.add_with_embedding.call_args.kwargs
-        assert call_kwargs["user_id"] == "user_user_123"
+        # user_123 already has user_ prefix (Clerk format), so no doubling
+        assert call_kwargs["user_id"] == "user_123"
         assert call_kwargs["content"] == "<ciphertext>"
         assert call_kwargs["embedding"] == sample_embedding
 
@@ -152,7 +163,8 @@ class TestStoreMemory:
                 )
 
         call_kwargs = mock_openmemory.add_with_embedding.call_args.kwargs
-        assert call_kwargs["user_id"] == "org_org_456"
+        # org_456 already has org_ prefix (Clerk format), so no doubling
+        assert call_kwargs["user_id"] == "org_456"
         assert call_kwargs["metadata"]["context"] == "org"
         assert call_kwargs["metadata"]["org_id"] == "org_456"
 
@@ -218,7 +230,7 @@ class TestSearchMemories:
         assert len(results) == 2
         mock_openmemory.search_with_embedding.assert_called_once()
         call_kwargs = mock_openmemory.search_with_embedding.call_args.kwargs
-        assert call_kwargs["user_id"] == "user_user_123"
+        assert call_kwargs["user_id"] == "user_123"
 
     @pytest.mark.asyncio
     async def test_searches_org_and_personal_in_org_context(self, mock_openmemory, sample_embedding):
@@ -245,11 +257,11 @@ class TestSearchMemories:
 
         # Check that org was searched first
         first_call = mock_openmemory.search_with_embedding.call_args_list[0].kwargs
-        assert first_call["user_id"] == "org_org_456"
+        assert first_call["user_id"] == "org_456"
 
         # Then personal
         second_call = mock_openmemory.search_with_embedding.call_args_list[1].kwargs
-        assert second_call["user_id"] == "user_user_123"
+        assert second_call["user_id"] == "user_123"
 
     @pytest.mark.asyncio
     async def test_searches_org_only_when_include_personal_false(self, mock_openmemory, sample_embedding, sample_search_results):
@@ -270,7 +282,7 @@ class TestSearchMemories:
         # Only one search call for org
         assert mock_openmemory.search_with_embedding.call_count == 1
         call_kwargs = mock_openmemory.search_with_embedding.call_args.kwargs
-        assert call_kwargs["user_id"] == "org_org_456"
+        assert call_kwargs["user_id"] == "org_456"
 
     @pytest.mark.asyncio
     async def test_results_sorted_by_score(self, mock_openmemory, sample_embedding):
@@ -363,7 +375,7 @@ class TestDeleteMemory:
     @pytest.mark.asyncio
     async def test_deletes_owned_personal_memory(self, mock_openmemory, sample_memory_result):
         """Deletes memory owned by user in personal context."""
-        sample_memory_result["user_id"] = "user_user_123"
+        sample_memory_result["user_id"] = "user_123"
         mock_openmemory.get.return_value = sample_memory_result
         mock_openmemory.delete.return_value = None
 
@@ -381,7 +393,7 @@ class TestDeleteMemory:
     @pytest.mark.asyncio
     async def test_deletes_org_memory_when_in_org_context(self, mock_openmemory, sample_memory_result):
         """Deletes org memory when user is in org context."""
-        sample_memory_result["user_id"] = "org_org_456"
+        sample_memory_result["user_id"] = "org_456"
         mock_openmemory.get.return_value = sample_memory_result
 
         with patch.object(MemoryService, '_memory', mock_openmemory):
@@ -453,7 +465,7 @@ class TestListMemories:
 
         assert len(results) == 2
         mock_openmemory.history.assert_called_once_with(
-            user_id="user_user_123",
+            user_id="user_123",
             limit=10,
             offset=0,
         )
@@ -476,7 +488,7 @@ class TestListMemories:
 
         # Should call history with org user_id
         mock_openmemory.history.assert_called_with(
-            user_id="org_org_456",
+            user_id="org_456",
             limit=10,
             offset=0,
         )
@@ -520,7 +532,7 @@ class TestDeleteAllMemories:
                 )
 
         assert count == 3
-        mock_openmemory.delete_all.assert_called_once_with(user_id="user_user_123")
+        mock_openmemory.delete_all.assert_called_once_with(user_id="user_123")
 
     @pytest.mark.asyncio
     async def test_deletes_org_memories(self, mock_openmemory):
@@ -538,7 +550,7 @@ class TestDeleteAllMemories:
                 )
 
         assert count == 2
-        mock_openmemory.delete_all.assert_called_once_with(user_id="org_org_456")
+        mock_openmemory.delete_all.assert_called_once_with(user_id="org_456")
 
     @pytest.mark.asyncio
     async def test_raises_error_on_failure(self, mock_openmemory):

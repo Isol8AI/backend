@@ -292,7 +292,11 @@ class TestGetMemoryEndpoint:
             "last_accessed_at": 1704067200000,
         }
 
-        with patch("routers.memories.MemoryService", return_value=mock_memory_service):
+        # Create a mock class that includes the static method
+        mock_class = MagicMock(return_value=mock_memory_service)
+        mock_class.get_memory_user_id = MagicMock(return_value="user_user_test_123")
+
+        with patch("routers.memories.MemoryService", mock_class):
             response = await async_client.get("/api/v1/memories/mem_123")
 
         assert response.status_code == 200

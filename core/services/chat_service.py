@@ -471,6 +471,7 @@ class ChatService:
         encrypted_message: EncryptedPayload,
         encrypted_history: list[EncryptedPayload],
         encrypted_memories: list[EncryptedPayload],
+        facts_context: Optional[str],
         model: str,
         client_transport_public_key: str,
     ) -> AsyncGenerator[StreamChunk, None]:
@@ -491,6 +492,7 @@ class ChatService:
             encrypted_message: User's message encrypted to enclave
             encrypted_history: Previous messages re-encrypted to enclave
             encrypted_memories: Relevant memories re-encrypted to enclave for context
+            facts_context: Client-side formatted facts context (already decrypted, plaintext)
             model: LLM model to use
             client_transport_public_key: Client's ephemeral key for response encryption
 
@@ -515,6 +517,7 @@ class ChatService:
             encrypted_message=encrypted_message,
             encrypted_history=encrypted_history,
             encrypted_memories=encrypted_memories,
+            facts_context=facts_context,
             storage_public_key=storage_key,
             client_public_key=client_key,
             session_id=session_id,
@@ -626,6 +629,7 @@ class ChatService:
                         "ephemeral_public_key": memory.metadata.get("ephemeral_public_key"),
                         "hkdf_salt": memory.metadata.get("hkdf_salt"),
                     },
+                    salience=memory.salience,
                 )
 
                 if result is not None:

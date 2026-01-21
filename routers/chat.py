@@ -270,13 +270,14 @@ async def chat_stream_encrypted(
     - error: {message} - Error occurred
     """
     logger.debug(
-        "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d, memory_count=%d",
+        "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d, memory_count=%d, has_facts=%s",
         auth.user_id,
         auth.org_id or "personal",
         request.model,
         request.session_id or "new",
         len(request.encrypted_history) if request.encrypted_history else 0,
         len(request.encrypted_memories) if request.encrypted_memories else 0,
+        bool(request.facts_context),
     )
 
     # Validate model
@@ -347,6 +348,7 @@ async def chat_stream_encrypted(
                     encrypted_message=encrypted_msg,
                     encrypted_history=encrypted_history,
                     encrypted_memories=encrypted_memories,
+                    facts_context=request.facts_context,
                     model=request.model,
                     client_transport_public_key=request.client_transport_public_key,
                 ):
@@ -365,6 +367,18 @@ async def chat_stream_encrypted(
                         # Send stored message info
                         logger.debug("Messages stored for session_id=%s", session_id)
                         yield f"data: {json.dumps({'type': 'stored', 'model_used': chunk.model_used, 'input_tokens': chunk.input_tokens, 'output_tokens': chunk.output_tokens})}\n\n"
+
+                        # Send extracted facts (encrypted for client-side storage)
+                        if chunk.extracted_facts:
+                            facts_data = []
+                            for fact in chunk.extracted_facts:
+                                api_payload = EncryptedPayload.from_crypto_payload(fact.encrypted_payload)
+                                facts_data.append({
+                                    'fact_id': fact.fact_id,
+                                    'encrypted_payload': api_payload.model_dump(),
+                                })
+                            logger.debug("Sending %d extracted facts for session_id=%s", len(facts_data), session_id)
+                            yield f"data: {json.dumps({'type': 'extracted_facts', 'facts': facts_data})}\n\n"
 
             logger.debug("SSE stream complete for session_id=%s, chunks=%d", session_id, chunk_count)
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

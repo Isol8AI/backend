@@ -11,6 +11,11 @@ argon2-cffi==23.1.0
 httpx==0.27.0
 # For HF Integration
 huggingface-hub==0.21.4
+# For OpenMemory SDK (LLM-based fact extraction)
+openai>=1.0.0
+pypdf>=4.0.0
+mammoth>=1.6.0
+markdownify>=0.11.0
 # For memory embedding generation in enclave
 sentence-transformers==3.0.1
 # Auth
