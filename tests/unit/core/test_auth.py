@@ -310,16 +310,19 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_returns_auth_context_with_org_claims(self, mock_credentials, valid_jwks):
         """get_current_user returns AuthContext with org claims from JWT."""
+        # Use Clerk v2 compact format with nested 'o' object
         payload = {
             "sub": "user_123",
             "email": "test@example.com",
             "iss": TEST_ISSUER,
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
-            "org_id": "org_456",
-            "org_role": "org:admin",
-            "org_slug": "acme-corp",
-            "org_permissions": ["org:read", "org:write"],
+            "o": {
+                "id": "org_456",
+                "rol": "admin",  # Without "org:" prefix - code adds it
+                "slg": "acme-corp",
+                "per": "org:read,org:write",  # Comma-separated string
+            },
         }
 
         with patch("core.auth.httpx.AsyncClient") as mock_client_class, \

@@ -128,7 +128,7 @@ class BatchDistributeOrgKeyRequest(BaseModel):
 
 
 class PendingDistributionResponse(BaseModel):
-    """Member who needs org key distribution."""
+    """Member who is ready for org key distribution (has personal keys)."""
     membership_id: str
     user_id: str
     user_public_key: str
@@ -138,11 +138,23 @@ class PendingDistributionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NeedsPersonalSetupResponse(BaseModel):
+    """Member who needs to set up personal encryption first."""
+    membership_id: str
+    user_id: str
+    role: str
+    joined_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class PendingDistributionsResponse(BaseModel):
-    """List of members needing key distribution."""
+    """List of members needing key distribution, split by readiness."""
     org_id: str
-    pending: List[PendingDistributionResponse]
-    total_count: int
+    ready_for_distribution: List[PendingDistributionResponse]
+    needs_personal_setup: List[NeedsPersonalSetupResponse]
+    ready_count: int
+    needs_setup_count: int
 
 
 class MembershipResponse(BaseModel):
@@ -232,3 +244,21 @@ class AuditLogsListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class BulkDistributionResultResponse(BaseModel):
+    """Result for a single distribution in bulk operation."""
+    membership_id: str
+    user_id: str
+    success: bool
+    error: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class BulkDistributionResponse(BaseModel):
+    """Response for bulk key distribution."""
+    org_id: str
+    results: List[BulkDistributionResultResponse]
+    success_count: int
+    failure_count: int

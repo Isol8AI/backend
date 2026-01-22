@@ -15,6 +15,7 @@ from core.services.org_key_service import (
     OrgKeysAlreadyExistError,
     OrgKeysNotFoundError,
     MembershipNotFoundError,
+    MemberNotReadyError,
     NotAdminError,
 )
 from models.context_store import ContextStore
@@ -25,9 +26,13 @@ from schemas.organization_encryption import (
     CreateOrgKeysRequest,
     OrgEncryptionStatusResponse,
     DistributeOrgKeyRequest,
+    BatchDistributeOrgKeyRequest,
     PendingDistributionResponse,
+    NeedsPersonalSetupResponse,
     PendingDistributionsResponse,
     MembershipWithKeyResponse,
+    BulkDistributionResponse,
+    BulkDistributionResultResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,12 +96,36 @@ async def sync_organization(
     Creates the organization if it doesn't exist, updates it if it does.
     Also creates or updates the user's membership.
 
-    Note: Uses org_id from request body rather than JWT claims because
-    the frontend may call this before the JWT is refreshed with org claims.
+    Security: Validates org membership via JWT claim or database record.
+    Database fallback handles first-time access when JWT hasn't refreshed yet.
     """
     org_id = request.org_id
 
     async with session_factory() as session:
+        # Security validation: verify user is a member of this org
+        if auth.org_id:
+            # JWT has org claim - must match exactly
+            if auth.org_id != org_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cannot sync org you're not a member of"
+                )
+        else:
+            # No JWT org claim - check database membership (from webhook)
+            # This handles first-time access when JWT hasn't refreshed yet
+            result = await session.execute(
+                select(OrganizationMembership).where(
+                    OrganizationMembership.user_id == auth.user_id,
+                    OrganizationMembership.org_id == org_id
+                )
+            )
+            existing_membership = result.scalar_one_or_none()
+            if not existing_membership:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not a member of this organization"
+                )
+
         # Check if organization exists
         result = await session.execute(
             select(Organization).where(Organization.id == org_id)
@@ -111,13 +140,13 @@ async def sync_organization(
                 slug=request.slug
             )
             session.add(org)
-            status = "created"
+            sync_status = "created"
         else:
             # Update existing organization
             org.name = request.name
             if request.slug:
                 org.slug = request.slug
-            status = "updated"
+            sync_status = "updated"
 
         # Handle membership - use Clerk role directly (enum values match Clerk format)
         # Default to MEMBER if no role info from JWT (e.g., syncing from personal context)
@@ -147,7 +176,7 @@ async def sync_organization(
 
         await session.commit()
 
-        return SyncOrgResponse(status=status, org_id=org_id)
+        return SyncOrgResponse(status=sync_status, org_id=org_id)
 
 
 @router.get("/current", response_model=CurrentOrgResponse)
@@ -284,6 +313,8 @@ def _handle_org_key_service_error(e: OrgKeyServiceError):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     elif isinstance(e, NotAdminError):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    elif isinstance(e, MemberNotReadyError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -322,7 +353,7 @@ async def create_org_keys(
     """
     service = OrgKeyService(db)
     try:
-        org = await service.create_org_keys(
+        await service.create_org_keys(
             org_id=org_id,
             admin_user_id=auth.user_id,
             org_public_key=request.org_public_key,
@@ -350,16 +381,23 @@ async def get_pending_distributions(
     """
     Get members needing org key distribution (admin only).
 
-    Returns members who have personal encryption keys but haven't
-    received the org key yet.
+    Returns two categories:
+    - ready_for_distribution: Members with personal keys who can receive org key
+    - needs_personal_setup: Members who must set up personal encryption first
     """
     service = OrgKeyService(db)
     try:
-        pending = await service.get_pending_distributions(org_id, auth.user_id)
+        result = await service.get_pending_distributions(org_id, auth.user_id)
         return PendingDistributionsResponse(
             org_id=org_id,
-            pending=[PendingDistributionResponse(**p) for p in pending],
-            total_count=len(pending),
+            ready_for_distribution=[
+                PendingDistributionResponse(**p) for p in result["ready_for_distribution"]
+            ],
+            needs_personal_setup=[
+                NeedsPersonalSetupResponse(**p) for p in result["needs_personal_setup"]
+            ],
+            ready_count=result["ready_count"],
+            needs_setup_count=result["needs_setup_count"],
         )
     except OrgKeyServiceError as e:
         _handle_org_key_service_error(e)
@@ -391,6 +429,58 @@ async def distribute_org_key(
             hkdf_salt=request.encrypted_org_key.hkdf_salt,
         )
         return {"status": "distributed", "membership_id": membership.id}
+    except OrgKeyServiceError as e:
+        _handle_org_key_service_error(e)
+
+
+@router.post("/{org_id}/distribute-keys-bulk", response_model=BulkDistributionResponse)
+async def distribute_org_keys_bulk(
+    org_id: str,
+    request: BatchDistributeOrgKeyRequest,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Distribute org key to multiple members at once (admin only).
+
+    Performs bulk distribution with partial failure support.
+    Returns success/failure status for each distribution.
+    """
+    service = OrgKeyService(db)
+    try:
+        # Convert request to service format
+        distributions = [
+            {
+                "membership_id": d.membership_id,
+                "ephemeral_public_key": d.encrypted_org_key.ephemeral_public_key,
+                "iv": d.encrypted_org_key.iv,
+                "ciphertext": d.encrypted_org_key.ciphertext,
+                "auth_tag": d.encrypted_org_key.auth_tag,
+                "hkdf_salt": d.encrypted_org_key.hkdf_salt,
+            }
+            for d in request.distributions
+        ]
+
+        results = await service.bulk_distribute_org_keys(
+            org_id=org_id,
+            admin_user_id=auth.user_id,
+            distributions=distributions,
+        )
+
+        return BulkDistributionResponse(
+            org_id=org_id,
+            results=[
+                BulkDistributionResultResponse(
+                    membership_id=r.membership_id,
+                    user_id=r.user_id,
+                    success=r.success,
+                    error=r.error,
+                )
+                for r in results
+            ],
+            success_count=sum(1 for r in results if r.success),
+            failure_count=sum(1 for r in results if not r.success),
+        )
     except OrgKeyServiceError as e:
         _handle_org_key_service_error(e)
 

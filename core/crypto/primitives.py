@@ -3,10 +3,14 @@ Cryptographic primitives for the zero-trust LLM platform.
 
 Security Properties:
 - All randomness from secrets module (CSPRNG)
-- Argon2id for passcode derivation (memory-hard)
 - X25519 for key exchange (ephemeral ECDH pattern)
 - HKDF-SHA512 with random salt for key derivation
 - AES-256-GCM for authenticated encryption
+
+Note: Passcode derivation (Argon2id) is NOT included here because passcodes
+never reach the server in production - they stay client-side. The Argon2id
+function exists only in tests/utils/crypto_test_utils.py for test vector
+generation and cross-platform compatibility testing.
 
 Usage Contexts (must match between encrypt/decrypt):
 - "client-to-enclave-transport": Messages from client to enclave
@@ -20,11 +24,10 @@ from typing import Tuple, Optional
 import secrets
 import hmac
 
-from argon2.low_level import hash_secret_raw, Type
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
-from nacl.public import PrivateKey, PublicKey
+from nacl.public import PrivateKey
 from nacl.bindings import crypto_scalarmult
 
 
@@ -148,53 +151,6 @@ def generate_recovery_code(length: int = 20) -> str:
 # =============================================================================
 # Key Derivation
 # =============================================================================
-
-def derive_key_from_passcode(
-    passcode: str,
-    salt: bytes,
-    time_cost: int = 4,
-    memory_cost: int = 131072,  # 128 MB
-    parallelism: int = 2,
-) -> bytes:
-    """
-    Derive a 32-byte key from a passcode using Argon2id.
-
-    Argon2id is memory-hard and resistant to GPU/ASIC attacks.
-    The default parameters (t=4, m=128MB, p=2) provide strong protection
-    even for low-entropy passcodes like 6 digits.
-
-    Args:
-        passcode: User's passcode (6+ digits recommended)
-        salt: Random 32-byte salt (must be stored for later derivation)
-        time_cost: Number of iterations (default: 4)
-        memory_cost: Memory in KB (default: 131072 = 128MB)
-        parallelism: Number of threads (default: 2)
-
-    Returns:
-        32-byte derived key
-
-    Raises:
-        ValueError: If passcode is empty or salt is wrong length
-
-    Security Note:
-        With these parameters, even a 6-digit passcode (1M combinations)
-        requires significant resources to brute-force offline.
-    """
-    if not passcode:
-        raise ValueError("Passcode cannot be empty")
-    if len(salt) != 32:
-        raise ValueError("Salt must be 32 bytes")
-
-    return hash_secret_raw(
-        secret=passcode.encode('utf-8'),
-        salt=salt,
-        time_cost=time_cost,
-        memory_cost=memory_cost,
-        parallelism=parallelism,
-        hash_len=32,
-        type=Type.ID,  # Argon2id
-    )
-
 
 def derive_key_from_ecdh(
     private_key: bytes,

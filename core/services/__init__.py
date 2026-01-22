@@ -19,6 +19,11 @@ from .org_key_service import (
     MembershipNotFoundError,
     NotAdminError,
 )
+from .memory_service import (
+    MemoryService,
+    MemoryServiceError,
+    MemoryNotFoundError,
+)
 
 __all__ = [
     # User Key Service
@@ -33,4 +38,8 @@ __all__ = [
     "OrgKeysNotFoundError",
     "MembershipNotFoundError",
     "NotAdminError",
+    # Memory Service
+    "MemoryService",
+    "MemoryServiceError",
+    "MemoryNotFoundError",
 ]

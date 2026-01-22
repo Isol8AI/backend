@@ -344,7 +344,7 @@ class TestMembershipSync:
         ])
 
         service = ClerkSyncService(mock_db)
-        membership = await service.create_membership({
+        await service.create_membership({
             "id": "mem_123",
             "public_user_data": {"user_id": "user_123"},
             "organization": {"id": "org_456"},

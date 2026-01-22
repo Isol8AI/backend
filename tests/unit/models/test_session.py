@@ -152,7 +152,7 @@ class TestSessionModel:
         await db_session.flush()
 
         result = await db_session.execute(
-            select(Session).where(Session.user_id == test_user.id, Session.org_id == None)
+            select(Session).where(Session.user_id == test_user.id, Session.org_id.is_(None))
         )
         personal_sessions = result.scalars().all()
 

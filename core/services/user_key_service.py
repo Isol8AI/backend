@@ -226,12 +226,12 @@ class UserKeyService:
         if not user.has_encryption_keys:
             raise KeysNotFoundError(f"User {user_id} has no encryption keys")
 
-        # Log recovery attempt for audit trail
-        audit_log = AuditLog.create(
+        # Log recovery keys fetch for audit trail
+        # Note: This logs the FETCH, not actual recovery. USER_KEYS_RECOVERED is logged
+        # when store_encryption_keys() is called with allow_overwrite=True
+        audit_log = AuditLog.log_recovery_keys_fetched(
             id=str(uuid4()),
-            event_type=AuditEventType.USER_KEYS_RECOVERED,
-            actor_user_id=user_id,
-            event_data={"method": "recovery_code"},
+            user_id=user_id,
         )
         self.db.add(audit_log)
         await self.db.commit()

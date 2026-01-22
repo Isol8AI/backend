@@ -1,13 +1,11 @@
 """Unit tests for encrypted chat router."""
 import uuid
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
 from core.config import AVAILABLE_MODELS
 from models.session import Session
-from models.message import Message, MessageRole
 
 
 class TestGetAvailableModels:
@@ -50,7 +48,9 @@ class TestGetSessions:
         response = await async_client.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        assert response.json() == []
+        data = response.json()
+        assert data["sessions"] == []
+        assert data["total"] == 0
 
     @pytest.mark.asyncio
     async def test_returns_user_sessions(self, async_client, test_session):
@@ -59,16 +59,17 @@ class TestGetSessions:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == test_session.id
-        assert data[0]["name"] == test_session.name
+        assert len(data["sessions"]) == 1
+        assert data["sessions"][0]["id"] == test_session.id
+        assert data["sessions"][0]["name"] == test_session.name
+        assert data["total"] == 1
 
     @pytest.mark.asyncio
     async def test_does_not_return_other_users_sessions(self, async_client, test_user, other_user_session):
         """Excludes sessions belonging to other users."""
         response = await async_client.get("/api/v1/chat/sessions")
 
-        session_ids = [s["id"] for s in response.json()]
+        session_ids = [s["id"] for s in response.json()["sessions"]]
         assert other_user_session.id not in session_ids
 
     @pytest.mark.asyncio
@@ -95,8 +96,8 @@ class TestGetSessions:
         response = await async_client.get("/api/v1/chat/sessions")
         data = response.json()
 
-        assert len(data) >= 2
-        assert data[0]["name"] == "New Session"
+        assert len(data["sessions"]) >= 2
+        assert data["sessions"][0]["name"] == "New Session"
 
 
 class TestGetSessionMessages:

@@ -4,6 +4,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -45,8 +46,17 @@ async def sync_user(
         try:
             await db.commit()
             return {"status": "created", "user_id": user_id}
+        except IntegrityError:
+            # Race condition: another request created the user first
+            # This is fine - treat as success (idempotent operation)
+            # Rollback is REQUIRED: IntegrityError leaves the transaction in a
+            # failed state. Must rollback to reset the session, release locks,
+            # and return the connection to the pool in a clean state.
+            await db.rollback()
+            logger.debug("User sync race condition handled: %s", user_id)
+            return {"status": "exists", "user_id": user_id}
         except Exception as e:
-            logger.error(f"Database error on user sync for {user_id}: {e}")
+            logger.error("Database error on user sync for %s: %s", user_id, e)
             await db.rollback()
             raise HTTPException(status_code=500, detail="Database operation failed")
 

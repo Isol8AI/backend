@@ -6,9 +6,12 @@ Security Note:
 - Server never sees plaintext private keys
 """
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+if TYPE_CHECKING:
+    from core.crypto import EncryptedPayload as CryptoEncryptedPayload
 
 
 def validate_hex_string(value: str, expected_length: Optional[int] = None) -> str:
@@ -287,6 +290,14 @@ class SendEncryptedMessageRequest(BaseModel):
     encrypted_history: Optional[list[EncryptedPayload]] = Field(
         None,
         description="Previous messages re-encrypted to enclave for context"
+    )
+    encrypted_memories: Optional[list[EncryptedPayload]] = Field(
+        None,
+        description="Relevant memories re-encrypted to enclave for context injection"
+    )
+    facts_context: Optional[str] = Field(
+        None,
+        description="Client-side formatted facts context string (already decrypted by client)"
     )
     client_transport_public_key: str = Field(
         ...,

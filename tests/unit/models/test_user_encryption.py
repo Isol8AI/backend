@@ -1,6 +1,5 @@
 """Tests for user encryption model fields and methods."""
 import pytest
-from datetime import datetime
 
 from models.user import User
 

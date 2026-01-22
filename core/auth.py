@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
 
 import httpx
 from fastapi import Depends, HTTPException
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 # JWKS cache with TTL
-_jwks_cache: dict = {"data": None, "expires_at": None}
+_jwks_cache: dict = {"data": None, "expires_at": None}  # TODO: Change this to an actual cache backend
 JWKS_CACHE_TTL = timedelta(hours=1)
 
 
@@ -119,12 +118,27 @@ async def get_current_user(
             issuer=settings.CLERK_ISSUER,
         )
 
+        # Clerk v2 uses compact 'o' object for organization claims
+        org_claims = payload.get("o", {})
+
+        # Extract v2 org claims
+        org_id = org_claims.get("id")
+        org_role_raw = org_claims.get("rol")
+        org_slug = org_claims.get("slg")
+        org_perms_raw = org_claims.get("per", "")
+
+        # Add 'org:' prefix to role (v2 omits it)
+        org_role = f"org:{org_role_raw}" if org_role_raw else None
+
+        # Split comma-separated permissions
+        org_permissions = [p for p in org_perms_raw.split(",") if p] if org_perms_raw else []
+
         return AuthContext(
             user_id=payload["sub"],
-            org_id=payload.get("org_id"),
-            org_role=payload.get("org_role"),
-            org_slug=payload.get("org_slug"),
-            org_permissions=payload.get("org_permissions", []),
+            org_id=org_id,
+            org_role=org_role,
+            org_slug=org_slug,
+            org_permissions=org_permissions,
         )
 
     except jwt.ExpiredSignatureError:

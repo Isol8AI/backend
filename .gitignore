@@ -64,3 +64,18 @@ wheelhouse/
 # ========================
 .DS_Store
 Thumbs.db
+
+# ========================
+# Databases (local dev)
+# ========================
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ========================
+# Misc
+# ========================
+.ruff_cache/
+data/

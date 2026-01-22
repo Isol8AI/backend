@@ -18,8 +18,21 @@ async def init_models(reset: bool = False):
                     await conn.execute(text("CREATE SCHEMA public"))
                     await conn.execute(text("GRANT ALL ON SCHEMA public TO postgres"))
                     await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+
+                # Enable pgvector extension
+                print("Enabling pgvector extension...")
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+                # Create SQLAlchemy tables
+                print("Creating SQLAlchemy tables...")
                 await conn.run_sync(Base.metadata.create_all)
-            print("Database tables created.")
+
+                # Note: OpenMemory tables (openmemory_memories, openmemory_vectors, etc.)
+                # are created automatically by the OpenMemory SDK when it initializes.
+                # See memory/packages/openmemory-py/src/openmemory/core/db.py:_init_pg_schema()
+                print("OpenMemory tables will be created on first SDK use...")
+
+            print("Database initialization complete.")
             return
         except OperationalError:
             print("Database not ready yet, retrying in 2 seconds...")

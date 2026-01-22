@@ -8,6 +8,7 @@ Security Note:
 - Server cannot decrypt any of these
 """
 import logging
+from dataclasses import dataclass
 from typing import Optional, List
 from uuid import uuid4
 
@@ -16,9 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from models.organization import Organization
-from models.organization_membership import OrganizationMembership, MemberRole
-from models.user import User
-from models.audit_log import AuditLog, AuditEventType
+from models.organization_membership import OrganizationMembership
+from models.audit_log import AuditLog
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,20 @@ class MembershipNotFoundError(OrgKeyServiceError):
 class NotAdminError(OrgKeyServiceError):
     """User is not an admin of the organization."""
     pass
+
+
+class MemberNotReadyError(OrgKeyServiceError):
+    """Member has not set up personal encryption keys."""
+    pass
+
+
+@dataclass
+class BulkDistributionResult:
+    """Result for a single distribution in a bulk operation."""
+    membership_id: str
+    user_id: str
+    success: bool
+    error: Optional[str] = None
 
 
 class OrgKeyService:
@@ -207,20 +221,20 @@ class OrgKeyService:
         self,
         org_id: str,
         admin_user_id: str,
-    ) -> List[dict]:
+    ) -> dict:
         """
         Get members who need org key distribution.
 
-        A member needs distribution if:
-        - They don't have org key yet (has_org_key=False)
-        - They have personal encryption keys (can receive encrypted data)
+        Returns two categories:
+        - ready_for_distribution: Members with personal keys, ready to receive org key
+        - needs_personal_setup: Members without personal keys (cannot receive org key yet)
 
         Args:
             org_id: Organization ID
             admin_user_id: Admin requesting the list
 
         Returns:
-            List of dicts with membership_id, user_id, user_public_key, role, joined_at
+            Dict with ready_for_distribution, needs_personal_setup, ready_count, needs_setup_count
 
         Raises:
             NotAdminError: If user is not an admin
@@ -239,30 +253,45 @@ class OrgKeyService:
                 f"Organization {org_id} has no encryption keys"
             )
 
-        # Find pending members
+        # Find pending members (those without org key)
         result = await self.db.execute(
             select(OrganizationMembership)
             .where(and_(
                 OrganizationMembership.org_id == org_id,
-                OrganizationMembership.has_org_key == False,
+                OrganizationMembership.has_org_key.is_(False),
             ))
             .options(selectinload(OrganizationMembership.user))
         )
         memberships = result.scalars().all()
 
-        pending = []
+        ready_for_distribution = []
+        needs_personal_setup = []
+
         for m in memberships:
-            # Only include members with personal encryption keys
             if m.user and m.user.has_encryption_keys:
-                pending.append({
+                # Member has personal keys - ready for distribution
+                ready_for_distribution.append({
                     "membership_id": m.id,
                     "user_id": m.user_id,
                     "user_public_key": m.user.public_key,
                     "role": m.role.value,
                     "joined_at": m.joined_at or m.created_at,
                 })
+            elif m.user:
+                # Member exists but has no personal keys - needs setup first
+                needs_personal_setup.append({
+                    "membership_id": m.id,
+                    "user_id": m.user_id,
+                    "role": m.role.value,
+                    "joined_at": m.joined_at or m.created_at,
+                })
 
-        return pending
+        return {
+            "ready_for_distribution": ready_for_distribution,
+            "needs_personal_setup": needs_personal_setup,
+            "ready_count": len(ready_for_distribution),
+            "needs_setup_count": len(needs_personal_setup),
+        }
 
     async def distribute_org_key(
         self,
@@ -324,6 +353,12 @@ class OrgKeyService:
         if membership.has_org_key:
             raise OrgKeyServiceError("Member already has org key")
 
+        # Verify member has personal encryption keys
+        if not membership.user or not membership.user.has_encryption_keys:
+            raise MemberNotReadyError(
+                f"Member {membership.user_id} has not set up personal encryption keys"
+            )
+
         # Store encrypted org key
         try:
             membership.set_encrypted_org_key(
@@ -354,6 +389,126 @@ class OrgKeyService:
             membership.user_id, org_id, admin_user_id
         )
         return membership
+
+    async def bulk_distribute_org_keys(
+        self,
+        org_id: str,
+        admin_user_id: str,
+        distributions: List[dict],
+    ) -> List["BulkDistributionResult"]:
+        """
+        Distribute org key to multiple members at once.
+
+        Each distribution dict should contain:
+        - membership_id: Target membership ID
+        - ephemeral_public_key, iv, ciphertext, auth_tag, hkdf_salt: Encrypted key data
+
+        Args:
+            org_id: Organization ID
+            admin_user_id: Admin distributing the keys
+            distributions: List of distribution requests
+
+        Returns:
+            List of BulkDistributionResult for each distribution attempt
+
+        Raises:
+            NotAdminError: If user is not an admin
+        """
+        # Verify admin once
+        await self.verify_admin(admin_user_id, org_id)
+
+        results = []
+
+        for dist in distributions:
+            membership_id = dist.get("membership_id", "unknown")
+            try:
+                # Get membership
+                result = await self.db.execute(
+                    select(OrganizationMembership)
+                    .where(OrganizationMembership.id == dist["membership_id"])
+                    .options(selectinload(OrganizationMembership.user))
+                )
+                membership = result.scalar_one_or_none()
+
+                if not membership:
+                    results.append(BulkDistributionResult(
+                        membership_id=membership_id,
+                        user_id="unknown",
+                        success=False,
+                        error="Membership not found",
+                    ))
+                    continue
+
+                if membership.org_id != org_id:
+                    results.append(BulkDistributionResult(
+                        membership_id=membership_id,
+                        user_id=membership.user_id,
+                        success=False,
+                        error="Membership does not belong to this organization",
+                    ))
+                    continue
+
+                if membership.has_org_key:
+                    results.append(BulkDistributionResult(
+                        membership_id=membership_id,
+                        user_id=membership.user_id,
+                        success=False,
+                        error="Member already has org key",
+                    ))
+                    continue
+
+                if not membership.user or not membership.user.has_encryption_keys:
+                    results.append(BulkDistributionResult(
+                        membership_id=membership_id,
+                        user_id=membership.user_id if membership.user else "unknown",
+                        success=False,
+                        error="Member has not set up personal encryption keys",
+                    ))
+                    continue
+
+                # Store encrypted org key
+                membership.set_encrypted_org_key(
+                    ephemeral_public_key=dist["ephemeral_public_key"],
+                    iv=dist["iv"],
+                    ciphertext=dist["ciphertext"],
+                    auth_tag=dist["auth_tag"],
+                    hkdf_salt=dist["hkdf_salt"],
+                    distributed_by_user_id=admin_user_id,
+                )
+
+                # Audit log
+                audit_log = AuditLog.log_org_key_distributed(
+                    id=str(uuid4()),
+                    admin_user_id=admin_user_id,
+                    member_user_id=membership.user_id,
+                    org_id=org_id,
+                )
+                self.db.add(audit_log)
+
+                results.append(BulkDistributionResult(
+                    membership_id=membership_id,
+                    user_id=membership.user_id,
+                    success=True,
+                ))
+
+            except Exception as e:
+                results.append(BulkDistributionResult(
+                    membership_id=membership_id,
+                    user_id="unknown",
+                    success=False,
+                    error=str(e),
+                ))
+
+        # Commit all successful distributions
+        await self.db.commit()
+
+        success_count = sum(1 for r in results if r.success)
+        logger.info(
+            "Bulk distributed org keys in org %s by admin %s: %d/%d successful",
+            org_id, admin_user_id, success_count, len(results)
+        )
+
+        return results
 
     # =========================================================================
     # Key Retrieval

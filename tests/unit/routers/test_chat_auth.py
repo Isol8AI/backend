@@ -21,7 +21,8 @@ class TestPersonalSessionAuthorization:
         response = await async_client.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         assert len(sessions) == 1
         assert sessions[0]["id"] == test_session.id
 
@@ -33,7 +34,8 @@ class TestPersonalSessionAuthorization:
         response = await async_client.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         # test_user should not see other_user's session
         session_ids = [s["id"] for s in sessions]
         assert other_user_session.id not in session_ids
@@ -46,7 +48,8 @@ class TestPersonalSessionAuthorization:
         response = await async_client_org.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         # Personal session (org_id=None) should not appear in org context
         session_ids = [s["id"] for s in sessions]
         assert test_session.id not in session_ids
@@ -63,7 +66,8 @@ class TestOrgSessionAuthorization:
         response = await async_client_org.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         session_ids = [s["id"] for s in sessions]
         assert test_org_session.id in session_ids
 
@@ -76,7 +80,8 @@ class TestOrgSessionAuthorization:
         response = await async_client_org.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         # test_user should not see other_user's org session
         session_ids = [s["id"] for s in sessions]
         assert other_user_org_session.id not in session_ids
@@ -89,7 +94,8 @@ class TestOrgSessionAuthorization:
         response = await async_client.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         # Org session should not appear in personal context
         session_ids = [s["id"] for s in sessions]
         assert test_org_session.id not in session_ids
@@ -112,7 +118,8 @@ class TestOrgSessionAuthorization:
         response = await async_client_org.get("/api/v1/chat/sessions")
 
         assert response.status_code == 200
-        sessions = response.json()
+        data = response.json()
+        sessions = data["sessions"]
         session_ids = [s["id"] for s in sessions]
         # Session from org_other_456 should not appear in org_test_123 context
         assert "session_different_org" not in session_ids

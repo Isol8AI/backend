@@ -11,10 +11,8 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from core.crypto.primitives import (
-    derive_key_from_passcode,
-    derive_key_from_ecdh,
-)
+from core.crypto.primitives import derive_key_from_ecdh
+from tests.utils.crypto_test_utils import derive_key_from_passcode
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 

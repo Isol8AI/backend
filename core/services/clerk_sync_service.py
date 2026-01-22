@@ -7,19 +7,37 @@ Security Note:
 - All changes are audit logged
 """
 import logging
-from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.constants import SYSTEM_ACTOR_ID
 from models.user import User
 from models.organization import Organization
 from models.organization_membership import OrganizationMembership, MemberRole
 from models.audit_log import AuditLog, AuditEventType
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_clerk_role(role_str: str) -> MemberRole:
+    """
+    Parse Clerk role string to MemberRole enum.
+
+    Handles unknown formats gracefully by defaulting to MEMBER.
+    Clerk uses format like "org:admin" or "org:member".
+    """
+    try:
+        return MemberRole(role_str)
+    except ValueError:
+        logger.warning(
+            "Unknown Clerk role format: %s. Defaulting to member. "
+            "Expected 'org:admin' or 'org:member'.",
+            role_str
+        )
+        return MemberRole.MEMBER
 
 
 class ClerkSyncService:
@@ -77,6 +95,9 @@ class ClerkSyncService:
         Delete user and their encryption keys.
 
         WARNING: This makes all their encrypted messages unrecoverable!
+
+        Note: Memberships are deleted manually to audit log key revocation.
+        Sessions and messages cascade delete via SQLAlchemy relationship.
         """
         user_id = data.get("id")
 
@@ -239,7 +260,7 @@ class ClerkSyncService:
             return None
 
         # Map Clerk role to our enum (Clerk uses "org:admin", "org:member")
-        role = MemberRole(role_str)
+        role = _parse_clerk_role(role_str)
 
         # Ensure organization exists
         org_result = await self.db.execute(
@@ -282,7 +303,7 @@ class ClerkSyncService:
                 # Audit log for role change
                 audit_log = AuditLog.log_member_role_changed(
                     id=str(uuid4()),
-                    admin_user_id="system",
+                    admin_user_id=SYSTEM_ACTOR_ID,
                     member_user_id=user_id,
                     org_id=org_id,
                     old_role=old_role.value,
@@ -344,7 +365,7 @@ class ClerkSyncService:
             return await self.create_membership(data)
 
         old_role = membership.role
-        new_role = MemberRole(new_role_str)
+        new_role = _parse_clerk_role(new_role_str)
 
         if old_role != new_role:
             membership.role = new_role
@@ -352,7 +373,7 @@ class ClerkSyncService:
             # Audit log for role change
             audit_log = AuditLog.log_member_role_changed(
                 id=str(uuid4()),
-                admin_user_id="system",  # System change from Clerk
+                admin_user_id=SYSTEM_ACTOR_ID,  # System change from Clerk
                 member_user_id=user_id,
                 org_id=org_id,
                 old_role=old_role.value,
@@ -415,7 +436,7 @@ class ClerkSyncService:
             # Audit log for key revocation
             audit_log = AuditLog.log_org_key_revoked(
                 id=str(uuid4()),
-                admin_user_id="system",  # System revocation from Clerk
+                admin_user_id=SYSTEM_ACTOR_ID,  # System revocation from Clerk
                 member_user_id=actual_user_id,
                 org_id=actual_org_id,
                 reason="membership_deleted_from_clerk",

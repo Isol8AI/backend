@@ -260,7 +260,7 @@ class TestGetPendingDistributions:
     async def test_returns_members_needing_distribution(
         self, mock_db, org_with_keys, admin_membership, member_membership
     ):
-        """Returns members who need org key distribution."""
+        """Returns members who need org key distribution in ready_for_distribution."""
         admin_membership.org_id = org_with_keys.id
         admin_membership.has_org_key = True
         org_with_keys.memberships = [admin_membership, member_membership]
@@ -278,17 +278,19 @@ class TestGetPendingDistributions:
         ])
 
         service = OrgKeyService(mock_db)
-        pending = await service.get_pending_distributions("org_456", "admin_123")
+        result = await service.get_pending_distributions("org_456", "admin_123")
 
-        assert len(pending) == 1
-        assert pending[0]["user_id"] == "member_456"
-        assert pending[0]["user_public_key"] == "bb" * 32
+        assert result["ready_count"] == 1
+        assert result["needs_setup_count"] == 0
+        assert len(result["ready_for_distribution"]) == 1
+        assert result["ready_for_distribution"][0]["user_id"] == "member_456"
+        assert result["ready_for_distribution"][0]["user_public_key"] == "bb" * 32
 
     @pytest.mark.asyncio
     async def test_excludes_members_without_personal_keys(
         self, mock_db, org_with_keys, admin_membership, member_without_keys
     ):
-        """Excludes members who don't have personal encryption keys."""
+        """Members without personal keys go in needs_personal_setup."""
         admin_membership.org_id = org_with_keys.id
         admin_membership.has_org_key = True
 
@@ -314,9 +316,14 @@ class TestGetPendingDistributions:
         ])
 
         service = OrgKeyService(mock_db)
-        pending = await service.get_pending_distributions("org_456", "admin_123")
+        result = await service.get_pending_distributions("org_456", "admin_123")
 
-        assert len(pending) == 0
+        # Member without personal keys should be in needs_personal_setup, not ready_for_distribution
+        assert result["ready_count"] == 0
+        assert result["needs_setup_count"] == 1
+        assert len(result["ready_for_distribution"]) == 0
+        assert len(result["needs_personal_setup"]) == 1
+        assert result["needs_personal_setup"][0]["user_id"] == member_without_keys.id
 
     @pytest.mark.asyncio
     async def test_raises_error_if_org_has_no_keys(

@@ -8,7 +8,7 @@ These tests verify:
 - Message processing flow (without actual LLM calls)
 """
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from core.crypto import (
     EncryptedPayload,
@@ -737,7 +737,7 @@ class TestEnclaveIntegration:
 
         # 4. Simulate LLM response
         assistant_response = b"Org confidential answer"
-        stored_assistant = enclave.encrypt_for_storage(
+        enclave.encrypt_for_storage(
             assistant_response,
             org.public_key,  # Org storage key
             is_assistant=True,
@@ -773,3 +773,440 @@ class TestEnclaveIntegration:
                 stored_user,
                 EncryptionContext.USER_MESSAGE_STORAGE.value,
             )
+
+
+# =============================================================================
+# ExtractedFact Tests
+# =============================================================================
+
+class TestExtractedFact:
+    """Tests for ExtractedFact data structure."""
+
+    def test_extracted_fact_creation(self):
+        """ExtractedFact can be created with encrypted payload and fact_id."""
+        from core.enclave.mock_enclave import ExtractedFact
+
+        payload = EncryptedPayload(
+            ephemeral_public_key=b'\x00' * 32,
+            iv=b'\x01' * 16,
+            ciphertext=b"encrypted_fact_data",
+            auth_tag=b'\x02' * 16,
+            hkdf_salt=b'\x03' * 32,
+        )
+        fact = ExtractedFact(
+            encrypted_payload=payload,
+            fact_id="test-fact-id-123",
+        )
+
+        assert fact.fact_id == "test-fact-id-123"
+        assert fact.encrypted_payload.ciphertext == b"encrypted_fact_data"
+
+
+# =============================================================================
+# Fact Extraction Tests
+# =============================================================================
+
+class TestFactExtraction:
+    """Tests for fact extraction from messages."""
+
+    @pytest.fixture
+    def enclave(self):
+        return MockEnclave(
+            inference_url="http://mock.llm",
+            inference_token="test_token",
+        )
+
+    @pytest.fixture
+    def client_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_returns_encrypted_facts(self, enclave, client_keypair):
+        """extract_facts returns list of ExtractedFact objects."""
+        from core.enclave.mock_enclave import ExtractedFact
+        import json
+
+        # Mock the LLM response with extracted facts (list of dicts, not JSON string)
+        mock_llm_response = [
+            {
+                "subject": "user",
+                "predicate": "prefers",
+                "object": "dark mode",
+                "confidence": 0.9
+            }
+        ]
+
+        with patch.object(
+            enclave, '_call_fact_extraction_llm',
+            new_callable=AsyncMock,
+            return_value=mock_llm_response,
+        ):
+            facts = await enclave.extract_facts(
+                user_message="I really like dark mode",
+                assistant_response="I'll remember that you prefer dark mode.",
+                client_public_key=client_keypair.public_key,
+            )
+
+        assert len(facts) == 1
+        assert isinstance(facts[0], ExtractedFact)
+        assert facts[0].fact_id is not None
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_encrypts_to_client_key(self, enclave, client_keypair):
+        """Extracted facts are encrypted to client's transport key."""
+        import json
+
+        # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
+        mock_llm_response = [
+            {
+                "subject": "user",
+                "predicate": "works_at",
+                "object": "Anthropic",
+                "confidence": 0.85
+            }
+        ]
+
+        with patch.object(
+            enclave, '_call_fact_extraction_llm',
+            new_callable=AsyncMock,
+            return_value=mock_llm_response,
+        ):
+            facts = await enclave.extract_facts(
+                user_message="I work at Anthropic",
+                assistant_response="Nice, you work at Anthropic!",
+                client_public_key=client_keypair.public_key,
+            )
+
+        # Client should be able to decrypt the fact
+        decrypted = decrypt_with_private_key(
+            client_keypair.private_key,
+            facts[0].encrypted_payload,
+            "fact-extraction",
+        )
+
+        fact_data = json.loads(decrypted.decode("utf-8"))
+        assert fact_data["subject"] == "user"
+        assert fact_data["predicate"] == "works_at"
+        assert fact_data["object"] == "Anthropic"
+        assert fact_data["confidence"] == 0.85
+        assert fact_data["type"] == "identity"
+        assert fact_data["source"] == "system"
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_filters_low_confidence(self, enclave, client_keypair):
+        """Facts with confidence < 0.5 are filtered out."""
+        import json
+
+        # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
+        mock_llm_response = [
+            {"subject": "user", "predicate": "prefers", "object": "coffee", "confidence": 0.9},
+            {"subject": "user", "predicate": "likes", "object": "tea", "confidence": 0.4},  # Low confidence
+        ]
+
+        with patch.object(
+            enclave, '_call_fact_extraction_llm',
+            new_callable=AsyncMock,
+            return_value=mock_llm_response,
+        ):
+            facts = await enclave.extract_facts(
+                user_message="I love coffee but maybe tea is okay",
+                assistant_response="Got it!",
+                client_public_key=client_keypair.public_key,
+            )
+
+        # Only high confidence fact should be returned
+        assert len(facts) == 1
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_validates_predicates(self, enclave, client_keypair):
+        """Only valid predicates are accepted."""
+        import json
+
+        # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
+        mock_llm_response = [
+            {"subject": "user", "predicate": "prefers", "object": "vim", "confidence": 0.9},
+            {"subject": "user", "predicate": "invalid_predicate", "object": "emacs", "confidence": 0.9},
+        ]
+
+        with patch.object(
+            enclave, '_call_fact_extraction_llm',
+            new_callable=AsyncMock,
+            return_value=mock_llm_response,
+        ):
+            facts = await enclave.extract_facts(
+                user_message="I prefer vim over emacs",
+                assistant_response="Vim is great!",
+                client_public_key=client_keypair.public_key,
+            )
+
+        # Only valid predicate should pass
+        assert len(facts) == 1
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_handles_empty_response(self, enclave, client_keypair):
+        """Handles case where no facts are extracted."""
+        import json
+
+        # _call_fact_extraction_llm returns empty list, not JSON string
+        mock_llm_response = []
+
+        with patch.object(
+            enclave, '_call_fact_extraction_llm',
+            new_callable=AsyncMock,
+            return_value=mock_llm_response,
+        ):
+            facts = await enclave.extract_facts(
+                user_message="What's the weather?",
+                assistant_response="I don't know the current weather.",
+                client_public_key=client_keypair.public_key,
+            )
+
+        assert len(facts) == 0
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_handles_llm_error(self, enclave, client_keypair):
+        """Handles LLM errors gracefully."""
+        with patch.object(
+            enclave, '_call_fact_extraction_llm',
+            new_callable=AsyncMock,
+            side_effect=Exception("LLM error"),
+        ):
+            facts = await enclave.extract_facts(
+                user_message="Test message",
+                assistant_response="Test response",
+                client_public_key=client_keypair.public_key,
+            )
+
+        # Should return empty list on error, not raise
+        assert len(facts) == 0
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_maps_predicate_to_type(self, enclave, client_keypair):
+        """Predicates are correctly mapped to fact types."""
+        import json
+
+        # Test various predicate -> type mappings
+        test_cases = [
+            ("prefers", "preference"),
+            ("works_at", "identity"),
+            ("located_in", "identity"),
+            ("interested_in", "preference"),
+            ("has_skill", "identity"),
+            ("dislikes", "preference"),
+            ("plans_to", "plan"),
+            ("uses", "preference"),
+            ("knows", "observation"),
+            ("mentioned", "observation"),
+        ]
+
+        for predicate, expected_type in test_cases:
+            # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
+            mock_llm_response = [
+                {"subject": "user", "predicate": predicate, "object": "test", "confidence": 0.9}
+            ]
+
+            with patch.object(
+                enclave, '_call_fact_extraction_llm',
+                new_callable=AsyncMock,
+                return_value=mock_llm_response,
+            ):
+                facts = await enclave.extract_facts(
+                    user_message="Test",
+                    assistant_response="Test",
+                    client_public_key=client_keypair.public_key,
+                )
+
+            decrypted = decrypt_with_private_key(
+                client_keypair.private_key,
+                facts[0].encrypted_payload,
+                "fact-extraction",
+            )
+            fact_data = json.loads(decrypted.decode("utf-8"))
+            assert fact_data["type"] == expected_type, f"Predicate {predicate} should map to {expected_type}"
+
+
+# =============================================================================
+# Streaming with Fact Extraction Tests
+# =============================================================================
+
+class TestStreamingWithFactExtraction:
+    """Tests for streaming message processing with fact extraction."""
+
+    @pytest.fixture
+    def enclave(self):
+        return MockEnclave(
+            inference_url="http://mock.llm",
+            inference_token="test_token",
+        )
+
+    @pytest.fixture
+    def user_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.fixture
+    def storage_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.mark.asyncio
+    async def test_streaming_includes_extracted_facts_in_final_chunk(
+        self, enclave, user_keypair, storage_keypair
+    ):
+        """Streaming returns extracted facts in the final chunk."""
+        from core.enclave.mock_enclave import ExtractedFact, StreamChunk
+        import json
+
+        enclave_public_key = enclave.get_info().enclave_public_key
+
+        # Prepare input
+        encrypted_input = encrypt_to_public_key(
+            enclave_public_key,
+            b"I love Python programming",
+            EncryptionContext.CLIENT_TO_ENCLAVE.value,
+        )
+
+        # Mock streaming inference
+        async def mock_stream(*args, **kwargs):
+            for chunk in ["That's", " great!"]:
+                yield chunk
+
+        # Mock fact extraction
+        mock_facts = [
+            ExtractedFact(
+                encrypted_payload=EncryptedPayload(
+                    ephemeral_public_key=b'\x00' * 32,
+                    iv=b'\x01' * 16,
+                    ciphertext=b"fact",
+                    auth_tag=b'\x02' * 16,
+                    hkdf_salt=b'\x03' * 32,
+                ),
+                fact_id="test-fact-id",
+            )
+        ]
+
+        with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
+            with patch.object(
+                enclave, 'extract_facts',
+                new_callable=AsyncMock,
+                return_value=mock_facts,
+            ):
+                chunks = []
+                final_chunk = None
+
+                async for chunk in enclave.process_message_streaming(
+                    encrypted_message=encrypted_input,
+                    encrypted_history=[],
+                    encrypted_memories=[],
+                    facts_context=None,
+                    storage_public_key=storage_keypair.public_key,
+                    client_public_key=user_keypair.public_key,
+                    session_id="test-session",
+                    model="test-model",
+                ):
+                    chunks.append(chunk)
+                    if chunk.is_final:
+                        final_chunk = chunk
+
+        # Final chunk should have extracted facts
+        assert final_chunk is not None
+        assert final_chunk.extracted_facts is not None
+        assert len(final_chunk.extracted_facts) == 1
+        assert final_chunk.extracted_facts[0].fact_id == "test-fact-id"
+
+
+# =============================================================================
+# DEBUG Flag Tests
+# =============================================================================
+
+class TestDebugFlagControl:
+    """Tests for DEBUG flag controlling verbose output."""
+
+    @pytest.fixture
+    def enclave(self):
+        return MockEnclave(
+            inference_url="http://mock.llm",
+            inference_token="test_token",
+        )
+
+    @pytest.fixture
+    def user_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.fixture
+    def storage_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.mark.asyncio
+    async def test_debug_false_suppresses_print_output(
+        self, enclave, user_keypair, storage_keypair, capsys
+    ):
+        """When DEBUG=False, process_message_streaming should not print debug info."""
+        enclave_public_key = enclave.get_info().enclave_public_key
+
+        encrypted_input = encrypt_to_public_key(
+            enclave_public_key,
+            b"Test message",
+            EncryptionContext.CLIENT_TO_ENCLAVE.value,
+        )
+
+        # Mock streaming inference
+        async def mock_stream(*args, **kwargs):
+            yield "Hello"
+
+        with patch('core.enclave.mock_enclave.settings') as mock_settings:
+            mock_settings.DEBUG = False
+            with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
+                with patch.object(enclave, 'extract_memories', new_callable=AsyncMock, return_value=[]):
+                    with patch.object(enclave, 'extract_facts', new_callable=AsyncMock, return_value=[]):
+                        async for _ in enclave.process_message_streaming(
+                            encrypted_message=encrypted_input,
+                            encrypted_history=[],
+                            encrypted_memories=[],
+                            facts_context=None,
+                            storage_public_key=storage_keypair.public_key,
+                            client_public_key=user_keypair.public_key,
+                            session_id="test-session",
+                            model="test-model",
+                        ):
+                            pass
+
+        captured = capsys.readouterr()
+        # When DEBUG=False, should NOT see the encryption flow banner
+        assert "ENCRYPTED CHAT FLOW" not in captured.out
+
+    @pytest.mark.asyncio
+    async def test_debug_true_shows_print_output(
+        self, enclave, user_keypair, storage_keypair, capsys
+    ):
+        """When DEBUG=True, process_message_streaming should print debug info."""
+        enclave_public_key = enclave.get_info().enclave_public_key
+
+        encrypted_input = encrypt_to_public_key(
+            enclave_public_key,
+            b"Test message",
+            EncryptionContext.CLIENT_TO_ENCLAVE.value,
+        )
+
+        # Mock streaming inference
+        async def mock_stream(*args, **kwargs):
+            yield "Hello"
+
+        with patch('core.enclave.mock_enclave.settings') as mock_settings:
+            mock_settings.DEBUG = True
+            with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
+                with patch.object(enclave, 'extract_memories', new_callable=AsyncMock, return_value=[]):
+                    with patch.object(enclave, 'extract_facts', new_callable=AsyncMock, return_value=[]):
+                        async for _ in enclave.process_message_streaming(
+                            encrypted_message=encrypted_input,
+                            encrypted_history=[],
+                            encrypted_memories=[],
+                            facts_context=None,
+                            storage_public_key=storage_keypair.public_key,
+                            client_public_key=user_keypair.public_key,
+                            session_id="test-session",
+                            model="test-model",
+                        ):
+                            pass
+
+        captured = capsys.readouterr()
+        # When DEBUG=True, should see the encryption flow banner
+        assert "ENCRYPTED CHAT FLOW" in captured.out

@@ -33,6 +33,9 @@ class EncryptionContext(str, Enum):
     USER_MESSAGE_STORAGE = "user-message-storage"
     ASSISTANT_MESSAGE_STORAGE = "assistant-message-storage"
 
+    # Memory storage context
+    MEMORY_STORAGE = "memory-storage"
+
     # Key distribution contexts
     ORG_KEY_DISTRIBUTION = "org-key-distribution"
     RECOVERY_KEY_ENCRYPTION = "recovery-key-encryption"
@@ -46,6 +49,7 @@ from .mock_enclave import (
     StreamChunk,
     EnclaveInfo,
     DecryptedMessage,
+    ExtractedMemory,
     get_enclave,
     reset_enclave,
 )
@@ -70,6 +74,7 @@ __all__ = [
     "StreamChunk",
     "EnclaveInfo",
     "DecryptedMessage",
+    "ExtractedMemory",
     "get_enclave",
     "reset_enclave",
     "shutdown_enclave",

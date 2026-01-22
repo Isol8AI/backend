@@ -107,15 +107,43 @@ async def handle_clerk_webhook(
                 await service.update_membership(data)
             elif event_type == "organizationMembership.deleted":
                 # CRITICAL: This triggers org key revocation
-                await service.delete_membership(data)
+                try:
+                    await service.delete_membership(data)
+                except Exception:
+                    # Security-critical: Revoked member may still have org key access
+                    logger.critical(
+                        "SECURITY_ALERT: Membership deletion failed - revoked member may retain org key access",
+                        extra={
+                            "event_type": event_type,
+                            "webhook_id": svix_id,
+                            "membership_id": data.get("id"),
+                            "user_id": data.get("public_user_data", {}).get("user_id"),
+                            "org_id": data.get("organization", {}).get("id"),
+                            "alert": True,
+                        },
+                        exc_info=True,
+                    )
+                    raise  # Re-raise to be caught by outer handler
 
             else:
                 logger.debug("Ignoring webhook event: %s", event_type)
                 return {"status": "ignored", "event": event_type}
 
         except Exception as e:
-            logger.exception("Error processing webhook %s: %s", event_type, e)
+            # Log with structured fields for monitoring systems (Datadog, Sentry, etc.)
+            logger.error(
+                "WEBHOOK_PROCESSING_FAILED",
+                extra={
+                    "event_type": event_type,
+                    "webhook_id": svix_id,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "alert": True,  # Flag for alerting systems
+                },
+                exc_info=True,
+            )
             # Return 200 to prevent Clerk from retrying on our errors
+            # Errors should be handled via monitoring alerts, not webhook retries
             return {"status": "error", "event": event_type, "error": str(e)}
 
     return {"status": "processed", "event": event_type}
