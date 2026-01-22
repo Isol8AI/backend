@@ -1,4 +1,5 @@
 """Tests for OrgKeyService."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
@@ -19,6 +20,7 @@ from models.user import User
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_db():
@@ -150,6 +152,7 @@ def mock_execute_result(item):
 # Test Verify Admin
 # =============================================================================
 
+
 class TestVerifyAdmin:
     """Tests for verify_admin method."""
 
@@ -186,20 +189,21 @@ class TestVerifyAdmin:
 # Test Create Org Keys
 # =============================================================================
 
+
 class TestCreateOrgKeys:
     """Tests for create_org_keys method."""
 
     @pytest.mark.asyncio
-    async def test_creates_keys_for_org(
-        self, mock_db, org_without_keys, admin_membership, valid_org_key_data
-    ):
+    async def test_creates_keys_for_org(self, mock_db, org_without_keys, admin_membership, valid_org_key_data):
         """Successfully creates org keys."""
         org_without_keys.memberships = [admin_membership]
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),  # verify_admin
-            mock_execute_result(org_without_keys),  # get_organization
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),  # verify_admin
+                mock_execute_result(org_without_keys),  # get_organization
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         result = await service.create_org_keys(
@@ -214,16 +218,16 @@ class TestCreateOrgKeys:
         mock_db.add.assert_called()  # Audit log
 
     @pytest.mark.asyncio
-    async def test_raises_error_if_keys_exist(
-        self, mock_db, org_with_keys, admin_membership, valid_org_key_data
-    ):
+    async def test_raises_error_if_keys_exist(self, mock_db, org_with_keys, admin_membership, valid_org_key_data):
         """Raises OrgKeysAlreadyExistError if org has keys."""
         admin_membership.org_id = org_with_keys.id
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(org_with_keys),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(org_with_keys),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         with pytest.raises(OrgKeysAlreadyExistError):
@@ -234,9 +238,7 @@ class TestCreateOrgKeys:
             )
 
     @pytest.mark.asyncio
-    async def test_raises_error_for_non_admin(
-        self, mock_db, member_membership, valid_org_key_data
-    ):
+    async def test_raises_error_for_non_admin(self, mock_db, member_membership, valid_org_key_data):
         """Raises NotAdminError for non-admin."""
         mock_db.execute = AsyncMock(return_value=mock_execute_result(member_membership))
 
@@ -253,6 +255,7 @@ class TestCreateOrgKeys:
 # Test Get Pending Distributions
 # =============================================================================
 
+
 class TestGetPendingDistributions:
     """Tests for get_pending_distributions method."""
 
@@ -267,15 +270,15 @@ class TestGetPendingDistributions:
 
         # Mock the pending members query
         pending_result = MagicMock()
-        pending_result.scalars = MagicMock(return_value=MagicMock(
-            all=MagicMock(return_value=[member_membership])
-        ))
+        pending_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[member_membership])))
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),  # verify_admin
-            mock_execute_result(org_with_keys),  # get_organization
-            pending_result,  # pending members query
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),  # verify_admin
+                mock_execute_result(org_with_keys),  # get_organization
+                pending_result,  # pending members query
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         result = await service.get_pending_distributions("org_456", "admin_123")
@@ -305,15 +308,17 @@ class TestGetPendingDistributions:
         member_membership_no_keys.created_at = datetime.utcnow()
 
         pending_result = MagicMock()
-        pending_result.scalars = MagicMock(return_value=MagicMock(
-            all=MagicMock(return_value=[member_membership_no_keys])
-        ))
+        pending_result.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[member_membership_no_keys]))
+        )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(org_with_keys),
-            pending_result,
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(org_with_keys),
+                pending_result,
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         result = await service.get_pending_distributions("org_456", "admin_123")
@@ -326,14 +331,14 @@ class TestGetPendingDistributions:
         assert result["needs_personal_setup"][0]["user_id"] == member_without_keys.id
 
     @pytest.mark.asyncio
-    async def test_raises_error_if_org_has_no_keys(
-        self, mock_db, org_without_keys, admin_membership
-    ):
+    async def test_raises_error_if_org_has_no_keys(self, mock_db, org_without_keys, admin_membership):
         """Raises OrgKeysNotFoundError if org has no encryption keys."""
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(org_without_keys),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(org_without_keys),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         with pytest.raises(OrgKeysNotFoundError):
@@ -343,6 +348,7 @@ class TestGetPendingDistributions:
 # =============================================================================
 # Test Distribute Org Key
 # =============================================================================
+
 
 class TestDistributeOrgKey:
     """Tests for distribute_org_key method."""
@@ -355,10 +361,12 @@ class TestDistributeOrgKey:
         admin_membership.org_id = "org_456"
         admin_membership.has_org_key = True
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),  # verify_admin
-            mock_execute_result(member_membership),  # get membership
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),  # verify_admin
+                mock_execute_result(member_membership),  # get membership
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         result = await service.distribute_org_key(
@@ -379,10 +387,12 @@ class TestDistributeOrgKey:
         admin_membership.org_id = "org_456"
         member_membership.org_id = "org_different"
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(member_membership),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(member_membership),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         with pytest.raises(OrgKeyServiceError, match="does not belong"):
@@ -401,10 +411,12 @@ class TestDistributeOrgKey:
         admin_membership.org_id = "org_456"
         member_membership.has_org_key = True
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(member_membership),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(member_membership),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         with pytest.raises(OrgKeyServiceError, match="already has"):
@@ -419,6 +431,7 @@ class TestDistributeOrgKey:
 # =============================================================================
 # Test Get Org Encryption Status
 # =============================================================================
+
 
 class TestGetOrgEncryptionStatus:
     """Tests for get_org_encryption_status method."""
@@ -458,6 +471,7 @@ class TestGetOrgEncryptionStatus:
 # =============================================================================
 # Test Get Member Org Key
 # =============================================================================
+
 
 class TestGetMemberOrgKey:
     """Tests for get_member_org_key method."""
@@ -505,6 +519,7 @@ class TestGetMemberOrgKey:
 # Test Revoke Member Org Key
 # =============================================================================
 
+
 class TestRevokeMemberOrgKey:
     """Tests for revoke_member_org_key method."""
 
@@ -521,10 +536,12 @@ class TestRevokeMemberOrgKey:
             distributed_by_user_id="admin_123",
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),  # verify_admin
-            mock_execute_result(member_membership),  # get_membership
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),  # verify_admin
+                mock_execute_result(member_membership),  # get_membership
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         await service.revoke_member_org_key(
@@ -544,10 +561,12 @@ class TestRevokeMemberOrgKey:
         admin_membership.org_id = "org_456"
         member_membership.has_org_key = False
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(member_membership),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(member_membership),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         await service.revoke_member_org_key(
@@ -577,6 +596,7 @@ class TestRevokeMemberOrgKey:
 # Test Get Admin Recovery Key
 # =============================================================================
 
+
 class TestGetAdminRecoveryKey:
     """Tests for get_admin_recovery_key method."""
 
@@ -585,10 +605,12 @@ class TestGetAdminRecoveryKey:
         """Returns admin-encrypted org keys for recovery."""
         admin_membership.org_id = org_with_keys.id
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(org_with_keys),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(org_with_keys),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         keys = await service.get_admin_recovery_key("admin_123", "org_456")
@@ -606,14 +628,14 @@ class TestGetAdminRecoveryKey:
             await service.get_admin_recovery_key("member_456", "org_456")
 
     @pytest.mark.asyncio
-    async def test_raises_error_if_org_has_no_keys(
-        self, mock_db, admin_membership, org_without_keys
-    ):
+    async def test_raises_error_if_org_has_no_keys(self, mock_db, admin_membership, org_without_keys):
         """Raises OrgKeysNotFoundError if org has no keys."""
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(admin_membership),
-            mock_execute_result(org_without_keys),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(admin_membership),
+                mock_execute_result(org_without_keys),
+            ]
+        )
 
         service = OrgKeyService(mock_db)
         with pytest.raises(OrgKeysNotFoundError):

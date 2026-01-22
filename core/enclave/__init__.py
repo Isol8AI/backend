@@ -9,6 +9,7 @@ This package provides a mock implementation of the secure enclave that:
 
 In production, this will be replaced by a real AWS Nitro Enclave implementation.
 """
+
 from enum import Enum
 
 

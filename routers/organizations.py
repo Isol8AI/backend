@@ -1,4 +1,5 @@
 """Organizations router for managing Clerk organizations and encryption."""
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -41,6 +42,7 @@ router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 class SyncOrgRequest(BaseModel):
     """Request body for syncing organization from Clerk."""
+
     org_id: str  # Clerk organization ID from frontend
     name: str
     slug: str | None = None
@@ -48,12 +50,14 @@ class SyncOrgRequest(BaseModel):
 
 class SyncOrgResponse(BaseModel):
     """Response for organization sync."""
+
     status: str  # "created", "updated"
     org_id: str
 
 
 class CurrentOrgResponse(BaseModel):
     """Response for current organization context."""
+
     org_id: str | None
     org_name: str | None = None
     org_slug: str | None = None
@@ -64,6 +68,7 @@ class CurrentOrgResponse(BaseModel):
 
 class OrgListItem(BaseModel):
     """Organization item in list response."""
+
     id: str
     name: str
     slug: str | None
@@ -72,16 +77,19 @@ class OrgListItem(BaseModel):
 
 class ListOrgsResponse(BaseModel):
     """Response for listing user's organizations."""
+
     organizations: list[OrgListItem]
 
 
 class OrgContextRequest(BaseModel):
     """Request body for updating organization context."""
+
     context_data: dict
 
 
 class OrgContextResponse(BaseModel):
     """Response for organization context."""
+
     context_data: dict | None
 
 
@@ -106,39 +114,26 @@ async def sync_organization(
         if auth.org_id:
             # JWT has org claim - must match exactly
             if auth.org_id != org_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Cannot sync org you're not a member of"
-                )
+                raise HTTPException(status_code=403, detail="Cannot sync org you're not a member of")
         else:
             # No JWT org claim - check database membership (from webhook)
             # This handles first-time access when JWT hasn't refreshed yet
             result = await session.execute(
                 select(OrganizationMembership).where(
-                    OrganizationMembership.user_id == auth.user_id,
-                    OrganizationMembership.org_id == org_id
+                    OrganizationMembership.user_id == auth.user_id, OrganizationMembership.org_id == org_id
                 )
             )
             existing_membership = result.scalar_one_or_none()
             if not existing_membership:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Not a member of this organization"
-                )
+                raise HTTPException(status_code=403, detail="Not a member of this organization")
 
         # Check if organization exists
-        result = await session.execute(
-            select(Organization).where(Organization.id == org_id)
-        )
+        result = await session.execute(select(Organization).where(Organization.id == org_id))
         org = result.scalar_one_or_none()
 
         if org is None:
             # Create new organization
-            org = Organization(
-                id=org_id,
-                name=request.name,
-                slug=request.slug
-            )
+            org = Organization(id=org_id, name=request.name, slug=request.slug)
             session.add(org)
             sync_status = "created"
         else:
@@ -154,8 +149,7 @@ async def sync_organization(
 
         result = await session.execute(
             select(OrganizationMembership).where(
-                OrganizationMembership.user_id == auth.user_id,
-                OrganizationMembership.org_id == org_id
+                OrganizationMembership.user_id == auth.user_id, OrganizationMembership.org_id == org_id
             )
         )
         membership = result.scalar_one_or_none()
@@ -163,10 +157,7 @@ async def sync_organization(
         if membership is None:
             # Create membership
             membership = OrganizationMembership(
-                id=f"mem_{auth.user_id}_{org_id}",
-                user_id=auth.user_id,
-                org_id=org_id,
-                role=member_role
+                id=f"mem_{auth.user_id}_{org_id}", user_id=auth.user_id, org_id=org_id, role=member_role
             )
             session.add(membership)
         else:
@@ -189,17 +180,11 @@ async def get_current_org(
     Returns None for org fields when in personal mode.
     """
     if auth.is_personal_context:
-        return CurrentOrgResponse(
-            org_id=None,
-            is_personal_context=True,
-            is_org_admin=False
-        )
+        return CurrentOrgResponse(org_id=None, is_personal_context=True, is_org_admin=False)
 
     # Fetch organization details
     async with session_factory() as session:
-        result = await session.execute(
-            select(Organization).where(Organization.id == auth.org_id)
-        )
+        result = await session.execute(select(Organization).where(Organization.id == auth.org_id))
         org = result.scalar_one_or_none()
 
         return CurrentOrgResponse(
@@ -208,7 +193,7 @@ async def get_current_org(
             org_slug=auth.org_slug,
             org_role=auth.org_role,
             is_personal_context=False,
-            is_org_admin=auth.is_org_admin
+            is_org_admin=auth.is_org_admin,
         )
 
 
@@ -227,13 +212,7 @@ async def list_organizations(
         rows = result.all()
 
         organizations = [
-            OrgListItem(
-                id=org.id,
-                name=org.name,
-                slug=org.slug,
-                role=membership.role
-            )
-            for membership, org in rows
+            OrgListItem(id=org.id, name=org.name, slug=org.slug, role=membership.role) for membership, org in rows
         ]
 
         return ListOrgsResponse(organizations=organizations)
@@ -251,16 +230,11 @@ async def get_org_context(
     """
     async with session_factory() as session:
         result = await session.execute(
-            select(ContextStore).where(
-                ContextStore.owner_type == "org",
-                ContextStore.owner_id == auth.org_id
-            )
+            select(ContextStore).where(ContextStore.owner_type == "org", ContextStore.owner_id == auth.org_id)
         )
         context_store = result.scalar_one_or_none()
 
-        return OrgContextResponse(
-            context_data=context_store.context_data if context_store else None
-        )
+        return OrgContextResponse(context_data=context_store.context_data if context_store else None)
 
 
 @router.put("/context", response_model=OrgContextResponse)
@@ -275,20 +249,14 @@ async def update_org_context(
     """
     async with session_factory() as session:
         result = await session.execute(
-            select(ContextStore).where(
-                ContextStore.owner_type == "org",
-                ContextStore.owner_id == auth.org_id
-            )
+            select(ContextStore).where(ContextStore.owner_type == "org", ContextStore.owner_id == auth.org_id)
         )
         context_store = result.scalar_one_or_none()
 
         if context_store is None:
             # Create new context store
             context_store = ContextStore(
-                id=f"ctx_org_{auth.org_id}",
-                owner_type="org",
-                owner_id=auth.org_id,
-                context_data=request.context_data
+                id=f"ctx_org_{auth.org_id}", owner_type="org", owner_id=auth.org_id, context_data=request.context_data
             )
             session.add(context_store)
         else:
@@ -304,6 +272,7 @@ async def update_org_context(
 # =============================================================================
 # Organization Encryption Endpoints
 # =============================================================================
+
 
 def _handle_org_key_service_error(e: OrgKeyServiceError):
     """Convert service errors to HTTP exceptions."""
@@ -390,12 +359,8 @@ async def get_pending_distributions(
         result = await service.get_pending_distributions(org_id, auth.user_id)
         return PendingDistributionsResponse(
             org_id=org_id,
-            ready_for_distribution=[
-                PendingDistributionResponse(**p) for p in result["ready_for_distribution"]
-            ],
-            needs_personal_setup=[
-                NeedsPersonalSetupResponse(**p) for p in result["needs_personal_setup"]
-            ],
+            ready_for_distribution=[PendingDistributionResponse(**p) for p in result["ready_for_distribution"]],
+            needs_personal_setup=[NeedsPersonalSetupResponse(**p) for p in result["needs_personal_setup"]],
             ready_count=result["ready_count"],
             needs_setup_count=result["needs_setup_count"],
         )
@@ -501,10 +466,7 @@ async def get_my_membership(
     try:
         membership = await service.get_membership(auth.user_id, org_id)
         if not membership:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Not a member of this organization"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not a member of this organization")
 
         encrypted_key = None
         if membership.has_org_key:
@@ -585,10 +547,7 @@ async def list_org_members(
     try:
         await service.verify_admin(auth.user_id, org_id)
     except NotAdminError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     except OrgKeyServiceError as e:
         _handle_org_key_service_error(e)
 
@@ -606,7 +565,7 @@ async def list_org_members(
             {
                 "membership_id": m.id,
                 "user_id": m.user_id,
-                "role": m.role.value if hasattr(m.role, 'value') else str(m.role),
+                "role": m.role.value if hasattr(m.role, "value") else str(m.role),
                 "has_personal_keys": m.user.has_encryption_keys if m.user else False,
                 "has_org_key": m.has_org_key,
                 "key_distributed_at": m.key_distributed_at.isoformat() if m.key_distributed_at else None,

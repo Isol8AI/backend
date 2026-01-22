@@ -1,4 +1,5 @@
 """Unit tests for authentication module."""
+
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -52,7 +53,7 @@ class TestAuthContext:
             org_id="org_456",
             org_role="org:admin",
             org_slug="acme-corp",
-            org_permissions=["org:read", "org:write"]
+            org_permissions=["org:read", "org:write"],
         )
         assert ctx.user_id == "user_123"
         assert ctx.org_id == "org_456"
@@ -157,9 +158,7 @@ class TestGetCurrentUser:
     @pytest.fixture
     def valid_jwks(self) -> dict:
         """Valid JWKS response with test key."""
-        return {
-            "keys": [{"kty": "RSA", "kid": "test-key-id", "use": "sig", "n": TEST_RSA_N, "e": "AQAB"}]
-        }
+        return {"keys": [{"kty": "RSA", "kid": "test-key-id", "use": "sig", "n": TEST_RSA_N, "e": "AQAB"}]}
 
     @pytest.mark.asyncio
     async def test_valid_token_calls_jwt_decode(self, mock_credentials, valid_jwks):
@@ -172,11 +171,12 @@ class TestGetCurrentUser:
             "iat": int(time.time()),
         }
 
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.jwt.decode") as mock_decode, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.jwt.decode") as mock_decode,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
@@ -192,11 +192,12 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_expired_token_raises_401(self, mock_credentials, valid_jwks):
         """Expired token raises 401 HTTPException."""
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.jwt.decode") as mock_decode, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.jwt.decode") as mock_decode,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
@@ -212,11 +213,12 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_invalid_claims_raises_401(self, mock_credentials, valid_jwks):
         """Invalid claims raises 401 HTTPException."""
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.jwt.decode") as mock_decode, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.jwt.decode") as mock_decode,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
@@ -232,10 +234,11 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_invalid_kid_raises_401(self, mock_credentials, valid_jwks):
         """Token with unknown key ID raises 401 HTTPException."""
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
@@ -250,9 +253,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_jwks_fetch_failure_raises_401(self, mock_credentials):
         """JWKS fetch failure raises 401 HTTPException."""
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.settings") as mock_settings:
-
+        with patch("core.auth.httpx.AsyncClient") as mock_client_class, patch("core.auth.settings") as mock_settings:
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_client_class.return_value = create_mock_httpx_client(error=Exception("Network error"))
 
@@ -265,10 +266,11 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_generic_exception_raises_401(self, mock_credentials, valid_jwks):
         """Generic exception during validation raises 401."""
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
             mock_header.side_effect = Exception("Unexpected error")
@@ -290,11 +292,12 @@ class TestGetCurrentUser:
             "iat": int(time.time()),
         }
 
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.jwt.decode") as mock_decode, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.jwt.decode") as mock_decode,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)
@@ -325,11 +328,12 @@ class TestGetCurrentUser:
             },
         }
 
-        with patch("core.auth.httpx.AsyncClient") as mock_client_class, \
-             patch("core.auth.jwt.get_unverified_header") as mock_header, \
-             patch("core.auth.jwt.decode") as mock_decode, \
-             patch("core.auth.settings") as mock_settings:
-
+        with (
+            patch("core.auth.httpx.AsyncClient") as mock_client_class,
+            patch("core.auth.jwt.get_unverified_header") as mock_header,
+            patch("core.auth.jwt.decode") as mock_decode,
+            patch("core.auth.settings") as mock_settings,
+        ):
             mock_settings.CLERK_ISSUER = TEST_ISSUER
             mock_settings.CLERK_AUDIENCE = None
             mock_client_class.return_value = create_mock_httpx_client(valid_jwks)

@@ -1,4 +1,5 @@
 """Cryptographic primitives package for zero-trust encryption."""
+
 from .primitives import (
     KeyPair,
     EncryptedPayload,

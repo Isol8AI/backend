@@ -6,6 +6,7 @@ Security Note:
 - Contains NO encrypted content or keys - only metadata
 - Used for compliance, debugging, and security monitoring
 """
+
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Optional, Dict, Any
@@ -76,19 +77,13 @@ class AuditLog(Base):
     event_type = Column(Enum(AuditEventType), nullable=False)
 
     # Actor - who performed the action
-    actor_user_id = Column(
-        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
+    actor_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Target - who was affected (for member operations)
-    target_user_id = Column(
-        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
+    target_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Organization context
-    org_id = Column(
-        String, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
-    )
+    org_id = Column(String, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
 
     # Additional event details (flexible JSON)
     # Examples:

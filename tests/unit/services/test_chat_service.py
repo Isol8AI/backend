@@ -1,4 +1,5 @@
 """Tests for ChatService."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
@@ -15,6 +16,7 @@ from models.organization_membership import OrganizationMembership, MemberRole
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_db():
@@ -58,12 +60,13 @@ def create_test_encrypted_payload():
 # Test Enclave Info
 # =============================================================================
 
+
 class TestEnclaveInfo:
     """Tests for enclave information methods."""
 
     def test_get_enclave_public_key(self, mock_db):
         """Returns enclave's public key as hex."""
-        with patch('core.services.chat_service.get_enclave') as mock_get:
+        with patch("core.services.chat_service.get_enclave") as mock_get:
             mock_enclave = MagicMock()
             mock_enclave.get_transport_public_key.return_value = "ff" * 32
             mock_get.return_value = mock_enclave
@@ -76,7 +79,7 @@ class TestEnclaveInfo:
 
     def test_get_enclave_info(self, mock_db):
         """Returns enclave info dict."""
-        with patch('core.services.chat_service.get_enclave') as mock_get:
+        with patch("core.services.chat_service.get_enclave") as mock_get:
             mock_enclave = MagicMock()
             mock_info = MagicMock()
             mock_info.to_hex_dict.return_value = {
@@ -96,6 +99,7 @@ class TestEnclaveInfo:
 # =============================================================================
 # Test Session Management
 # =============================================================================
+
 
 class TestSessionManagement:
     """Tests for session creation and retrieval."""
@@ -130,10 +134,12 @@ class TestSessionManagement:
             role=MemberRole.MEMBER,
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),  # User lookup
-            mock_execute_result(membership),  # Membership lookup
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),  # User lookup
+                mock_execute_result(membership),  # Membership lookup
+            ]
+        )
 
         service = ChatService(mock_db)
         session = await service.create_session(
@@ -158,10 +164,12 @@ class TestSessionManagement:
     async def test_create_session_not_member(self, mock_db):
         """Raises error when user not member of org."""
         user = User(id="user_123")
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),  # User exists
-            mock_execute_result(None),  # No membership
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),  # User exists
+                mock_execute_result(None),  # No membership
+            ]
+        )
 
         service = ChatService(mock_db)
         with pytest.raises(ValueError, match="not a member"):
@@ -221,6 +229,7 @@ class TestSessionManagement:
 # =============================================================================
 # Test Message Operations
 # =============================================================================
+
 
 class TestMessageOperations:
     """Tests for encrypted message storage and retrieval."""
@@ -286,10 +295,12 @@ class TestMessageOperations:
             ),
         ]
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(session),  # Session lookup
-            mock_execute_result_list(messages),  # Messages
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(session),  # Session lookup
+                mock_execute_result_list(messages),  # Messages
+            ]
+        )
 
         service = ChatService(mock_db)
         result = await service.get_session_messages(
@@ -315,6 +326,7 @@ class TestMessageOperations:
 # =============================================================================
 # Test Key Resolution
 # =============================================================================
+
 
 class TestKeyResolution:
     """Tests for getting public keys for encryption."""
@@ -402,6 +414,7 @@ class TestKeyResolution:
 # Test Encryption Verification
 # =============================================================================
 
+
 class TestEncryptionVerification:
     """Tests for verifying encryption capability."""
 
@@ -481,11 +494,13 @@ class TestEncryptionVerification:
             distributed_by_user_id="admin_789",
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),
-            mock_execute_result(org),
-            mock_execute_result(membership),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),
+                mock_execute_result(org),
+                mock_execute_result(membership),
+            ]
+        )
 
         service = ChatService(mock_db)
         can_send, error = await service.verify_can_send_encrypted(
@@ -530,11 +545,13 @@ class TestEncryptionVerification:
         )
         # No org key set
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),
-            mock_execute_result(org),
-            mock_execute_result(membership),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),
+                mock_execute_result(org),
+                mock_execute_result(membership),
+            ]
+        )
 
         service = ChatService(mock_db)
         can_send, error = await service.verify_can_send_encrypted(

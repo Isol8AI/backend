@@ -1,4 +1,5 @@
 """ContextStore model for RAG-ready context storage."""
+
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, String, UniqueConstraint
@@ -16,9 +17,7 @@ class ContextStore(Base):
     """
 
     __tablename__ = "context_stores"
-    __table_args__ = (
-        UniqueConstraint("owner_type", "owner_id", name="uq_owner_type_id"),
-    )
+    __table_args__ = (UniqueConstraint("owner_type", "owner_id", name="uq_owner_type_id"),)
 
     id = Column(String, primary_key=True)
     owner_type = Column(String, nullable=False)  # 'user' or 'org'

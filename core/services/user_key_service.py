@@ -6,6 +6,7 @@ Security Note:
 - All private key data is encrypted client-side before reaching the server
 - The server stores encrypted blobs and metadata only
 """
+
 import logging
 from typing import Optional
 from uuid import uuid4
@@ -21,16 +22,19 @@ logger = logging.getLogger(__name__)
 
 class UserKeyServiceError(Exception):
     """Base exception for user key service errors."""
+
     pass
 
 
 class KeysAlreadyExistError(UserKeyServiceError):
     """User already has encryption keys."""
+
     pass
 
 
 class KeysNotFoundError(UserKeyServiceError):
     """User does not have encryption keys."""
+
     pass
 
 
@@ -47,9 +51,7 @@ class UserKeyService:
 
     async def get_user(self, user_id: str) -> Optional[User]:
         """Get user by ID."""
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def get_encryption_status(self, user_id: str) -> dict:
@@ -122,9 +124,7 @@ class UserKeyService:
         await self.db.refresh(user)
 
         if user.has_encryption_keys and not allow_overwrite:
-            raise KeysAlreadyExistError(
-                f"User {user_id} already has encryption keys"
-            )
+            raise KeysAlreadyExistError(f"User {user_id} already has encryption keys")
 
         try:
             user.set_encryption_keys(
@@ -194,12 +194,14 @@ class UserKeyService:
         }
 
         if include_recovery:
-            result.update({
-                "recovery_encrypted_private_key": user.recovery_encrypted_private_key,
-                "recovery_iv": user.recovery_iv,
-                "recovery_tag": user.recovery_tag,
-                "recovery_salt": user.recovery_salt,
-            })
+            result.update(
+                {
+                    "recovery_encrypted_private_key": user.recovery_encrypted_private_key,
+                    "recovery_iv": user.recovery_iv,
+                    "recovery_tag": user.recovery_tag,
+                    "recovery_salt": user.recovery_salt,
+                }
+            )
 
         return result
 

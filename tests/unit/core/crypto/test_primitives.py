@@ -6,6 +6,7 @@ These tests verify:
 - Edge cases and error handling
 - Security properties (randomness, authentication)
 """
+
 import pytest
 from cryptography.exceptions import InvalidTag
 
@@ -29,38 +30,37 @@ from tests.utils.crypto_test_utils import derive_key_from_passcode
 # KeyPair Tests
 # =============================================================================
 
+
 class TestKeyPair:
     """Tests for KeyPair data structure."""
 
     def test_valid_keypair(self):
         """KeyPair accepts valid 32-byte keys."""
-        keypair = KeyPair(
-            private_key=b'\x00' * 32,
-            public_key=b'\x01' * 32
-        )
+        keypair = KeyPair(private_key=b"\x00" * 32, public_key=b"\x01" * 32)
         assert len(keypair.private_key) == 32
         assert len(keypair.public_key) == 32
 
     def test_rejects_short_private_key(self):
         """KeyPair rejects private key shorter than 32 bytes."""
         with pytest.raises(ValueError, match="Private key must be 32 bytes"):
-            KeyPair(private_key=b'\x00' * 31, public_key=b'\x01' * 32)
+            KeyPair(private_key=b"\x00" * 31, public_key=b"\x01" * 32)
 
     def test_rejects_short_public_key(self):
         """KeyPair rejects public key shorter than 32 bytes."""
         with pytest.raises(ValueError, match="Public key must be 32 bytes"):
-            KeyPair(private_key=b'\x00' * 32, public_key=b'\x01' * 31)
+            KeyPair(private_key=b"\x00" * 32, public_key=b"\x01" * 31)
 
     def test_keypair_is_immutable(self):
         """KeyPair is frozen (immutable)."""
-        keypair = KeyPair(private_key=b'\x00' * 32, public_key=b'\x01' * 32)
+        keypair = KeyPair(private_key=b"\x00" * 32, public_key=b"\x01" * 32)
         with pytest.raises(AttributeError):
-            keypair.private_key = b'\x02' * 32
+            keypair.private_key = b"\x02" * 32
 
 
 # =============================================================================
 # EncryptedPayload Tests
 # =============================================================================
+
 
 class TestEncryptedPayload:
     """Tests for EncryptedPayload data structure."""
@@ -68,11 +68,11 @@ class TestEncryptedPayload:
     def test_valid_payload(self):
         """EncryptedPayload accepts valid field lengths."""
         payload = EncryptedPayload(
-            ephemeral_public_key=b'\x00' * 32,
-            iv=b'\x01' * 16,
-            ciphertext=b'\x02' * 100,
-            auth_tag=b'\x03' * 16,
-            hkdf_salt=b'\x04' * 32
+            ephemeral_public_key=b"\x00" * 32,
+            iv=b"\x01" * 16,
+            ciphertext=b"\x02" * 100,
+            auth_tag=b"\x03" * 16,
+            hkdf_salt=b"\x04" * 32,
         )
         assert len(payload.ephemeral_public_key) == 32
         assert len(payload.iv) == 16
@@ -84,62 +84,63 @@ class TestEncryptedPayload:
         """EncryptedPayload rejects wrong ephemeral key length."""
         with pytest.raises(ValueError, match="Ephemeral public key must be 32 bytes"):
             EncryptedPayload(
-                ephemeral_public_key=b'\x00' * 31,
-                iv=b'\x01' * 16,
-                ciphertext=b'\x02',
-                auth_tag=b'\x03' * 16,
-                hkdf_salt=b'\x04' * 32
+                ephemeral_public_key=b"\x00" * 31,
+                iv=b"\x01" * 16,
+                ciphertext=b"\x02",
+                auth_tag=b"\x03" * 16,
+                hkdf_salt=b"\x04" * 32,
             )
 
     def test_rejects_wrong_iv_length(self):
         """EncryptedPayload rejects wrong IV length."""
         with pytest.raises(ValueError, match="IV must be 16 bytes"):
             EncryptedPayload(
-                ephemeral_public_key=b'\x00' * 32,
-                iv=b'\x01' * 15,
-                ciphertext=b'\x02',
-                auth_tag=b'\x03' * 16,
-                hkdf_salt=b'\x04' * 32
+                ephemeral_public_key=b"\x00" * 32,
+                iv=b"\x01" * 15,
+                ciphertext=b"\x02",
+                auth_tag=b"\x03" * 16,
+                hkdf_salt=b"\x04" * 32,
             )
 
     def test_rejects_wrong_auth_tag_length(self):
         """EncryptedPayload rejects wrong auth tag length."""
         with pytest.raises(ValueError, match="Auth tag must be 16 bytes"):
             EncryptedPayload(
-                ephemeral_public_key=b'\x00' * 32,
-                iv=b'\x01' * 16,
-                ciphertext=b'\x02',
-                auth_tag=b'\x03' * 15,
-                hkdf_salt=b'\x04' * 32
+                ephemeral_public_key=b"\x00" * 32,
+                iv=b"\x01" * 16,
+                ciphertext=b"\x02",
+                auth_tag=b"\x03" * 15,
+                hkdf_salt=b"\x04" * 32,
             )
 
     def test_rejects_wrong_salt_length(self):
         """EncryptedPayload rejects wrong HKDF salt length."""
         with pytest.raises(ValueError, match="HKDF salt must be 32 bytes"):
             EncryptedPayload(
-                ephemeral_public_key=b'\x00' * 32,
-                iv=b'\x01' * 16,
-                ciphertext=b'\x02',
-                auth_tag=b'\x03' * 16,
-                hkdf_salt=b'\x04' * 31
+                ephemeral_public_key=b"\x00" * 32,
+                iv=b"\x01" * 16,
+                ciphertext=b"\x02",
+                auth_tag=b"\x03" * 16,
+                hkdf_salt=b"\x04" * 31,
             )
 
     def test_payload_is_immutable(self):
         """EncryptedPayload is frozen (immutable)."""
         payload = EncryptedPayload(
-            ephemeral_public_key=b'\x00' * 32,
-            iv=b'\x01' * 16,
-            ciphertext=b'\x02',
-            auth_tag=b'\x03' * 16,
-            hkdf_salt=b'\x04' * 32
+            ephemeral_public_key=b"\x00" * 32,
+            iv=b"\x01" * 16,
+            ciphertext=b"\x02",
+            auth_tag=b"\x03" * 16,
+            hkdf_salt=b"\x04" * 32,
         )
         with pytest.raises(AttributeError):
-            payload.ciphertext = b'\x05'
+            payload.ciphertext = b"\x05"
 
 
 # =============================================================================
 # Key Generation Tests
 # =============================================================================
+
 
 class TestKeyGeneration:
     """Tests for key generation functions."""
@@ -195,14 +196,15 @@ class TestKeyGeneration:
 # Passcode Derivation Tests
 # =============================================================================
 
+
 class TestPasscodeDerivation:
     """Tests for Argon2id passcode derivation."""
 
     # Use fast parameters for testing
     TEST_PARAMS = {
-        'time_cost': 1,
-        'memory_cost': 16384,  # 16 MB
-        'parallelism': 1,
+        "time_cost": 1,
+        "memory_cost": 16384,  # 16 MB
+        "parallelism": 1,
     }
 
     def test_derives_32_byte_key(self):
@@ -239,12 +241,13 @@ class TestPasscodeDerivation:
     def test_rejects_wrong_salt_length(self):
         """Salt must be exactly 32 bytes."""
         with pytest.raises(ValueError, match="Salt must be 32 bytes"):
-            derive_key_from_passcode("123456", b'\x00' * 16, **self.TEST_PARAMS)
+            derive_key_from_passcode("123456", b"\x00" * 16, **self.TEST_PARAMS)
 
 
 # =============================================================================
 # ECDH Key Derivation Tests
 # =============================================================================
+
 
 class TestECDHDerivation:
     """Tests for X25519 ECDH + HKDF key derivation."""
@@ -253,9 +256,7 @@ class TestECDHDerivation:
         """Derivation produces 32-byte key."""
         alice = generate_x25519_keypair()
         bob = generate_x25519_keypair()
-        key, salt = derive_key_from_ecdh(
-            alice.private_key, bob.public_key, "test-context"
-        )
+        key, salt = derive_key_from_ecdh(alice.private_key, bob.public_key, "test-context")
         assert len(key) == 32
         assert len(salt) == 32
 
@@ -264,12 +265,8 @@ class TestECDHDerivation:
         alice = generate_x25519_keypair()
         bob = generate_x25519_keypair()
 
-        key1, salt = derive_key_from_ecdh(
-            alice.private_key, bob.public_key, "test-context"
-        )
-        key2, _ = derive_key_from_ecdh(
-            bob.private_key, alice.public_key, "test-context", salt=salt
-        )
+        key1, salt = derive_key_from_ecdh(alice.private_key, bob.public_key, "test-context")
+        key2, _ = derive_key_from_ecdh(bob.private_key, alice.public_key, "test-context", salt=salt)
 
         assert key1 == key2
 
@@ -279,12 +276,8 @@ class TestECDHDerivation:
         bob = generate_x25519_keypair()
         salt = generate_salt()
 
-        key1, _ = derive_key_from_ecdh(
-            alice.private_key, bob.public_key, "context-a", salt=salt
-        )
-        key2, _ = derive_key_from_ecdh(
-            alice.private_key, bob.public_key, "context-b", salt=salt
-        )
+        key1, _ = derive_key_from_ecdh(alice.private_key, bob.public_key, "context-a", salt=salt)
+        key2, _ = derive_key_from_ecdh(alice.private_key, bob.public_key, "context-b", salt=salt)
 
         assert key1 != key2
 
@@ -293,12 +286,8 @@ class TestECDHDerivation:
         alice = generate_x25519_keypair()
         bob = generate_x25519_keypair()
 
-        key1, _ = derive_key_from_ecdh(
-            alice.private_key, bob.public_key, "test", salt=generate_salt()
-        )
-        key2, _ = derive_key_from_ecdh(
-            alice.private_key, bob.public_key, "test", salt=generate_salt()
-        )
+        key1, _ = derive_key_from_ecdh(alice.private_key, bob.public_key, "test", salt=generate_salt())
+        key2, _ = derive_key_from_ecdh(alice.private_key, bob.public_key, "test", salt=generate_salt())
 
         assert key1 != key2
 
@@ -315,10 +304,10 @@ class TestECDHDerivation:
     def test_rejects_wrong_key_lengths(self):
         """Rejects keys that aren't 32 bytes."""
         with pytest.raises(ValueError, match="Private key must be 32 bytes"):
-            derive_key_from_ecdh(b'\x00' * 31, b'\x01' * 32, "test")
+            derive_key_from_ecdh(b"\x00" * 31, b"\x01" * 32, "test")
 
         with pytest.raises(ValueError, match="Public key must be 32 bytes"):
-            derive_key_from_ecdh(b'\x00' * 32, b'\x01' * 31, "test")
+            derive_key_from_ecdh(b"\x00" * 32, b"\x01" * 31, "test")
 
     def test_rejects_wrong_salt_length(self):
         """Rejects salt that isn't 32 bytes."""
@@ -326,14 +315,13 @@ class TestECDHDerivation:
         bob = generate_x25519_keypair()
 
         with pytest.raises(ValueError, match="Salt must be 32 bytes"):
-            derive_key_from_ecdh(
-                alice.private_key, bob.public_key, "test", salt=b'\x00' * 16
-            )
+            derive_key_from_ecdh(alice.private_key, bob.public_key, "test", salt=b"\x00" * 16)
 
 
 # =============================================================================
 # AES-GCM Tests
 # =============================================================================
+
 
 class TestAESGCM:
     """Tests for AES-256-GCM encryption/decryption."""
@@ -430,22 +418,23 @@ class TestAESGCM:
     def test_rejects_wrong_key_length(self):
         """Key must be exactly 32 bytes."""
         with pytest.raises(ValueError, match="Key must be 32 bytes"):
-            encrypt_aes_gcm(b'\x00' * 16, b"test")
+            encrypt_aes_gcm(b"\x00" * 16, b"test")
 
     def test_decrypt_rejects_wrong_iv_length(self, key):
         """Decrypt rejects wrong IV length."""
         with pytest.raises(ValueError, match="IV must be 16 bytes"):
-            decrypt_aes_gcm(key, b'\x00' * 15, b"test", b'\x00' * 16)
+            decrypt_aes_gcm(key, b"\x00" * 15, b"test", b"\x00" * 16)
 
     def test_decrypt_rejects_wrong_tag_length(self, key):
         """Decrypt rejects wrong auth tag length."""
         with pytest.raises(ValueError, match="Auth tag must be 16 bytes"):
-            decrypt_aes_gcm(key, b'\x00' * 16, b"test", b'\x00' * 15)
+            decrypt_aes_gcm(key, b"\x00" * 16, b"test", b"\x00" * 15)
 
 
 # =============================================================================
 # Public Key Encryption Tests
 # =============================================================================
+
 
 class TestPublicKeyEncryption:
     """Tests for ephemeral ECDH encrypt-to-public-key."""
@@ -467,10 +456,7 @@ class TestPublicKeyEncryption:
         plaintext = b"test"
         context = "test"
 
-        payloads = [
-            encrypt_to_public_key(recipient.public_key, plaintext, context)
-            for _ in range(100)
-        ]
+        payloads = [encrypt_to_public_key(recipient.public_key, plaintext, context) for _ in range(100)]
         ephemeral_keys = {p.ephemeral_public_key for p in payloads}
 
         assert len(ephemeral_keys) == 100
@@ -526,7 +512,7 @@ class TestPublicKeyEncryption:
     def test_rejects_wrong_public_key_length(self):
         """encrypt_to_public_key rejects wrong key length."""
         with pytest.raises(ValueError, match="Recipient public key must be 32 bytes"):
-            encrypt_to_public_key(b'\x00' * 31, b"test", "ctx")
+            encrypt_to_public_key(b"\x00" * 31, b"test", "ctx")
 
     def test_decrypt_rejects_wrong_private_key_length(self):
         """decrypt_with_private_key rejects wrong key length."""
@@ -534,12 +520,13 @@ class TestPublicKeyEncryption:
         payload = encrypt_to_public_key(recipient.public_key, b"test", "ctx")
 
         with pytest.raises(ValueError, match="Private key must be 32 bytes"):
-            decrypt_with_private_key(b'\x00' * 31, payload, "ctx")
+            decrypt_with_private_key(b"\x00" * 31, payload, "ctx")
 
 
 # =============================================================================
 # Utility Tests
 # =============================================================================
+
 
 class TestSecureCompare:
     """Tests for constant-time comparison."""
@@ -564,6 +551,7 @@ class TestSecureCompare:
 # Integration Tests
 # =============================================================================
 
+
 class TestIntegration:
     """End-to-end integration tests simulating real usage."""
 
@@ -578,7 +566,7 @@ class TestIntegration:
         6. Use to decrypt messages
         """
         # Use fast parameters for test
-        params = {'time_cost': 1, 'memory_cost': 16384, 'parallelism': 1}
+        params = {"time_cost": 1, "memory_cost": 16384, "parallelism": 1}
 
         # 1. Generate user keypair
         user = generate_x25519_keypair()
@@ -619,7 +607,7 @@ class TestIntegration:
         5. Member decrypts org key with their private key
         6. Member can now decrypt org messages
         """
-        params = {'time_cost': 1, 'memory_cost': 16384, 'parallelism': 1}
+        params = {"time_cost": 1, "memory_cost": 16384, "parallelism": 1}
 
         # 1. Create org keypair
         org = generate_x25519_keypair()
@@ -637,14 +625,12 @@ class TestIntegration:
         member_org_key_payload = encrypt_to_public_key(
             member.public_key,
             org.private_key,  # Admin has this decrypted in memory
-            "org-key-distribution"
+            "org-key-distribution",
         )
 
         # 5. Member decrypts org key with their private key
         recovered_org_private = decrypt_with_private_key(
-            member.private_key,
-            member_org_key_payload,
-            "org-key-distribution"
+            member.private_key, member_org_key_payload, "org-key-distribution"
         )
 
         assert recovered_org_private == org.private_key
@@ -664,7 +650,7 @@ class TestIntegration:
         3. User forgets passcode
         4. Use recovery code to recover private key
         """
-        params = {'time_cost': 1, 'memory_cost': 16384, 'parallelism': 1}
+        params = {"time_cost": 1, "memory_cost": 16384, "parallelism": 1}
 
         # 1. Generate keypair and recovery code
         user = generate_x25519_keypair()
@@ -703,16 +689,11 @@ class TestIntegration:
         message = b"Announcement for all users"
 
         # Encrypt to each recipient
-        payloads = [
-            encrypt_to_public_key(r.public_key, message, "announcement")
-            for r in recipients
-        ]
+        payloads = [encrypt_to_public_key(r.public_key, message, "announcement") for r in recipients]
 
         # Each recipient can decrypt
         for recipient, payload in zip(recipients, payloads):
-            decrypted = decrypt_with_private_key(
-                recipient.private_key, payload, "announcement"
-            )
+            decrypted = decrypt_with_private_key(recipient.private_key, payload, "announcement")
             assert decrypted == message
 
         # Payloads are all different (different ephemeral keys)

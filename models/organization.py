@@ -6,6 +6,7 @@ Security Note:
 - Members receive org private key encrypted TO their personal public key
 - Server cannot access org private key without admin-provided passcode
 """
+
 from datetime import datetime
 from typing import Optional
 
@@ -66,29 +67,15 @@ class Organization(Base):
     # Relationships
     # =========================================================================
 
-    memberships = relationship(
-        "OrganizationMembership",
-        back_populates="organization",
-        cascade="all, delete-orphan"
-    )
-    sessions = relationship(
-        "Session",
-        back_populates="organization",
-        cascade="all, delete-orphan"
-    )
-    audit_logs = relationship(
-        "AuditLog",
-        back_populates="organization",
-        cascade="all, delete-orphan"
-    )
+    memberships = relationship("OrganizationMembership", back_populates="organization", cascade="all, delete-orphan")
+    sessions = relationship("Session", back_populates="organization", cascade="all, delete-orphan")
+    audit_logs = relationship("AuditLog", back_populates="organization", cascade="all, delete-orphan")
 
     # =========================================================================
     # Indexes
     # =========================================================================
 
-    __table_args__ = (
-        Index('ix_organizations_has_encryption', 'has_encryption_keys'),
-    )
+    __table_args__ = (Index("ix_organizations_has_encryption", "has_encryption_keys"),)
 
     # =========================================================================
     # Helper Properties
@@ -109,10 +96,7 @@ class Organization(Base):
         return {
             "has_encryption_keys": bool(self.has_encryption_keys),
             "org_public_key": self.org_public_key,
-            "encryption_created_at": (
-                self.encryption_created_at.isoformat()
-                if self.encryption_created_at else None
-            ),
+            "encryption_created_at": (self.encryption_created_at.isoformat() if self.encryption_created_at else None),
             "encryption_created_by": self.encryption_created_by,
         }
 

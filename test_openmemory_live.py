@@ -9,6 +9,7 @@ This tests the full CRUD flow:
 4. List all memories for the user
 5. Delete it
 """
+
 import asyncio
 import sys
 import os
@@ -21,6 +22,7 @@ load_dotenv()
 # Add the OpenMemory SDK to path
 memory_path = Path(__file__).parent.parent / "memory" / "packages" / "openmemory-py" / "src"
 sys.path.insert(0, str(memory_path))
+
 
 async def main():
     print("=" * 60)
@@ -87,6 +89,7 @@ async def main():
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -106,6 +109,7 @@ async def main():
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -122,6 +126,7 @@ async def main():
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -133,6 +138,7 @@ async def main():
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -144,6 +150,7 @@ async def main():
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -164,6 +171,7 @@ async def main():
     print("\n8. Cleaning up...")
     try:
         from openmemory.core.db import close_pg_pool
+
         await close_pg_pool()
         print("   ✓ Connection pool closed")
     except Exception as e:

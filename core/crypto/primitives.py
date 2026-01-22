@@ -19,6 +19,7 @@ Usage Contexts (must match between encrypt/decrypt):
 - "assistant-message-storage": Assistant messages stored in database
 - "org-key-distribution": Org private key encrypted to member
 """
+
 from dataclasses import dataclass
 from typing import Tuple, Optional
 import secrets
@@ -35,6 +36,7 @@ from nacl.bindings import crypto_scalarmult
 # Data Structures
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class KeyPair:
     """
@@ -44,8 +46,9 @@ class KeyPair:
         private_key: 32-byte private key (KEEP SECRET)
         public_key: 32-byte public key (safe to share)
     """
+
     private_key: bytes  # 32 bytes
-    public_key: bytes   # 32 bytes
+    public_key: bytes  # 32 bytes
 
     def __post_init__(self):
         if len(self.private_key) != 32:
@@ -69,11 +72,12 @@ class EncryptedPayload:
         auth_tag: AES-GCM authentication tag (16 bytes)
         hkdf_salt: Random salt used in HKDF derivation (32 bytes)
     """
+
     ephemeral_public_key: bytes  # 32 bytes
-    iv: bytes                     # 16 bytes
-    ciphertext: bytes             # variable
-    auth_tag: bytes               # 16 bytes
-    hkdf_salt: bytes              # 32 bytes
+    iv: bytes  # 16 bytes
+    ciphertext: bytes  # variable
+    auth_tag: bytes  # 16 bytes
+    hkdf_salt: bytes  # 32 bytes
 
     def __post_init__(self):
         if len(self.ephemeral_public_key) != 32:
@@ -89,6 +93,7 @@ class EncryptedPayload:
 # =============================================================================
 # Key Generation
 # =============================================================================
+
 
 def generate_x25519_keypair() -> KeyPair:
     """
@@ -109,10 +114,7 @@ def generate_x25519_keypair() -> KeyPair:
     private_key = PrivateKey.generate()
     public_key = private_key.public_key
 
-    return KeyPair(
-        private_key=bytes(private_key),
-        public_key=bytes(public_key)
-    )
+    return KeyPair(private_key=bytes(private_key), public_key=bytes(public_key))
 
 
 def generate_salt(length: int = 32) -> bytes:
@@ -145,12 +147,13 @@ def generate_recovery_code(length: int = 20) -> str:
         20 digits = ~66 bits of entropy, sufficient for recovery codes
         that are stored offline by users.
     """
-    return ''.join(str(secrets.randbelow(10)) for _ in range(length))
+    return "".join(str(secrets.randbelow(10)) for _ in range(length))
 
 
 # =============================================================================
 # Key Derivation
 # =============================================================================
+
 
 def derive_key_from_ecdh(
     private_key: bytes,
@@ -209,7 +212,7 @@ def derive_key_from_ecdh(
         algorithm=hashes.SHA512(),
         length=32,
         salt=salt,
-        info=context.encode('utf-8'),
+        info=context.encode("utf-8"),
     )
     derived_key = hkdf.derive(shared_secret)
 
@@ -219,6 +222,7 @@ def derive_key_from_ecdh(
 # =============================================================================
 # Symmetric Encryption (AES-256-GCM)
 # =============================================================================
+
 
 def encrypt_aes_gcm(
     key: bytes,
@@ -311,6 +315,7 @@ def decrypt_aes_gcm(
 # =============================================================================
 # High-Level Encryption (Ephemeral ECDH Pattern)
 # =============================================================================
+
 
 def encrypt_to_public_key(
     recipient_public_key: bytes,
@@ -428,6 +433,7 @@ def decrypt_with_private_key(
 # =============================================================================
 # Utilities
 # =============================================================================
+
 
 def secure_compare(a: bytes, b: bytes) -> bool:
     """

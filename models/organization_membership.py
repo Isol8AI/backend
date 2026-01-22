@@ -6,6 +6,7 @@ Security Note:
 - Only the member can decrypt their copy (using their personal private key)
 - Server cannot decrypt any member's copy of the org key
 """
+
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Optional
@@ -21,6 +22,7 @@ class MemberRole(str, PyEnum):
 
     Values match Clerk JWT claim format for consistency.
     """
+
     ADMIN = "org:admin"
     MEMBER = "org:member"
 
@@ -230,9 +232,7 @@ class OrganizationMembership(Base):
             "org_id": self.org_id,
             "role": self.role.value,
             "has_org_key": self.has_org_key,
-            "key_distributed_at": (
-                self.key_distributed_at.isoformat() if self.key_distributed_at else None
-            ),
+            "key_distributed_at": (self.key_distributed_at.isoformat() if self.key_distributed_at else None),
             "joined_at": self.joined_at.isoformat() if self.joined_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

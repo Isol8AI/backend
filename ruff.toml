@@ -1,6 +1,7 @@
 # Ruff configuration for Freebird backend
 line-length = 120
 
+[lint]
 # Ignore line length for now
 ignore = ["E501"]
 

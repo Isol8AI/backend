@@ -6,6 +6,7 @@ Security Note:
 - Embeddings are pre-computed (from plaintext) by the enclave or client
 - Server stores and searches encrypted blobs only
 """
+
 import json
 import logging
 from datetime import datetime
@@ -27,6 +28,7 @@ router = APIRouter()
 # =============================================================================
 # Helper Functions for OpenMemory Data Parsing
 # =============================================================================
+
 
 def parse_metadata(r: dict) -> dict:
     """Parse metadata from OpenMemory's 'meta' column (JSON string)."""
@@ -71,8 +73,10 @@ def format_timestamp(ts) -> Optional[str]:
 # Request/Response Models
 # =============================================================================
 
+
 class StoreMemoryRequest(BaseModel):
     """Request to store an encrypted memory."""
+
     encrypted_content: str = Field(..., description="Encrypted memory content (ciphertext)")
     embedding: List[float] = Field(..., description="Pre-computed embedding vector")
     sector: str = Field(default="semantic", description="Memory sector")
@@ -83,6 +87,7 @@ class StoreMemoryRequest(BaseModel):
 
 class StoreMemoryResponse(BaseModel):
     """Response after storing a memory."""
+
     id: Optional[str] = None
     primary_sector: Optional[str] = None
     salience: Optional[float] = None
@@ -91,6 +96,7 @@ class StoreMemoryResponse(BaseModel):
 
 class SearchMemoriesRequest(BaseModel):
     """Request to search memories by embedding."""
+
     query_text: str = Field(..., description="Original query text (for token matching)")
     embedding: List[float] = Field(..., description="Pre-computed query embedding")
     limit: int = Field(default=10, ge=1, le=50)
@@ -101,6 +107,7 @@ class SearchMemoriesRequest(BaseModel):
 
 class MemoryItem(BaseModel):
     """A memory item in search results or list."""
+
     id: str
     content: str  # Encrypted ciphertext
     primary_sector: str
@@ -115,18 +122,21 @@ class MemoryItem(BaseModel):
 
 class SearchMemoriesResponse(BaseModel):
     """Response for memory search."""
+
     memories: List[MemoryItem]
     total: int
 
 
 class ListMemoriesResponse(BaseModel):
     """Response for listing memories."""
+
     memories: List[MemoryItem]
     total: int
 
 
 class DeleteMemoriesRequest(BaseModel):
     """Request to delete all memories."""
+
     context: str = Field(default="personal", description="'personal' or 'org'")
     org_id: Optional[str] = Field(default=None, description="Org ID if deleting org memories")
 
@@ -134,6 +144,7 @@ class DeleteMemoriesRequest(BaseModel):
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 async def get_memory_service() -> MemoryService:
     """Dependency to get memory service instance."""
@@ -319,10 +330,7 @@ async def delete_memory(
     )
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Memory not found or access denied"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found or access denied")
 
 
 @router.delete("", status_code=status.HTTP_200_OK)

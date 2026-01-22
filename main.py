@@ -1,6 +1,7 @@
 # Load environment variables FIRST, before any other imports
 # This ensures OpenMemory SDK sees the OM_* env vars
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import asyncio
@@ -30,6 +31,7 @@ async def memory_decay_loop():
     try:
         import sys
         from pathlib import Path
+
         memory_path = Path(__file__).parent.parent / "memory" / "packages" / "openmemory-py" / "src"
         if str(memory_path) not in sys.path:
             sys.path.insert(0, str(memory_path))
@@ -60,6 +62,7 @@ async def memory_reflection_loop():
     try:
         import sys
         from pathlib import Path
+
         memory_path = Path(__file__).parent.parent / "memory" / "packages" / "openmemory-py" / "src"
         if str(memory_path) not in sys.path:
             sys.path.insert(0, str(memory_path))
@@ -159,7 +162,7 @@ async def root():
 
 
 @app.get("/health")
-async def health_check(db = Depends(get_db)):
+async def health_check(db=Depends(get_db)):
     """
     Health check that validates database connectivity.
 
@@ -178,12 +181,9 @@ async def health_check(db = Depends(get_db)):
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return JSONResponse(
-            status_code=503,
-            content={"status": "unhealthy", "database": "disconnected"}
-        )
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "database": "disconnected"})
 
 
 @app.get("/protected")
-async def protected_route(auth = Depends(get_current_user)):
+async def protected_route(auth=Depends(get_current_user)):
     return {"message": "You are authenticated", "user_id": auth.user_id}

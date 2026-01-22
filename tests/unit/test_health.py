@@ -8,6 +8,7 @@ The health endpoint must return:
 This is critical for ALB health checks - returning 200 on failure
 would cause ALB to route traffic to unhealthy instances.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from httpx import AsyncClient
@@ -31,6 +32,7 @@ class TestHealthEndpoint:
         app.dependency_overrides = {}
 
         from core.database import get_db
+
         app.dependency_overrides[get_db] = mock_get_db
 
         try:
@@ -59,6 +61,7 @@ class TestHealthEndpoint:
         app.dependency_overrides = {}
 
         from core.database import get_db
+
         app.dependency_overrides[get_db] = mock_get_db
 
         try:

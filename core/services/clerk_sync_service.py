@@ -6,6 +6,7 @@ Security Note:
 - User deletion clears all encryption keys
 - All changes are audit logged
 """
+
 import logging
 from typing import Optional
 from uuid import uuid4
@@ -33,9 +34,7 @@ def _parse_clerk_role(role_str: str) -> MemberRole:
         return MemberRole(role_str)
     except ValueError:
         logger.warning(
-            "Unknown Clerk role format: %s. Defaulting to member. "
-            "Expected 'org:admin' or 'org:member'.",
-            role_str
+            "Unknown Clerk role format: %s. Defaulting to member. Expected 'org:admin' or 'org:member'.", role_str
         )
         return MemberRole.MEMBER
 
@@ -55,9 +54,7 @@ class ClerkSyncService:
         user_id = data.get("id")
 
         # Check if user already exists
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         existing = result.scalar_one_or_none()
         if existing:
             logger.info("User %s already exists, updating", user_id)
@@ -75,9 +72,7 @@ class ClerkSyncService:
         """Update user from Clerk webhook data."""
         user_id = data.get("id")
 
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -101,9 +96,7 @@ class ClerkSyncService:
         """
         user_id = data.get("id")
 
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -123,9 +116,7 @@ class ClerkSyncService:
 
         # Delete user's memberships first (clear org keys)
         membership_result = await self.db.execute(
-            select(OrganizationMembership).where(
-                OrganizationMembership.user_id == user_id
-            )
+            select(OrganizationMembership).where(OrganizationMembership.user_id == user_id)
         )
         memberships = membership_result.scalars().all()
 
@@ -151,9 +142,7 @@ class ClerkSyncService:
         slug = data.get("slug")
 
         # Check if org already exists
-        result = await self.db.execute(
-            select(Organization).where(Organization.id == org_id)
-        )
+        result = await self.db.execute(select(Organization).where(Organization.id == org_id))
         existing = result.scalar_one_or_none()
         if existing:
             logger.info("Organization %s already exists, updating", org_id)
@@ -175,9 +164,7 @@ class ClerkSyncService:
         """Update organization from Clerk webhook data."""
         org_id = data.get("id")
 
-        result = await self.db.execute(
-            select(Organization).where(Organization.id == org_id)
-        )
+        result = await self.db.execute(select(Organization).where(Organization.id == org_id))
         org = result.scalar_one_or_none()
 
         if not org:
@@ -197,9 +184,7 @@ class ClerkSyncService:
         """Delete organization and all encryption keys."""
         org_id = data.get("id")
 
-        result = await self.db.execute(
-            select(Organization).where(Organization.id == org_id)
-        )
+        result = await self.db.execute(select(Organization).where(Organization.id == org_id))
         org = result.scalar_one_or_none()
 
         if not org:
@@ -208,9 +193,7 @@ class ClerkSyncService:
 
         # Clear org keys from all memberships first
         membership_result = await self.db.execute(
-            select(OrganizationMembership).where(
-                OrganizationMembership.org_id == org_id
-            )
+            select(OrganizationMembership).where(OrganizationMembership.org_id == org_id)
         )
         memberships = membership_result.scalars().all()
 
@@ -253,9 +236,10 @@ class ClerkSyncService:
 
         if not all([membership_id, user_id, org_id]):
             logger.warning(
-                "Membership webhook missing required fields: "
-                "membership_id=%s, user_id=%s, org_id=%s",
-                membership_id, user_id, org_id
+                "Membership webhook missing required fields: membership_id=%s, user_id=%s, org_id=%s",
+                membership_id,
+                user_id,
+                org_id,
             )
             return None
 
@@ -263,9 +247,7 @@ class ClerkSyncService:
         role = _parse_clerk_role(role_str)
 
         # Ensure organization exists
-        org_result = await self.db.execute(
-            select(Organization).where(Organization.id == org_id)
-        )
+        org_result = await self.db.execute(select(Organization).where(Organization.id == org_id))
         org = org_result.scalar_one_or_none()
         if not org:
             org_name = data.get("organization", {}).get("name", "Unknown Organization")
@@ -275,9 +257,7 @@ class ClerkSyncService:
             logger.info("Created organization %s from membership webhook", org_id)
 
         # Ensure user exists
-        user_result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        user_result = await self.db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
         if not user:
             user = User(id=user_id)
@@ -335,8 +315,7 @@ class ClerkSyncService:
         await self.db.commit()
 
         logger.info(
-            "Created membership for user %s in org %s (role: %s, pending key distribution)",
-            user_id, org_id, role_str
+            "Created membership for user %s in org %s (role: %s, pending key distribution)", user_id, org_id, role_str
         )
         return membership
 
@@ -382,10 +361,7 @@ class ClerkSyncService:
             self.db.add(audit_log)
 
             await self.db.commit()
-            logger.info(
-                "Updated role for user %s in org %s: %s -> %s",
-                user_id, org_id, old_role.value, new_role.value
-            )
+            logger.info("Updated role for user %s in org %s: %s -> %s", user_id, org_id, old_role.value, new_role.value)
 
         return membership
 
@@ -404,9 +380,7 @@ class ClerkSyncService:
         membership = None
         if membership_id:
             result = await self.db.execute(
-                select(OrganizationMembership).where(
-                    OrganizationMembership.id == membership_id
-                )
+                select(OrganizationMembership).where(OrganizationMembership.id == membership_id)
             )
             membership = result.scalar_one_or_none()
 
@@ -457,6 +431,5 @@ class ClerkSyncService:
         await self.db.commit()
 
         logger.warning(
-            "Deleted membership for user %s in org %s (had_org_key: %s)",
-            actual_user_id, actual_org_id, had_org_key
+            "Deleted membership for user %s in org %s (had_org_key: %s)", actual_user_id, actual_org_id, had_org_key
         )

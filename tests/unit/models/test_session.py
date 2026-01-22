@@ -1,4 +1,5 @@
 """Unit tests for Session model."""
+
 import uuid
 
 import pytest
@@ -108,12 +109,7 @@ class TestSessionModel:
     @pytest.mark.asyncio
     async def test_session_with_org_persistence(self, db_session, test_user, test_organization):
         """Session with org_id can be persisted and retrieved."""
-        session = Session(
-            id=str(uuid.uuid4()),
-            user_id=test_user.id,
-            org_id=test_organization.id,
-            name="Org Session"
-        )
+        session = Session(id=str(uuid.uuid4()), user_id=test_user.id, org_id=test_organization.id, name="Org Session")
         db_session.add(session)
         await db_session.flush()
 
@@ -127,10 +123,7 @@ class TestSessionModel:
     async def test_session_org_foreign_key(self, db_session, test_user):
         """Session requires valid org_id foreign key if provided."""
         session = Session(
-            id=str(uuid.uuid4()),
-            user_id=test_user.id,
-            org_id="nonexistent_org",
-            name="Invalid Org Session"
+            id=str(uuid.uuid4()), user_id=test_user.id, org_id="nonexistent_org", name="Invalid Org Session"
         )
         db_session.add(session)
 
@@ -141,12 +134,7 @@ class TestSessionModel:
     async def test_filter_personal_sessions(self, db_session, test_user, test_organization):
         """Can filter sessions by org_id IS NULL for personal sessions."""
         personal = Session(id=str(uuid.uuid4()), user_id=test_user.id, name="Personal")
-        org_session = Session(
-            id=str(uuid.uuid4()),
-            user_id=test_user.id,
-            org_id=test_organization.id,
-            name="Org"
-        )
+        org_session = Session(id=str(uuid.uuid4()), user_id=test_user.id, org_id=test_organization.id, name="Org")
         db_session.add(personal)
         db_session.add(org_session)
         await db_session.flush()
@@ -163,21 +151,13 @@ class TestSessionModel:
     async def test_filter_org_sessions(self, db_session, test_user, test_organization):
         """Can filter sessions by specific org_id."""
         personal = Session(id=str(uuid.uuid4()), user_id=test_user.id, name="Personal")
-        org_session = Session(
-            id=str(uuid.uuid4()),
-            user_id=test_user.id,
-            org_id=test_organization.id,
-            name="Org"
-        )
+        org_session = Session(id=str(uuid.uuid4()), user_id=test_user.id, org_id=test_organization.id, name="Org")
         db_session.add(personal)
         db_session.add(org_session)
         await db_session.flush()
 
         result = await db_session.execute(
-            select(Session).where(
-                Session.user_id == test_user.id,
-                Session.org_id == test_organization.id
-            )
+            select(Session).where(Session.user_id == test_user.id, Session.org_id == test_organization.id)
         )
         org_sessions = result.scalars().all()
 

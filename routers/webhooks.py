@@ -5,6 +5,7 @@ Security Note:
 - All webhooks are verified using Clerk's signing secret
 - Membership deletion triggers org key revocation
 """
+
 import logging
 from typing import Optional
 
@@ -33,13 +34,11 @@ async def verify_webhook(
         logger.warning("CLERK_WEBHOOK_SECRET not configured - skipping verification in dev")
         # In development, allow unverified webhooks
         import json
+
         return json.loads(body)
 
     if not all([svix_id, svix_timestamp, svix_signature]):
-        raise HTTPException(
-            status_code=400,
-            detail="Missing svix headers for webhook verification"
-        )
+        raise HTTPException(status_code=400, detail="Missing svix headers for webhook verification")
 
     try:
         wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
@@ -49,7 +48,7 @@ async def verify_webhook(
                 "svix-id": svix_id,
                 "svix-timestamp": svix_timestamp,
                 "svix-signature": svix_signature,
-            }
+            },
         )
         return payload
     except WebhookVerificationError as e:

@@ -7,6 +7,7 @@ Security Note:
 - Embeddings are pre-computed from plaintext in the enclave
 - The server stores encrypted blobs and embeddings only
 """
+
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional
@@ -24,10 +25,12 @@ def _get_on_query_hit():
         try:
             import sys
             from pathlib import Path
+
             memory_path = Path(__file__).parent.parent.parent.parent / "memory" / "packages" / "openmemory-py" / "src"
             if str(memory_path) not in sys.path:
                 sys.path.insert(0, str(memory_path))
             from openmemory.memory.decay import on_query_hit
+
             _on_query_hit = on_query_hit
         except ImportError as e:
             logger.warning(f"Memory decay module not available: {e}")
@@ -37,11 +40,13 @@ def _get_on_query_hit():
 
 class MemoryServiceError(Exception):
     """Base exception for memory service errors."""
+
     pass
 
 
 class MemoryNotFoundError(MemoryServiceError):
     """Memory not found."""
+
     pass
 
 
@@ -80,6 +85,7 @@ class MemoryService:
                 sys.path.insert(0, str(memory_path))
 
             from openmemory import Memory
+
             cls._memory = Memory()
             cls._initialized = True
             logger.info("OpenMemory SDK initialized successfully")
@@ -281,7 +287,7 @@ class MemoryService:
         try:
             result = await self._memory.get(memory_id)
             if result:
-                return dict(result) if hasattr(result, 'keys') else result
+                return dict(result) if hasattr(result, "keys") else result
             return None
         except Exception as e:
             logger.error(f"Failed to get memory {memory_id}: {e}")

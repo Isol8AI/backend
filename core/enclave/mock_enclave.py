@@ -13,6 +13,7 @@ What the enclave does:
 4. Re-encrypts for storage (to user/org public key)
 5. Encrypts response for transport back to client
 """
+
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -43,6 +44,7 @@ def _debug_print(*args, **kwargs):
 # Data Structures
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class DecryptedMessage:
     """
@@ -55,6 +57,7 @@ class DecryptedMessage:
         role: "user" or "assistant"
         content: Plaintext message content
     """
+
     role: str
     content: str
 
@@ -73,6 +76,7 @@ class ProcessedMessage:
     The server stores the first two but cannot read them.
     The client receives the third and decrypts it.
     """
+
     # For database storage (encrypted to user's or org's storage key)
     stored_user_message: EncryptedPayload
     stored_assistant_message: EncryptedPayload
@@ -99,6 +103,7 @@ class StreamChunk:
     - is_final: True for the last chunk
     - error: Error message if something went wrong
     """
+
     encrypted_content: Optional[EncryptedPayload] = None
     stored_user_message: Optional[EncryptedPayload] = None
     stored_assistant_message: Optional[EncryptedPayload] = None
@@ -123,6 +128,7 @@ class EnclaveInfo:
         enclave_public_key: X25519 public key for encrypting to enclave
         attestation_document: AWS Nitro attestation (None for mock)
     """
+
     enclave_public_key: bytes
     attestation_document: Optional[bytes] = None
 
@@ -130,9 +136,7 @@ class EnclaveInfo:
         """Convert to hex-encoded dict for API response."""
         return {
             "enclave_public_key": self.enclave_public_key.hex(),
-            "attestation_document": (
-                self.attestation_document.hex() if self.attestation_document else None
-            ),
+            "attestation_document": (self.attestation_document.hex() if self.attestation_document else None),
         }
 
 
@@ -144,6 +148,7 @@ class ExtractedMemory:
     This is returned by the enclave's extract_memories method.
     The content is already encrypted to the storage key.
     """
+
     encrypted_content: EncryptedPayload
     embedding: List[float]
     sector: str  # episodic, semantic, procedural, emotional, reflective
@@ -165,6 +170,7 @@ class ExtractedFact:
         encrypted_payload: Encrypted JSON containing {subject, predicate, object, confidence, type, entities}
         fact_id: Unique identifier for the fact
     """
+
     encrypted_payload: EncryptedPayload
     fact_id: str
 
@@ -172,6 +178,7 @@ class ExtractedFact:
 # =============================================================================
 # Enclave Interface
 # =============================================================================
+
 
 class EnclaveInterface(ABC):
     """
@@ -298,6 +305,7 @@ class EnclaveInterface(ABC):
 # Mock Enclave Implementation
 # =============================================================================
 
+
 class MockEnclave(EnclaveInterface):
     """
     Mock enclave for development and testing.
@@ -343,10 +351,7 @@ class MockEnclave(EnclaveInterface):
         # Embedding model (lazy loaded)
         self._embedding_model = None
 
-        logger.info(
-            "MockEnclave initialized with public key: %s",
-            self._keypair.public_key.hex()[:16] + "..."
-        )
+        logger.info("MockEnclave initialized with public key: %s", self._keypair.public_key.hex()[:16] + "...")
 
     # -------------------------------------------------------------------------
     # EnclaveInterface Implementation
@@ -444,6 +449,7 @@ class MockEnclave(EnclaveInterface):
         """
         # History is re-encrypted to enclave by client, so use transport context
         from . import EncryptionContext
+
         return decrypt_with_private_key(
             self._keypair.private_key,
             payload,
@@ -600,7 +606,11 @@ class MockEnclave(EnclaveInterface):
                 _debug_print("-" * 60)
             history = self._decrypt_history(encrypted_history)
             for i, msg in enumerate(history):
-                _debug_print(f"  [{i}] {msg.role}: {msg.content[:50]}..." if len(msg.content) > 50 else f"  [{i}] {msg.role}: {msg.content}")
+                _debug_print(
+                    f"  [{i}] {msg.role}: {msg.content[:50]}..."
+                    if len(msg.content) > 50
+                    else f"  [{i}] {msg.role}: {msg.content}"
+                )
 
             # 2b. Decrypt memories for context injection
             memories = []
@@ -646,7 +656,11 @@ class MockEnclave(EnclaveInterface):
                 yield StreamChunk(encrypted_content=encrypted_chunk)
 
             _debug_print(f"\n✅ Total chunks streamed: {chunk_count}")
-            _debug_print(f"Full response: {full_response[:100]}..." if len(full_response) > 100 else f"Full response: {full_response}")
+            _debug_print(
+                f"Full response: {full_response[:100]}..."
+                if len(full_response) > 100
+                else f"Full response: {full_response}"
+            )
 
             # 4. Build final encrypted messages for storage
             _debug_print("\n💾 STEP 5: Encrypt Messages for Storage")
@@ -748,12 +762,14 @@ class MockEnclave(EnclaveInterface):
         """
         history = []
         for i, payload in enumerate(encrypted_history):
-            is_assistant = (i % 2 == 1)  # 0=user, 1=assistant, 2=user, ...
+            is_assistant = i % 2 == 1  # 0=user, 1=assistant, 2=user, ...
             plaintext = self.decrypt_history_message(payload, is_assistant)
-            history.append(DecryptedMessage(
-                role="assistant" if is_assistant else "user",
-                content=plaintext.decode("utf-8"),
-            ))
+            history.append(
+                DecryptedMessage(
+                    role="assistant" if is_assistant else "user",
+                    content=plaintext.decode("utf-8"),
+                )
+            )
         return history
 
     def _decrypt_memories(
@@ -870,15 +886,19 @@ class MockEnclave(EnclaveInterface):
         ]
 
         for msg in history:
-            messages.append({
-                "role": msg.role,
-                "content": msg.content,
-            })
+            messages.append(
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                }
+            )
 
-        messages.append({
-            "role": "user",
-            "content": user_message,
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_message,
+            }
+        )
 
         return messages
 
@@ -1010,6 +1030,7 @@ class MockEnclave(EnclaveInterface):
         if self._embedding_model is None:
             try:
                 from sentence_transformers import SentenceTransformer
+
                 self._embedding_model = SentenceTransformer(self.EMBEDDING_MODEL)
                 logger.info(f"Loaded embedding model: {self.EMBEDDING_MODEL}")
             except ImportError:
@@ -1084,9 +1105,7 @@ If nothing memorable, output: []"""
                     f"{self._inference_url}/chat/completions",
                     json={
                         "model": self.EXTRACTION_MODEL,
-                        "messages": [
-                            {"role": "user", "content": prompt}
-                        ],
+                        "messages": [{"role": "user", "content": prompt}],
                         "max_tokens": 1024,
                         "temperature": 0.3,  # Lower temp for structured output
                     },
@@ -1218,19 +1237,21 @@ If nothing memorable, output: []"""
 
                 # 4. Build ExtractedMemory object
                 # Note: tags intentionally empty for security (content details stay encrypted)
-                memories.append(ExtractedMemory(
-                    encrypted_content=encrypted_content,
-                    embedding=embedding,
-                    sector=sector,
-                    tags=[],  # Empty - content categorization via sector only
-                    metadata={
-                        "iv": encrypted_content.iv.hex(),
-                        "auth_tag": encrypted_content.auth_tag.hex(),
-                        "ephemeral_public_key": encrypted_content.ephemeral_public_key.hex(),
-                        "hkdf_salt": encrypted_content.hkdf_salt.hex(),
-                    },
-                    salience=salience,
-                ))
+                memories.append(
+                    ExtractedMemory(
+                        encrypted_content=encrypted_content,
+                        embedding=embedding,
+                        sector=sector,
+                        tags=[],  # Empty - content categorization via sector only
+                        metadata={
+                            "iv": encrypted_content.iv.hex(),
+                            "auth_tag": encrypted_content.auth_tag.hex(),
+                            "ephemeral_public_key": encrypted_content.ephemeral_public_key.hex(),
+                            "hkdf_salt": encrypted_content.hkdf_salt.hex(),
+                        },
+                        salience=salience,
+                    )
+                )
 
                 logger.debug(f"Extracted memory: {text[:50]}... (sector: {sector}, salience: {salience})")
 
@@ -1282,8 +1303,16 @@ If nothing memorable, output: []"""
 
         facts = []
         valid_predicates = {
-            "prefers", "works_at", "located_in", "interested_in",
-            "has_skill", "dislikes", "plans_to", "uses", "knows", "mentioned"
+            "prefers",
+            "works_at",
+            "located_in",
+            "interested_in",
+            "has_skill",
+            "dislikes",
+            "plans_to",
+            "uses",
+            "knows",
+            "mentioned",
         }
         predicate_to_type = {
             "prefers": "preference",
@@ -1345,10 +1374,12 @@ If nothing memorable, output: []"""
                     context="fact-extraction",
                 )
 
-                facts.append(ExtractedFact(
-                    encrypted_payload=encrypted_fact,
-                    fact_id=fact_id,
-                ))
+                facts.append(
+                    ExtractedFact(
+                        encrypted_payload=encrypted_fact,
+                        fact_id=fact_id,
+                    )
+                )
 
                 logger.debug(f"Extracted fact: {subject} {predicate} {obj} (confidence: {confidence})")
 
@@ -1402,7 +1433,8 @@ If no facts worth extracting, output: []"""
 
                 # Parse JSON from response
                 import re
-                json_match = re.search(r'\[[\s\S]*?\]', content)
+
+                json_match = re.search(r"\[[\s\S]*?\]", content)
                 if json_match:
                     return json.loads(json_match.group())
                 return []
@@ -1414,10 +1446,11 @@ If no facts worth extracting, output: []"""
     def _extract_entities(self, obj: str, predicate: str) -> List[str]:
         """Extract entity tags from the object and predicate."""
         import re
+
         entities = []
 
         # Normalize object
-        normalized = re.sub(r'[^a-z0-9\s]', '', obj.lower()).strip()
+        normalized = re.sub(r"[^a-z0-9\s]", "", obj.lower()).strip()
         if len(normalized) > 2:
             entities.append(normalized)
 
@@ -1454,6 +1487,7 @@ def get_enclave() -> MockEnclave:
     global _enclave_instance
     if _enclave_instance is None:
         from core.config import settings
+
         _enclave_instance = MockEnclave(
             inference_url=settings.HF_API_URL,
             inference_token=settings.HUGGINGFACE_TOKEN,

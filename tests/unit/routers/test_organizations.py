@@ -1,4 +1,5 @@
 """Unit tests for organizations router."""
+
 import pytest
 from sqlalchemy import select
 
@@ -14,7 +15,7 @@ class TestSyncOrganization:
         """Sync creates new organization when not exists."""
         response = await async_client_org.post(
             "/api/v1/organizations/sync",
-            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"}
+            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"},
         )
 
         assert response.status_code == 200
@@ -27,7 +28,7 @@ class TestSyncOrganization:
         """Sync updates existing organization."""
         response = await async_client_org.post(
             "/api/v1/organizations/sync",
-            json={"org_id": "org_test_123", "name": "Updated Organization", "slug": "test-org"}
+            json={"org_id": "org_test_123", "name": "Updated Organization", "slug": "test-org"},
         )
 
         assert response.status_code == 200
@@ -36,9 +37,7 @@ class TestSyncOrganization:
         assert data["org_id"] == "org_test_123"
 
         # Verify name was updated
-        result = await db_session.execute(
-            select(Organization).where(Organization.id == "org_test_123")
-        )
+        result = await db_session.execute(select(Organization).where(Organization.id == "org_test_123"))
         org = result.scalar_one()
         assert org.name == "Updated Organization"
 
@@ -47,7 +46,7 @@ class TestSyncOrganization:
         """Sync creates membership for user in organization."""
         response = await async_client_org.post(
             "/api/v1/organizations/sync",
-            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"}
+            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"},
         )
 
         assert response.status_code == 200
@@ -55,8 +54,7 @@ class TestSyncOrganization:
         # Verify membership was created
         result = await db_session.execute(
             select(OrganizationMembership).where(
-                OrganizationMembership.user_id == "user_test_123",
-                OrganizationMembership.org_id == "org_test_123"
+                OrganizationMembership.user_id == "user_test_123", OrganizationMembership.org_id == "org_test_123"
             )
         )
         membership = result.scalar_one_or_none()
@@ -68,7 +66,7 @@ class TestSyncOrganization:
         """Sync updates membership role when role changes."""
         response = await async_client_org_admin.post(
             "/api/v1/organizations/sync",
-            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"}
+            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"},
         )
 
         assert response.status_code == 200
@@ -76,8 +74,7 @@ class TestSyncOrganization:
         # Verify membership role was updated to admin
         result = await db_session.execute(
             select(OrganizationMembership).where(
-                OrganizationMembership.user_id == "user_test_123",
-                OrganizationMembership.org_id == "org_test_123"
+                OrganizationMembership.user_id == "user_test_123", OrganizationMembership.org_id == "org_test_123"
             )
         )
         membership = result.scalar_one()
@@ -96,10 +93,7 @@ class TestSyncOrganization:
         # Create org and membership in DB (simulating webhook created it)
         org = Organization(id="org_new_789", name="New Organization", slug="new-org")
         membership = OrganizationMembership(
-            id="mem_user_test_123_org_new_789",
-            user_id="user_test_123",
-            org_id="org_new_789",
-            role=MemberRole.MEMBER
+            id="mem_user_test_123_org_new_789", user_id="user_test_123", org_id="org_new_789", role=MemberRole.MEMBER
         )
         db_session.add(org)
         db_session.add(membership)
@@ -107,8 +101,7 @@ class TestSyncOrganization:
 
         # Call sync without JWT org claims (async_client uses personal context)
         response = await async_client.post(
-            "/api/v1/organizations/sync",
-            json={"org_id": "org_new_789", "name": "Updated Org Name", "slug": "new-org"}
+            "/api/v1/organizations/sync", json={"org_id": "org_new_789", "name": "Updated Org Name", "slug": "new-org"}
         )
 
         # Should succeed because DB membership exists
@@ -121,15 +114,16 @@ class TestSyncOrganization:
     async def test_sync_rejected_without_membership(self, async_client, db_session, test_user):
         """Sync is rejected when user has no membership (no JWT org_id AND no DB membership)."""
         response = await async_client.post(
-            "/api/v1/organizations/sync",
-            json={"org_id": "org_unknown_999", "name": "Unknown Org", "slug": "unknown"}
+            "/api/v1/organizations/sync", json={"org_id": "org_unknown_999", "name": "Unknown Org", "slug": "unknown"}
         )
 
         assert response.status_code == 403
         assert "Not a member" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_sync_rejected_when_jwt_org_mismatch(self, async_client_org, db_session, test_user, test_organization, test_membership):
+    async def test_sync_rejected_when_jwt_org_mismatch(
+        self, async_client_org, db_session, test_user, test_organization, test_membership
+    ):
         """Sync is rejected when JWT org_id doesn't match request org_id.
 
         async_client_org has JWT with org_id="org_test_123".
@@ -141,19 +135,19 @@ class TestSyncOrganization:
         await db_session.flush()
 
         response = await async_client_org.post(
-            "/api/v1/organizations/sync",
-            json={"org_id": "org_other_456", "name": "Other Org", "slug": "other-org"}
+            "/api/v1/organizations/sync", json={"org_id": "org_other_456", "name": "Other Org", "slug": "other-org"}
         )
 
         assert response.status_code == 403
         assert "Cannot sync org you're not a member of" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_sync_succeeds_when_jwt_org_matches(self, async_client_org, db_session, test_user, test_organization, test_membership):
+    async def test_sync_succeeds_when_jwt_org_matches(
+        self, async_client_org, db_session, test_user, test_organization, test_membership
+    ):
         """Sync succeeds when JWT org_id matches request org_id."""
         response = await async_client_org.post(
-            "/api/v1/organizations/sync",
-            json={"org_id": "org_test_123", "name": "Updated Name", "slug": "test-org"}
+            "/api/v1/organizations/sync", json={"org_id": "org_test_123", "name": "Updated Name", "slug": "test-org"}
         )
 
         assert response.status_code == 200
@@ -166,7 +160,7 @@ class TestSyncOrganization:
         """Sync requires authentication."""
         response = await unauthenticated_async_client.post(
             "/api/v1/organizations/sync",
-            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"}
+            json={"org_id": "org_test_123", "name": "Test Organization", "slug": "test-org"},
         )
         assert response.status_code in [401, 403]
 
@@ -222,7 +216,9 @@ class TestListOrganizations:
     """Tests for GET /api/v1/organizations/ endpoint."""
 
     @pytest.mark.asyncio
-    async def test_list_returns_user_orgs(self, async_client, db_session, test_user, test_organization, test_membership):
+    async def test_list_returns_user_orgs(
+        self, async_client, db_session, test_user, test_organization, test_membership
+    ):
         """List organizations returns all user's organizations."""
         response = await async_client.get("/api/v1/organizations/")
 
@@ -239,10 +235,7 @@ class TestListOrganizations:
         """List organizations returns all organizations user belongs to."""
         # Add membership to other org
         other_membership = OrganizationMembership(
-            id="mem_other",
-            user_id="user_test_123",
-            org_id="org_other_456",
-            role=MemberRole.MEMBER
+            id="mem_other", user_id="user_test_123", org_id="org_other_456", role=MemberRole.MEMBER
         )
         db_session.add(other_membership)
         await db_session.flush()
@@ -272,10 +265,7 @@ class TestListOrganizations:
         """List organizations does not return orgs user is not a member of."""
         # Other user is a member, but test user is not
         other_membership = OrganizationMembership(
-            id="mem_other_user",
-            user_id=other_user.id,
-            org_id=test_organization.id,
-            role=MemberRole.MEMBER
+            id="mem_other_user", user_id=other_user.id, org_id=test_organization.id, role=MemberRole.MEMBER
         )
         db_session.add(other_membership)
         await db_session.flush()
@@ -287,7 +277,9 @@ class TestListOrganizations:
         assert len(data["organizations"]) == 0
 
     @pytest.mark.asyncio
-    async def test_list_includes_role_info(self, async_client, db_session, test_user, test_organization, test_admin_membership):
+    async def test_list_includes_role_info(
+        self, async_client, db_session, test_user, test_organization, test_admin_membership
+    ):
         """List organizations includes role information."""
         response = await async_client.get("/api/v1/organizations/")
 
@@ -332,8 +324,7 @@ class TestOrganizationContext:
         context_data = {"shared_settings": {"theme": "dark"}, "custom_prompt": "Be helpful"}
 
         response = await async_client_org_admin.put(
-            "/api/v1/organizations/context",
-            json={"context_data": context_data}
+            "/api/v1/organizations/context", json={"context_data": context_data}
         )
 
         assert response.status_code == 200
@@ -347,10 +338,7 @@ class TestOrganizationContext:
         """Non-admin member cannot update organization context."""
         context_data = {"shared_settings": {"theme": "dark"}}
 
-        response = await async_client_org.put(
-            "/api/v1/organizations/context",
-            json={"context_data": context_data}
-        )
+        response = await async_client_org.put("/api/v1/organizations/context", json={"context_data": context_data})
 
         assert response.status_code == 403
         assert "admin" in response.json()["detail"].lower()
@@ -362,10 +350,7 @@ class TestOrganizationContext:
         """Context can be read after being updated."""
         # Admin updates context
         context_data = {"knowledge_base": {"topic": "sales"}}
-        await async_client_org_admin.put(
-            "/api/v1/organizations/context",
-            json={"context_data": context_data}
-        )
+        await async_client_org_admin.put("/api/v1/organizations/context", json={"context_data": context_data})
 
         # Read context back (with same client to verify persistence)
         response = await async_client_org_admin.get("/api/v1/organizations/context")
@@ -377,10 +362,7 @@ class TestOrganizationContext:
     @pytest.mark.asyncio
     async def test_update_org_context_requires_org_context(self, async_client, db_session, test_user):
         """Update org context requires organization context."""
-        response = await async_client.put(
-            "/api/v1/organizations/context",
-            json={"context_data": {"test": "data"}}
-        )
+        response = await async_client.put("/api/v1/organizations/context", json={"context_data": {"test": "data"}})
 
         assert response.status_code == 403
 

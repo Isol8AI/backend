@@ -4,6 +4,7 @@ Shared test fixtures for Freebird backend tests.
 Tests use a real PostgreSQL database to match production behavior.
 Run `docker-compose up -d` before running tests to start the database.
 """
+
 import json
 import os
 import uuid
@@ -26,7 +27,7 @@ from models.user import User
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:AnkleTaker2314_@db.asisbbkdmtioeowicepp.supabase.co:5432/postgres"
+    "postgresql+asyncpg://postgres:AnkleTaker2314_@db.asisbbkdmtioeowicepp.supabase.co:5432/postgres",
 )
 
 
@@ -81,8 +82,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture
 def override_get_db(db_session):
     """Dependency override for get_db that uses the test session."""
+
     async def _get_db():
         yield db_session
+
     return _get_db
 
 
@@ -105,8 +108,10 @@ class _TestSessionContext:
 @pytest.fixture
 def override_get_session_factory(db_session):
     """Dependency override for get_session_factory that uses the test session."""
+
     def _get_session_factory():
         return _TestSessionContext(db_session)
+
     return _get_session_factory
 
 
@@ -133,11 +138,7 @@ def mock_auth_context() -> AuthContext:
 def mock_org_auth_context() -> AuthContext:
     """Mock auth context for organization mode."""
     return AuthContext(
-        user_id="user_test_123",
-        org_id="org_test_123",
-        org_role="org:member",
-        org_slug="test-org",
-        org_permissions=[]
+        user_id="user_test_123", org_id="org_test_123", org_role="org:member", org_slug="test-org", org_permissions=[]
     )
 
 
@@ -149,31 +150,37 @@ def mock_org_admin_auth_context() -> AuthContext:
         org_id="org_test_123",
         org_role="org:admin",
         org_slug="test-org",
-        org_permissions=["org:read", "org:write"]
+        org_permissions=["org:read", "org:write"],
     )
 
 
 @pytest.fixture
 def mock_current_user(mock_auth_context):
     """Dependency override for get_current_user with mock AuthContext (personal mode)."""
+
     async def _mock_get_current_user():
         return mock_auth_context
+
     return _mock_get_current_user
 
 
 @pytest.fixture
 def mock_current_user_org(mock_org_auth_context):
     """Dependency override for get_current_user with org context (member)."""
+
     async def _mock_get_current_user():
         return mock_org_auth_context
+
     return _mock_get_current_user
 
 
 @pytest.fixture
 def mock_current_user_org_admin(mock_org_admin_auth_context):
     """Dependency override for get_current_user with org context (admin)."""
+
     async def _mock_get_current_user():
         return mock_org_admin_auth_context
+
     return _mock_get_current_user
 
 
@@ -181,13 +188,15 @@ def mock_current_user_org_admin(mock_org_admin_auth_context):
 def mock_jwks() -> dict:
     """Mock JWKS response for JWT verification tests."""
     return {
-        "keys": [{
-            "kty": "RSA",
-            "kid": "test-key-id",
-            "use": "sig",
-            "n": "test-modulus",
-            "e": "AQAB",
-        }]
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "test-key-id",
+                "use": "sig",
+                "n": "test-modulus",
+                "e": "AQAB",
+            }
+        ]
     }
 
 
@@ -195,6 +204,7 @@ def mock_jwks() -> dict:
 def app():
     """Create a fresh FastAPI app instance for testing."""
     from main import app as fastapi_app
+
     return fastapi_app
 
 
@@ -246,9 +256,13 @@ async def async_client_org(app, override_get_db, override_get_session_factory, m
 
 
 @pytest.fixture
-async def async_client_org_admin(app, override_get_db, override_get_session_factory, mock_current_user_org_admin) -> AsyncGenerator:
+async def async_client_org_admin(
+    app, override_get_db, override_get_session_factory, mock_current_user_org_admin
+) -> AsyncGenerator:
     """Async test client with org admin context."""
-    async for client in _create_async_client(app, override_get_db, override_get_session_factory, mock_current_user_org_admin):
+    async for client in _create_async_client(
+        app, override_get_db, override_get_session_factory, mock_current_user_org_admin
+    ):
         yield client
 
 
@@ -333,7 +347,7 @@ async def test_membership(db_session, test_user, test_organization) -> Organizat
         id=f"mem_{test_user.id}_{test_organization.id}",
         user_id=test_user.id,
         org_id=test_organization.id,
-        role=MemberRole.MEMBER
+        role=MemberRole.MEMBER,
     )
     db_session.add(membership)
     await db_session.flush()
@@ -347,7 +361,7 @@ async def test_admin_membership(db_session, test_user, test_organization) -> Org
         id=f"mem_admin_{test_user.id}_{test_organization.id}",
         user_id=test_user.id,
         org_id=test_organization.id,
-        role=MemberRole.ADMIN
+        role=MemberRole.ADMIN,
     )
     db_session.add(membership)
     await db_session.flush()
@@ -375,12 +389,7 @@ async def other_user_session(db_session, other_user) -> Session:
 @pytest.fixture
 async def test_org_session(db_session, test_user, test_organization) -> Session:
     """Create a session for test user within an organization."""
-    session = Session(
-        id=str(uuid.uuid4()),
-        user_id=test_user.id,
-        org_id=test_organization.id,
-        name="Org Session"
-    )
+    session = Session(id=str(uuid.uuid4()), user_id=test_user.id, org_id=test_organization.id, name="Org Session")
     db_session.add(session)
     await db_session.flush()
     return session
@@ -390,10 +399,7 @@ async def test_org_session(db_session, test_user, test_organization) -> Session:
 async def other_user_org_session(db_session, other_user, test_organization) -> Session:
     """Create a session for another user within the same organization."""
     session = Session(
-        id=str(uuid.uuid4()),
-        user_id=other_user.id,
-        org_id=test_organization.id,
-        name="Other User's Org Session"
+        id=str(uuid.uuid4()), user_id=other_user.id, org_id=test_organization.id, name="Other User's Org Session"
     )
     db_session.add(session)
     await db_session.flush()
@@ -472,9 +478,11 @@ async def test_conversation(db_session, test_session) -> list[Message]:
 @pytest.fixture
 def mock_llm_stream():
     """Mock LLM streaming response generator."""
+
     async def _mock_stream():
         for chunk in ["Hello", " ", "world", "!"]:
             yield chunk
+
     return _mock_stream
 
 
@@ -485,7 +493,7 @@ def mock_hf_sse_response() -> list[bytes]:
         b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
         b'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
         b'data: {"choices":[{"delta":{"content":"!"}}]}\n\n',
-        b'data: [DONE]\n\n',
+        b"data: [DONE]\n\n",
     ]
 
 

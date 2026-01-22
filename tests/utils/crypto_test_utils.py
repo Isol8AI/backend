@@ -8,6 +8,7 @@ server in production - they stay client-side. This function exists solely for:
 2. Unit testing the derivation algorithm
 3. Integration tests simulating the full client-side flow
 """
+
 from argon2.low_level import hash_secret_raw, Type
 
 
@@ -52,7 +53,7 @@ def derive_key_from_passcode(
         raise ValueError("Salt must be 32 bytes")
 
     return hash_secret_raw(
-        secret=passcode.encode('utf-8'),
+        secret=passcode.encode("utf-8"),
         salt=salt,
         time_cost=time_cost,
         memory_cost=memory_cost,

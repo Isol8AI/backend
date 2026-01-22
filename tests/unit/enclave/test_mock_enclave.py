@@ -7,6 +7,7 @@ These tests verify:
 - Storage encryption with correct contexts
 - Message processing flow (without actual LLM calls)
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -30,6 +31,7 @@ from core.enclave.mock_enclave import (
 # EncryptionContext Tests
 # =============================================================================
 
+
 class TestEncryptionContext:
     """Tests for EncryptionContext enum."""
 
@@ -51,6 +53,7 @@ class TestEncryptionContext:
 # =============================================================================
 # EnclaveInfo Tests
 # =============================================================================
+
 
 class TestEnclaveInfo:
     """Tests for EnclaveInfo data structure."""
@@ -102,6 +105,7 @@ class TestEnclaveInfo:
 # DecryptedMessage Tests
 # =============================================================================
 
+
 class TestDecryptedMessage:
     """Tests for DecryptedMessage data structure."""
 
@@ -123,6 +127,7 @@ class TestDecryptedMessage:
 # =============================================================================
 # MockEnclave Initialization Tests
 # =============================================================================
+
 
 class TestMockEnclaveInit:
     """Tests for MockEnclave initialization."""
@@ -152,6 +157,7 @@ class TestMockEnclaveInit:
 # =============================================================================
 # Transport Encryption Tests
 # =============================================================================
+
 
 class TestTransportEncryption:
     """Tests for transport encryption/decryption."""
@@ -224,6 +230,7 @@ class TestTransportEncryption:
 # =============================================================================
 # Storage Encryption Tests
 # =============================================================================
+
 
 class TestStorageEncryption:
     """Tests for storage encryption with correct contexts."""
@@ -320,6 +327,7 @@ class TestStorageEncryption:
 # History Decryption Tests
 # =============================================================================
 
+
 class TestHistoryDecryption:
     """Tests for decrypting conversation history."""
 
@@ -348,6 +356,7 @@ class TestHistoryDecryption:
 # ProcessedMessage Tests
 # =============================================================================
 
+
 class TestProcessedMessage:
     """Tests for ProcessedMessage data structure."""
 
@@ -355,25 +364,25 @@ class TestProcessedMessage:
         """ProcessedMessage contains all required encrypted payloads."""
         # Create mock payloads
         user_payload = EncryptedPayload(
-            ephemeral_public_key=b'\x00' * 32,
-            iv=b'\x01' * 16,
+            ephemeral_public_key=b"\x00" * 32,
+            iv=b"\x01" * 16,
             ciphertext=b"user",
-            auth_tag=b'\x02' * 16,
-            hkdf_salt=b'\x03' * 32,
+            auth_tag=b"\x02" * 16,
+            hkdf_salt=b"\x03" * 32,
         )
         assistant_payload = EncryptedPayload(
-            ephemeral_public_key=b'\x00' * 32,
-            iv=b'\x01' * 16,
+            ephemeral_public_key=b"\x00" * 32,
+            iv=b"\x01" * 16,
             ciphertext=b"assistant",
-            auth_tag=b'\x02' * 16,
-            hkdf_salt=b'\x03' * 32,
+            auth_tag=b"\x02" * 16,
+            hkdf_salt=b"\x03" * 32,
         )
         transport_payload = EncryptedPayload(
-            ephemeral_public_key=b'\x00' * 32,
-            iv=b'\x01' * 16,
+            ephemeral_public_key=b"\x00" * 32,
+            iv=b"\x01" * 16,
             ciphertext=b"transport",
-            auth_tag=b'\x02' * 16,
-            hkdf_salt=b'\x03' * 32,
+            auth_tag=b"\x02" * 16,
+            hkdf_salt=b"\x03" * 32,
         )
 
         processed = ProcessedMessage(
@@ -390,6 +399,7 @@ class TestProcessedMessage:
 # =============================================================================
 # Full Message Processing Tests (with mocked LLM)
 # =============================================================================
+
 
 class TestMessageProcessing:
     """Tests for complete message processing with mocked LLM."""
@@ -411,9 +421,7 @@ class TestMessageProcessing:
         return generate_x25519_keypair()
 
     @pytest.mark.asyncio
-    async def test_process_message_encrypts_all_outputs(
-        self, enclave, user_keypair, storage_keypair
-    ):
+    async def test_process_message_encrypts_all_outputs(self, enclave, user_keypair, storage_keypair):
         """process_message returns properly encrypted outputs."""
         enclave_public_key = enclave.get_info().enclave_public_key
 
@@ -426,11 +434,7 @@ class TestMessageProcessing:
         )
 
         # Mock the inference call (returns tuple: content, input_tokens, output_tokens)
-        with patch.object(
-            enclave, '_call_inference',
-            new_callable=AsyncMock,
-            return_value=("4", 5, 1)
-        ):
+        with patch.object(enclave, "_call_inference", new_callable=AsyncMock, return_value=("4", 5, 1)):
             result = await enclave.process_message(
                 encrypted_message=encrypted_input,
                 encrypted_history=[],
@@ -464,9 +468,7 @@ class TestMessageProcessing:
         assert decrypted_transport == b"4"
 
     @pytest.mark.asyncio
-    async def test_process_message_with_history(
-        self, enclave, user_keypair, storage_keypair
-    ):
+    async def test_process_message_with_history(self, enclave, user_keypair, storage_keypair):
         """process_message correctly decrypts and uses history."""
         enclave_public_key = enclave.get_info().enclave_public_key
 
@@ -497,7 +499,8 @@ class TestMessageProcessing:
             return ("4", 10, 1)  # Returns tuple: content, input_tokens, output_tokens
 
         with patch.object(
-            enclave, '_call_inference',
+            enclave,
+            "_call_inference",
             side_effect=mock_inference,
         ):
             await enclave.process_message(
@@ -524,6 +527,7 @@ class TestMessageProcessing:
 # Streaming Tests
 # =============================================================================
 
+
 class TestStreamingMessageProcessing:
     """Tests for streaming message processing."""
 
@@ -543,9 +547,7 @@ class TestStreamingMessageProcessing:
         return generate_x25519_keypair()
 
     @pytest.mark.asyncio
-    async def test_process_message_stream_yields_chunks(
-        self, enclave, user_keypair, storage_keypair
-    ):
+    async def test_process_message_stream_yields_chunks(self, enclave, user_keypair, storage_keypair):
         """process_message_stream yields chunks and final result."""
         enclave_public_key = enclave.get_info().enclave_public_key
 
@@ -562,7 +564,8 @@ class TestStreamingMessageProcessing:
                 yield chunk
 
         with patch.object(
-            enclave, '_call_inference_stream',
+            enclave,
+            "_call_inference_stream",
             side_effect=mock_stream,
         ):
             chunks = []
@@ -599,6 +602,7 @@ class TestStreamingMessageProcessing:
 # Singleton Tests
 # =============================================================================
 
+
 class TestEnclaveSingleton:
     """Tests for enclave singleton management."""
 
@@ -606,7 +610,7 @@ class TestEnclaveSingleton:
         """get_enclave returns the same instance."""
         reset_enclave()  # Clear any existing instance
 
-        with patch('core.config.settings') as mock_settings:
+        with patch("core.config.settings") as mock_settings:
             mock_settings.HF_API_URL = "http://mock.llm"
             mock_settings.HUGGINGFACE_TOKEN = "test_token"
             mock_settings.ENCLAVE_INFERENCE_TIMEOUT = 120.0
@@ -620,7 +624,7 @@ class TestEnclaveSingleton:
         """reset_enclave forces new instance creation."""
         reset_enclave()
 
-        with patch('core.config.settings') as mock_settings:
+        with patch("core.config.settings") as mock_settings:
             mock_settings.HF_API_URL = "http://mock.llm"
             mock_settings.HUGGINGFACE_TOKEN = "test_token"
             mock_settings.ENCLAVE_INFERENCE_TIMEOUT = 120.0
@@ -644,6 +648,7 @@ class TestEnclaveSingleton:
 # =============================================================================
 # Integration Tests
 # =============================================================================
+
 
 class TestEnclaveIntegration:
     """Integration tests for complete enclave flows."""
@@ -714,7 +719,7 @@ class TestEnclaveIntegration:
         """Test complete flow for org message (different storage key)."""
         enclave = MockEnclave(inference_token="test")
         user = generate_x25519_keypair()  # User's transport key
-        org = generate_x25519_keypair()   # Org's storage key (all members have)
+        org = generate_x25519_keypair()  # Org's storage key (all members have)
         enclave_public_key = enclave.get_info().enclave_public_key
 
         # 1. User encrypts message to enclave
@@ -767,6 +772,7 @@ class TestEnclaveIntegration:
 
         # 8. User's personal key CANNOT decrypt stored messages (they're org-encrypted)
         from cryptography.exceptions import InvalidTag
+
         with pytest.raises(InvalidTag):
             decrypt_with_private_key(
                 user.private_key,
@@ -779,6 +785,7 @@ class TestEnclaveIntegration:
 # ExtractedFact Tests
 # =============================================================================
 
+
 class TestExtractedFact:
     """Tests for ExtractedFact data structure."""
 
@@ -787,11 +794,11 @@ class TestExtractedFact:
         from core.enclave.mock_enclave import ExtractedFact
 
         payload = EncryptedPayload(
-            ephemeral_public_key=b'\x00' * 32,
-            iv=b'\x01' * 16,
+            ephemeral_public_key=b"\x00" * 32,
+            iv=b"\x01" * 16,
             ciphertext=b"encrypted_fact_data",
-            auth_tag=b'\x02' * 16,
-            hkdf_salt=b'\x03' * 32,
+            auth_tag=b"\x02" * 16,
+            hkdf_salt=b"\x03" * 32,
         )
         fact = ExtractedFact(
             encrypted_payload=payload,
@@ -805,6 +812,7 @@ class TestExtractedFact:
 # =============================================================================
 # Fact Extraction Tests
 # =============================================================================
+
 
 class TestFactExtraction:
     """Tests for fact extraction from messages."""
@@ -826,17 +834,11 @@ class TestFactExtraction:
         from core.enclave.mock_enclave import ExtractedFact
 
         # Mock the LLM response with extracted facts (list of dicts, not JSON string)
-        mock_llm_response = [
-            {
-                "subject": "user",
-                "predicate": "prefers",
-                "object": "dark mode",
-                "confidence": 0.9
-            }
-        ]
+        mock_llm_response = [{"subject": "user", "predicate": "prefers", "object": "dark mode", "confidence": 0.9}]
 
         with patch.object(
-            enclave, '_call_fact_extraction_llm',
+            enclave,
+            "_call_fact_extraction_llm",
             new_callable=AsyncMock,
             return_value=mock_llm_response,
         ):
@@ -856,17 +858,11 @@ class TestFactExtraction:
         import json
 
         # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
-        mock_llm_response = [
-            {
-                "subject": "user",
-                "predicate": "works_at",
-                "object": "Anthropic",
-                "confidence": 0.85
-            }
-        ]
+        mock_llm_response = [{"subject": "user", "predicate": "works_at", "object": "Anthropic", "confidence": 0.85}]
 
         with patch.object(
-            enclave, '_call_fact_extraction_llm',
+            enclave,
+            "_call_fact_extraction_llm",
             new_callable=AsyncMock,
             return_value=mock_llm_response,
         ):
@@ -902,7 +898,8 @@ class TestFactExtraction:
         ]
 
         with patch.object(
-            enclave, '_call_fact_extraction_llm',
+            enclave,
+            "_call_fact_extraction_llm",
             new_callable=AsyncMock,
             return_value=mock_llm_response,
         ):
@@ -926,7 +923,8 @@ class TestFactExtraction:
         ]
 
         with patch.object(
-            enclave, '_call_fact_extraction_llm',
+            enclave,
+            "_call_fact_extraction_llm",
             new_callable=AsyncMock,
             return_value=mock_llm_response,
         ):
@@ -947,7 +945,8 @@ class TestFactExtraction:
         mock_llm_response = []
 
         with patch.object(
-            enclave, '_call_fact_extraction_llm',
+            enclave,
+            "_call_fact_extraction_llm",
             new_callable=AsyncMock,
             return_value=mock_llm_response,
         ):
@@ -963,7 +962,8 @@ class TestFactExtraction:
     async def test_extract_facts_handles_llm_error(self, enclave, client_keypair):
         """Handles LLM errors gracefully."""
         with patch.object(
-            enclave, '_call_fact_extraction_llm',
+            enclave,
+            "_call_fact_extraction_llm",
             new_callable=AsyncMock,
             side_effect=Exception("LLM error"),
         ):
@@ -997,12 +997,11 @@ class TestFactExtraction:
 
         for predicate, expected_type in test_cases:
             # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
-            mock_llm_response = [
-                {"subject": "user", "predicate": predicate, "object": "test", "confidence": 0.9}
-            ]
+            mock_llm_response = [{"subject": "user", "predicate": predicate, "object": "test", "confidence": 0.9}]
 
             with patch.object(
-                enclave, '_call_fact_extraction_llm',
+                enclave,
+                "_call_fact_extraction_llm",
                 new_callable=AsyncMock,
                 return_value=mock_llm_response,
             ):
@@ -1025,6 +1024,7 @@ class TestFactExtraction:
 # Streaming with Fact Extraction Tests
 # =============================================================================
 
+
 class TestStreamingWithFactExtraction:
     """Tests for streaming message processing with fact extraction."""
 
@@ -1044,9 +1044,7 @@ class TestStreamingWithFactExtraction:
         return generate_x25519_keypair()
 
     @pytest.mark.asyncio
-    async def test_streaming_includes_extracted_facts_in_final_chunk(
-        self, enclave, user_keypair, storage_keypair
-    ):
+    async def test_streaming_includes_extracted_facts_in_final_chunk(self, enclave, user_keypair, storage_keypair):
         """Streaming returns extracted facts in the final chunk."""
         from core.enclave.mock_enclave import ExtractedFact
 
@@ -1068,19 +1066,20 @@ class TestStreamingWithFactExtraction:
         mock_facts = [
             ExtractedFact(
                 encrypted_payload=EncryptedPayload(
-                    ephemeral_public_key=b'\x00' * 32,
-                    iv=b'\x01' * 16,
+                    ephemeral_public_key=b"\x00" * 32,
+                    iv=b"\x01" * 16,
                     ciphertext=b"fact",
-                    auth_tag=b'\x02' * 16,
-                    hkdf_salt=b'\x03' * 32,
+                    auth_tag=b"\x02" * 16,
+                    hkdf_salt=b"\x03" * 32,
                 ),
                 fact_id="test-fact-id",
             )
         ]
 
-        with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
+        with patch.object(enclave, "_call_inference_stream", side_effect=mock_stream):
             with patch.object(
-                enclave, 'extract_facts',
+                enclave,
+                "extract_facts",
                 new_callable=AsyncMock,
                 return_value=mock_facts,
             ):
@@ -1112,6 +1111,7 @@ class TestStreamingWithFactExtraction:
 # DEBUG Flag Tests
 # =============================================================================
 
+
 class TestDebugFlagControl:
     """Tests for DEBUG flag controlling verbose output."""
 
@@ -1131,9 +1131,7 @@ class TestDebugFlagControl:
         return generate_x25519_keypair()
 
     @pytest.mark.asyncio
-    async def test_debug_false_suppresses_print_output(
-        self, enclave, user_keypair, storage_keypair, capsys
-    ):
+    async def test_debug_false_suppresses_print_output(self, enclave, user_keypair, storage_keypair, capsys):
         """When DEBUG=False, process_message_streaming should not print debug info."""
         enclave_public_key = enclave.get_info().enclave_public_key
 
@@ -1147,11 +1145,11 @@ class TestDebugFlagControl:
         async def mock_stream(*args, **kwargs):
             yield "Hello"
 
-        with patch('core.enclave.mock_enclave.settings') as mock_settings:
+        with patch("core.enclave.mock_enclave.settings") as mock_settings:
             mock_settings.DEBUG = False
-            with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
-                with patch.object(enclave, 'extract_memories', new_callable=AsyncMock, return_value=[]):
-                    with patch.object(enclave, 'extract_facts', new_callable=AsyncMock, return_value=[]):
+            with patch.object(enclave, "_call_inference_stream", side_effect=mock_stream):
+                with patch.object(enclave, "extract_memories", new_callable=AsyncMock, return_value=[]):
+                    with patch.object(enclave, "extract_facts", new_callable=AsyncMock, return_value=[]):
                         async for _ in enclave.process_message_streaming(
                             encrypted_message=encrypted_input,
                             encrypted_history=[],
@@ -1169,9 +1167,7 @@ class TestDebugFlagControl:
         assert "ENCRYPTED CHAT FLOW" not in captured.out
 
     @pytest.mark.asyncio
-    async def test_debug_true_shows_print_output(
-        self, enclave, user_keypair, storage_keypair, capsys
-    ):
+    async def test_debug_true_shows_print_output(self, enclave, user_keypair, storage_keypair, capsys):
         """When DEBUG=True, process_message_streaming should print debug info."""
         enclave_public_key = enclave.get_info().enclave_public_key
 
@@ -1185,11 +1181,11 @@ class TestDebugFlagControl:
         async def mock_stream(*args, **kwargs):
             yield "Hello"
 
-        with patch('core.enclave.mock_enclave.settings') as mock_settings:
+        with patch("core.enclave.mock_enclave.settings") as mock_settings:
             mock_settings.DEBUG = True
-            with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
-                with patch.object(enclave, 'extract_memories', new_callable=AsyncMock, return_value=[]):
-                    with patch.object(enclave, 'extract_facts', new_callable=AsyncMock, return_value=[]):
+            with patch.object(enclave, "_call_inference_stream", side_effect=mock_stream):
+                with patch.object(enclave, "extract_memories", new_callable=AsyncMock, return_value=[]):
+                    with patch.object(enclave, "extract_facts", new_callable=AsyncMock, return_value=[]):
                         async for _ in enclave.process_message_streaming(
                             encrypted_message=encrypted_input,
                             encrypted_history=[],

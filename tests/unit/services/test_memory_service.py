@@ -1,4 +1,5 @@
 """Tests for MemoryService."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,6 +12,7 @@ from core.services.memory_service import (
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_openmemory():
@@ -75,6 +77,7 @@ def sample_search_results():
 # Test GetMemoryUserId
 # =============================================================================
 
+
 class TestGetMemoryUserId:
     """Tests for get_memory_user_id static method."""
 
@@ -109,6 +112,7 @@ class TestGetMemoryUserId:
 # Test StoreMemory
 # =============================================================================
 
+
 class TestStoreMemory:
     """Tests for store_memory method."""
 
@@ -121,8 +125,8 @@ class TestStoreMemory:
             "salience": 0.5,
         }
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.store_memory(
                     encrypted_content="<ciphertext>",
@@ -150,8 +154,8 @@ class TestStoreMemory:
             "salience": 0.5,
         }
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 await service.store_memory(
                     encrypted_content="<org_ciphertext>",
@@ -172,8 +176,8 @@ class TestStoreMemory:
         """Includes encryption metadata in stored memory."""
         mock_openmemory.add_with_embedding.return_value = {"id": "mem_1", "primary_sector": "semantic", "salience": 0.5}
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 await service.store_memory(
                     encrypted_content="<ciphertext>",
@@ -193,8 +197,8 @@ class TestStoreMemory:
         """Raises MemoryServiceError when OpenMemory fails."""
         mock_openmemory.add_with_embedding.side_effect = Exception("OpenMemory error")
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 with pytest.raises(MemoryServiceError, match="Failed to store memory"):
                     await service.store_memory(
@@ -208,6 +212,7 @@ class TestStoreMemory:
 # Test SearchMemories
 # =============================================================================
 
+
 class TestSearchMemories:
     """Tests for search_memories method."""
 
@@ -216,8 +221,8 @@ class TestSearchMemories:
         """Searches personal memories only in personal context."""
         mock_openmemory.search_with_embedding.return_value = sample_search_results
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 results = await service.search_memories(
                     query_text="test query",
@@ -234,13 +239,33 @@ class TestSearchMemories:
     @pytest.mark.asyncio
     async def test_searches_org_and_personal_in_org_context(self, mock_openmemory, sample_embedding):
         """Searches both org and personal memories in org context when include_personal=True."""
-        org_results = [{"id": "org_mem", "content": "<org>", "score": 0.9, "primary_sector": "semantic", "tags": [], "metadata": {}, "salience": 0.5}]
-        personal_results = [{"id": "personal_mem", "content": "<personal>", "score": 0.8, "primary_sector": "semantic", "tags": [], "metadata": {}, "salience": 0.5}]
+        org_results = [
+            {
+                "id": "org_mem",
+                "content": "<org>",
+                "score": 0.9,
+                "primary_sector": "semantic",
+                "tags": [],
+                "metadata": {},
+                "salience": 0.5,
+            }
+        ]
+        personal_results = [
+            {
+                "id": "personal_mem",
+                "content": "<personal>",
+                "score": 0.8,
+                "primary_sector": "semantic",
+                "tags": [],
+                "metadata": {},
+                "salience": 0.5,
+            }
+        ]
 
         mock_openmemory.search_with_embedding.side_effect = [org_results, personal_results]
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 results = await service.search_memories(
                     query_text="test query",
@@ -263,12 +288,14 @@ class TestSearchMemories:
         assert second_call["user_id"] == "user_123"
 
     @pytest.mark.asyncio
-    async def test_searches_org_only_when_include_personal_false(self, mock_openmemory, sample_embedding, sample_search_results):
+    async def test_searches_org_only_when_include_personal_false(
+        self, mock_openmemory, sample_embedding, sample_search_results
+    ):
         """Searches only org memories when include_personal=False."""
         mock_openmemory.search_with_embedding.return_value = sample_search_results
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 await service.search_memories(
                     query_text="test query",
@@ -286,13 +313,33 @@ class TestSearchMemories:
     @pytest.mark.asyncio
     async def test_results_sorted_by_score(self, mock_openmemory, sample_embedding):
         """Results are sorted by score in descending order."""
-        org_results = [{"id": "low_score", "content": "<>", "score": 0.5, "primary_sector": "semantic", "tags": [], "metadata": {}, "salience": 0.5}]
-        personal_results = [{"id": "high_score", "content": "<>", "score": 0.9, "primary_sector": "semantic", "tags": [], "metadata": {}, "salience": 0.5}]
+        org_results = [
+            {
+                "id": "low_score",
+                "content": "<>",
+                "score": 0.5,
+                "primary_sector": "semantic",
+                "tags": [],
+                "metadata": {},
+                "salience": 0.5,
+            }
+        ]
+        personal_results = [
+            {
+                "id": "high_score",
+                "content": "<>",
+                "score": 0.9,
+                "primary_sector": "semantic",
+                "tags": [],
+                "metadata": {},
+                "salience": 0.5,
+            }
+        ]
 
         mock_openmemory.search_with_embedding.side_effect = [org_results, personal_results]
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 results = await service.search_memories(
                     query_text="test",
@@ -310,8 +357,8 @@ class TestSearchMemories:
         """Adds memory_user_id and is_org_memory to results."""
         mock_openmemory.search_with_embedding.return_value = sample_search_results
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 results = await service.search_memories(
                     query_text="test",
@@ -328,6 +375,7 @@ class TestSearchMemories:
 # Test GetMemory
 # =============================================================================
 
+
 class TestGetMemory:
     """Tests for get_memory method."""
 
@@ -343,8 +391,8 @@ class TestGetMemory:
 
         mock_openmemory.get.return_value = sample_memory_result
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.get_memory("mem_123")
 
@@ -356,8 +404,8 @@ class TestGetMemory:
         """Returns None for nonexistent memory."""
         mock_openmemory.get.return_value = None
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.get_memory("nonexistent")
 
@@ -367,6 +415,7 @@ class TestGetMemory:
 # =============================================================================
 # Test DeleteMemory
 # =============================================================================
+
 
 class TestDeleteMemory:
     """Tests for delete_memory method."""
@@ -378,8 +427,8 @@ class TestDeleteMemory:
         mock_openmemory.get.return_value = sample_memory_result
         mock_openmemory.delete.return_value = None
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.delete_memory(
                     memory_id="mem_123",
@@ -395,8 +444,8 @@ class TestDeleteMemory:
         sample_memory_result["user_id"] = "org_456"
         mock_openmemory.get.return_value = sample_memory_result
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.delete_memory(
                     memory_id="mem_123",
@@ -412,8 +461,8 @@ class TestDeleteMemory:
         sample_memory_result["user_id"] = "user_other_user"
         mock_openmemory.get.return_value = sample_memory_result
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.delete_memory(
                     memory_id="mem_123",
@@ -428,8 +477,8 @@ class TestDeleteMemory:
         """Returns False for nonexistent memory."""
         mock_openmemory.get.return_value = None
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 result = await service.delete_memory(
                     memory_id="nonexistent",
@@ -443,6 +492,7 @@ class TestDeleteMemory:
 # Test ListMemories
 # =============================================================================
 
+
 class TestListMemories:
     """Tests for list_memories method."""
 
@@ -454,8 +504,8 @@ class TestListMemories:
             {"id": "mem_2", "created_at": 900},
         ]
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 results = await service.list_memories(
                     user_id="user_123",
@@ -476,8 +526,8 @@ class TestListMemories:
             {"id": "org_mem", "created_at": 1000},
         ]
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 await service.list_memories(
                     user_id="user_123",
@@ -499,8 +549,8 @@ class TestListMemories:
             {"id": "mem_1", "created_at": 1000},
         ]
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 results = await service.list_memories(
                     user_id="user_123",
@@ -513,6 +563,7 @@ class TestListMemories:
 # Test DeleteAllMemories
 # =============================================================================
 
+
 class TestDeleteAllMemories:
     """Tests for delete_all_memories method."""
 
@@ -522,8 +573,8 @@ class TestDeleteAllMemories:
         mock_openmemory.history.return_value = [{"id": "1"}, {"id": "2"}, {"id": "3"}]
         mock_openmemory.delete_all.return_value = None
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 count = await service.delete_all_memories(
                     user_id="user_123",
@@ -539,8 +590,8 @@ class TestDeleteAllMemories:
         mock_openmemory.history.return_value = [{"id": "1"}, {"id": "2"}]
         mock_openmemory.delete_all.return_value = None
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 count = await service.delete_all_memories(
                     user_id="user_123",
@@ -557,8 +608,8 @@ class TestDeleteAllMemories:
         mock_openmemory.history.return_value = []
         mock_openmemory.delete_all.side_effect = Exception("Delete failed")
 
-        with patch.object(MemoryService, '_memory', mock_openmemory):
-            with patch.object(MemoryService, '_initialized', True):
+        with patch.object(MemoryService, "_memory", mock_openmemory):
+            with patch.object(MemoryService, "_initialized", True):
                 service = MemoryService()
                 with pytest.raises(MemoryServiceError, match="Failed to delete memories"):
                     await service.delete_all_memories(

@@ -1,4 +1,5 @@
 """Tests for audit log model."""
+
 import uuid
 from datetime import datetime
 
@@ -322,9 +323,7 @@ class TestAuditLogPersistence:
         db_session.add(log)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(AuditLog).where(AuditLog.id == log.id)
-        )
+        result = await db_session.execute(select(AuditLog).where(AuditLog.id == log.id))
         fetched = result.scalar_one()
 
         assert fetched.event_type == AuditEventType.USER_KEYS_CREATED
@@ -345,9 +344,7 @@ class TestAuditLogPersistence:
         db_session.add(log)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(AuditLog).where(AuditLog.id == log.id)
-        )
+        result = await db_session.execute(select(AuditLog).where(AuditLog.id == log.id))
         fetched = result.scalar_one()
 
         assert fetched.event_data["old_role"] == "org:member"
@@ -364,9 +361,7 @@ class TestAuditLogPersistence:
         db_session.add(log)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(AuditLog).where(AuditLog.id == log.id)
-        )
+        result = await db_session.execute(select(AuditLog).where(AuditLog.id == log.id))
         fetched = result.scalar_one()
 
         assert fetched.org_id == test_organization.id
@@ -390,9 +385,7 @@ class TestAuditLogPersistence:
         await db_session.flush()
 
         result = await db_session.execute(
-            select(AuditLog)
-            .where(AuditLog.org_id == test_organization.id)
-            .order_by(AuditLog.created_at)
+            select(AuditLog).where(AuditLog.org_id == test_organization.id).order_by(AuditLog.created_at)
         )
         logs = result.scalars().all()
 

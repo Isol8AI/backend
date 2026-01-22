@@ -1,4 +1,5 @@
 """Unit tests for users router."""
+
 import pytest
 from sqlalchemy import select
 

@@ -3,6 +3,7 @@
 The context router provides a unified interface for getting/setting context
 based on the current auth context (personal vs organization).
 """
+
 import pytest
 from sqlalchemy import select
 
@@ -27,10 +28,7 @@ class TestGetContext:
         """Can retrieve personal context after setting it."""
         # First set some context
         context_data = {"preferences": {"theme": "dark"}}
-        await async_client.put(
-            "/api/v1/context/",
-            json={"context_data": context_data}
-        )
+        await async_client.put("/api/v1/context/", json={"context_data": context_data})
 
         # Then retrieve it
         response = await async_client.get("/api/v1/context/")
@@ -66,10 +64,7 @@ class TestUpdateContext:
         """Can update personal context."""
         context_data = {"preferences": {"theme": "dark"}, "notes": "test note"}
 
-        response = await async_client.put(
-            "/api/v1/context/",
-            json={"context_data": context_data}
-        )
+        response = await async_client.put("/api/v1/context/", json={"context_data": context_data})
 
         assert response.status_code == 200
         data = response.json()
@@ -77,10 +72,7 @@ class TestUpdateContext:
 
         # Verify persisted to database
         result = await db_session.execute(
-            select(ContextStore).where(
-                ContextStore.owner_type == "user",
-                ContextStore.owner_id == test_user.id
-            )
+            select(ContextStore).where(ContextStore.owner_type == "user", ContextStore.owner_id == test_user.id)
         )
         store = result.scalar_one_or_none()
         assert store is not None
@@ -90,17 +82,11 @@ class TestUpdateContext:
     async def test_update_personal_context_overwrites(self, async_client, db_session, test_user):
         """Updating personal context overwrites previous values."""
         # First update
-        await async_client.put(
-            "/api/v1/context/",
-            json={"context_data": {"old": "data"}}
-        )
+        await async_client.put("/api/v1/context/", json={"context_data": {"old": "data"}})
 
         # Second update
         new_data = {"new": "data"}
-        response = await async_client.put(
-            "/api/v1/context/",
-            json={"context_data": new_data}
-        )
+        response = await async_client.put("/api/v1/context/", json={"context_data": new_data})
 
         assert response.status_code == 200
         data = response.json()
@@ -112,10 +98,7 @@ class TestUpdateContext:
         self, async_client_org, db_session, test_user, test_organization, test_membership
     ):
         """Non-admin org member cannot update org context."""
-        response = await async_client_org.put(
-            "/api/v1/context/",
-            json={"context_data": {"test": "data"}}
-        )
+        response = await async_client_org.put("/api/v1/context/", json={"context_data": {"test": "data"}})
 
         assert response.status_code == 403
         assert "admin" in response.json()["detail"].lower()
@@ -127,10 +110,7 @@ class TestUpdateContext:
         """Org admin can update org context."""
         context_data = {"shared_settings": {"api_key": "encrypted_key"}}
 
-        response = await async_client_org_admin.put(
-            "/api/v1/context/",
-            json={"context_data": context_data}
-        )
+        response = await async_client_org_admin.put("/api/v1/context/", json={"context_data": context_data})
 
         assert response.status_code == 200
         data = response.json()
@@ -139,10 +119,7 @@ class TestUpdateContext:
     @pytest.mark.asyncio
     async def test_update_context_requires_authentication(self, unauthenticated_async_client):
         """Update context requires authentication."""
-        response = await unauthenticated_async_client.put(
-            "/api/v1/context/",
-            json={"context_data": {"test": "data"}}
-        )
+        response = await unauthenticated_async_client.put("/api/v1/context/", json={"context_data": {"test": "data"}})
         assert response.status_code in [401, 403]
 
 
@@ -150,23 +127,15 @@ class TestContextIsolation:
     """Tests for context isolation between users and orgs."""
 
     @pytest.mark.asyncio
-    async def test_personal_context_isolated_between_users(
-        self, async_client, db_session, test_user, other_user
-    ):
+    async def test_personal_context_isolated_between_users(self, async_client, db_session, test_user, other_user):
         """Each user has their own personal context."""
         # Set context for test_user
         my_context = {"my": "data"}
-        await async_client.put(
-            "/api/v1/context/",
-            json={"context_data": my_context}
-        )
+        await async_client.put("/api/v1/context/", json={"context_data": my_context})
 
         # Create context for other_user directly in database
         other_context = ContextStore(
-            id="ctx_other",
-            owner_type="user",
-            owner_id=other_user.id,
-            context_data={"other": "user_data"}
+            id="ctx_other", owner_type="user", owner_id=other_user.id, context_data={"other": "user_data"}
         )
         db_session.add(other_context)
         await db_session.flush()
@@ -179,23 +148,15 @@ class TestContextIsolation:
         assert "other" not in data["context_data"]
 
     @pytest.mark.asyncio
-    async def test_personal_and_org_context_separate(
-        self, async_client, db_session, test_user, test_organization
-    ):
+    async def test_personal_and_org_context_separate(self, async_client, db_session, test_user, test_organization):
         """Personal and org context are stored separately."""
         # Set personal context
         personal_context = {"personal": "data"}
-        await async_client.put(
-            "/api/v1/context/",
-            json={"context_data": personal_context}
-        )
+        await async_client.put("/api/v1/context/", json={"context_data": personal_context})
 
         # Create org context directly in database
         org_context_store = ContextStore(
-            id="ctx_org_test",
-            owner_type="org",
-            owner_id=test_organization.id,
-            context_data={"org": "data"}
+            id="ctx_org_test", owner_type="org", owner_id=test_organization.id, context_data={"org": "data"}
         )
         db_session.add(org_context_store)
         await db_session.flush()

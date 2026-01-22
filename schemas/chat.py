@@ -5,6 +5,7 @@ Security Note:
 - All message content is encrypted - server never sees plaintext
 - Server acts as blind relay between client and enclave
 """
+
 from datetime import datetime
 from typing import Optional
 
@@ -15,18 +16,14 @@ from schemas.encryption import EncryptedPayload, EncryptedMessageResponse
 
 class CreateSessionRequest(BaseModel):
     """Request to create a new chat session."""
-    name: Optional[str] = Field(
-        "New Chat",
-        description="Display name for the session"
-    )
-    org_id: Optional[str] = Field(
-        None,
-        description="Organization ID for org sessions. None for personal sessions."
-    )
+
+    name: Optional[str] = Field("New Chat", description="Display name for the session")
+    org_id: Optional[str] = Field(None, description="Organization ID for org sessions. None for personal sessions.")
 
 
 class SessionResponse(BaseModel):
     """Chat session data."""
+
     id: str
     user_id: str
     org_id: Optional[str] = None
@@ -39,6 +36,7 @@ class SessionResponse(BaseModel):
 
 class SessionListResponse(BaseModel):
     """Paginated list of user's chat sessions."""
+
     sessions: list[SessionResponse]
     total: int
     limit: int
@@ -47,24 +45,23 @@ class SessionListResponse(BaseModel):
 
 class SessionMessagesResponse(BaseModel):
     """Messages for a session - all encrypted."""
+
     session_id: str
     messages: list[EncryptedMessageResponse]
 
 
 class EnclaveInfoResponse(BaseModel):
     """Enclave public key for message encryption."""
+
     enclave_public_key: str = Field(
-        ...,
-        description="Enclave's X25519 public key (32 bytes hex) - encrypt messages to this"
+        ..., description="Enclave's X25519 public key (32 bytes hex) - encrypt messages to this"
     )
-    attestation: Optional[dict] = Field(
-        None,
-        description="Attestation document (production only)"
-    )
+    attestation: Optional[dict] = Field(None, description="Attestation document (production only)")
 
 
 class StreamingChunkResponse(BaseModel):
     """A chunk of streaming encrypted response."""
+
     chunk_index: int
     encrypted_chunk: EncryptedPayload
     is_final: bool = False
@@ -72,6 +69,7 @@ class StreamingChunkResponse(BaseModel):
 
 class StreamCompleteResponse(BaseModel):
     """Final message after streaming completes."""
+
     session_id: str
     message_id: str
     stored_user_message: EncryptedMessageResponse
@@ -83,9 +81,11 @@ class StreamCompleteResponse(BaseModel):
 
 class ModelsResponse(BaseModel):
     """Available LLM models."""
+
     models: list[dict]
 
 
 class DeleteSessionsResponse(BaseModel):
     """Response for bulk session deletion."""
+
     deleted_count: int

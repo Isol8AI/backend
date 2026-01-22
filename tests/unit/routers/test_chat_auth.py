@@ -5,6 +5,7 @@ These tests verify that:
 - Org sessions are only visible to owner (not other org members)
 - Sessions are scoped to the current context (personal vs org)
 """
+
 import pytest
 
 from models.session import Session
@@ -14,9 +15,7 @@ class TestPersonalSessionAuthorization:
     """Tests for personal session (no org) authorization."""
 
     @pytest.mark.asyncio
-    async def test_personal_sessions_only_visible_to_owner(
-        self, async_client, db_session, test_user, test_session
-    ):
+    async def test_personal_sessions_only_visible_to_owner(self, async_client, db_session, test_user, test_session):
         """Personal sessions are visible to their owner."""
         response = await async_client.get("/api/v1/chat/sessions")
 
@@ -73,8 +72,14 @@ class TestOrgSessionAuthorization:
 
     @pytest.mark.asyncio
     async def test_org_sessions_not_visible_to_other_org_members(
-        self, async_client_org, db_session, test_user, other_user, test_organization,
-        other_user_org_session, test_membership
+        self,
+        async_client_org,
+        db_session,
+        test_user,
+        other_user,
+        test_organization,
+        other_user_org_session,
+        test_membership,
     ):
         """Other org members' sessions are not visible (chats are private)."""
         response = await async_client_org.get("/api/v1/chat/sessions")
@@ -107,10 +112,7 @@ class TestOrgSessionAuthorization:
         """Sessions from a different org are not visible."""
         # Create a session in a different org
         different_org_session = Session(
-            id="session_different_org",
-            user_id=test_user.id,
-            org_id=other_organization.id,
-            name="Different Org Session"
+            id="session_different_org", user_id=test_user.id, org_id=other_organization.id, name="Different Org Session"
         )
         db_session.add(different_org_session)
         await db_session.flush()
@@ -129,9 +131,7 @@ class TestCreateSessionWithContext:
     """Tests for session creation with org context."""
 
     @pytest.mark.asyncio
-    async def test_create_session_in_personal_context(
-        self, async_client, db_session, test_user
-    ):
+    async def test_create_session_in_personal_context(self, async_client, db_session, test_user):
         """New session in personal context has no org_id."""
         # This test will be implemented when we update the chat router
         # to use org_id from auth context

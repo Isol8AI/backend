@@ -10,6 +10,7 @@ for manual verification using online crypto tools like:
 - X25519: https://paulmillr.com/noble/
 - HKDF: CyberChef (Operations -> HKDF)
 """
+
 import logging
 from typing import Optional
 
@@ -35,8 +36,10 @@ router = APIRouter(prefix="/debug/encryption", tags=["debug"])
 # Response Models
 # =============================================================================
 
+
 class KeyDerivationInfo(BaseModel):
     """Key derivation algorithm parameters."""
+
     algorithm: str
     time_cost: int
     memory_cost_kb: int
@@ -46,6 +49,7 @@ class KeyDerivationInfo(BaseModel):
 
 class EncryptionAlgorithmInfo(BaseModel):
     """Encryption algorithm parameters."""
+
     cipher: str
     key_length: int
     iv_length: int
@@ -54,6 +58,7 @@ class EncryptionAlgorithmInfo(BaseModel):
 
 class KeyExchangeInfo(BaseModel):
     """Key exchange algorithm parameters."""
+
     algorithm: str
     kdf: str
     kdf_salt_length: int
@@ -62,6 +67,7 @@ class KeyExchangeInfo(BaseModel):
 
 class UserKeyInfo(BaseModel):
     """User encryption key information."""
+
     user_id: str
     public_key_hex: Optional[str]
     encrypted_private_key_hex: Optional[str]
@@ -75,11 +81,13 @@ class UserKeyInfo(BaseModel):
 
 class EnclaveKeyInfo(BaseModel):
     """Enclave transport key information."""
+
     transport_public_key_hex: str
 
 
 class EncryptionContexts(BaseModel):
     """All HKDF context strings."""
+
     client_to_enclave: str
     enclave_to_client: str
     user_message_storage: str
@@ -89,6 +97,7 @@ class EncryptionContexts(BaseModel):
 
 class MembershipKeyInfo(BaseModel):
     """Organization membership key distribution info."""
+
     role: str
     has_org_key: bool
     encrypted_org_key_ephemeral_hex: Optional[str]
@@ -100,6 +109,7 @@ class MembershipKeyInfo(BaseModel):
 
 class OrgKeyInfo(BaseModel):
     """Organization encryption key information."""
+
     org_id: str
     org_name: str
     org_public_key_hex: Optional[str]
@@ -113,6 +123,7 @@ class OrgKeyInfo(BaseModel):
 
 class SampleMessageInfo(BaseModel):
     """Sample encrypted message structure."""
+
     message_id: str
     session_id: str
     role: str
@@ -127,6 +138,7 @@ class SampleMessageInfo(BaseModel):
 
 class VerificationSteps(BaseModel):
     """Step-by-step verification instructions."""
+
     to_decrypt_user_private_key: list[str]
     to_decrypt_message: list[str]
     to_decrypt_org_key: list[str]
@@ -134,6 +146,7 @@ class VerificationSteps(BaseModel):
 
 class EncryptionReport(BaseModel):
     """Complete encryption report for verification."""
+
     user: UserKeyInfo
     enclave: EnclaveKeyInfo
     encryption_contexts: EncryptionContexts
@@ -148,6 +161,7 @@ class EncryptionReport(BaseModel):
 # =============================================================================
 # Debug Endpoint
 # =============================================================================
+
 
 @router.get("/report", response_model=EncryptionReport)
 async def get_encryption_report(
@@ -255,22 +269,14 @@ async def get_encryption_report(
             organizations.append(org_info)
 
     # 7. Get sample messages from user's sessions (up to 5)
-    sessions_query = (
-        select(Session)
-        .where(Session.user_id == auth.user_id)
-        .order_by(Session.updated_at.desc())
-        .limit(3)
-    )
+    sessions_query = select(Session).where(Session.user_id == auth.user_id).order_by(Session.updated_at.desc()).limit(3)
     sessions_result = await db.execute(sessions_query)
     sessions = sessions_result.scalars().all()
 
     sample_messages = []
     for session in sessions:
         messages_query = (
-            select(Message)
-            .where(Message.session_id == session.id)
-            .order_by(Message.created_at.desc())
-            .limit(2)
+            select(Message).where(Message.session_id == session.id).order_by(Message.created_at.desc()).limit(2)
         )
         messages_result = await db.execute(messages_query)
         messages = messages_result.scalars().all()
@@ -283,18 +289,20 @@ async def get_encryption_report(
                 else EncryptionContext.USER_MESSAGE_STORAGE.value
             )
 
-            sample_messages.append(SampleMessageInfo(
-                message_id=msg.id,
-                session_id=msg.session_id,
-                role=msg.role,
-                ephemeral_public_key_hex=msg.ephemeral_public_key,
-                iv_hex=msg.iv,
-                ciphertext_hex=msg.ciphertext[:100] + "..." if len(msg.ciphertext) > 100 else msg.ciphertext,
-                ciphertext_length=len(msg.ciphertext) // 2,  # hex chars / 2 = bytes
-                auth_tag_hex=msg.auth_tag,
-                hkdf_salt_hex=msg.hkdf_salt,
-                storage_context=storage_context,
-            ))
+            sample_messages.append(
+                SampleMessageInfo(
+                    message_id=msg.id,
+                    session_id=msg.session_id,
+                    role=msg.role,
+                    ephemeral_public_key_hex=msg.ephemeral_public_key,
+                    iv_hex=msg.iv,
+                    ciphertext_hex=msg.ciphertext[:100] + "..." if len(msg.ciphertext) > 100 else msg.ciphertext,
+                    ciphertext_length=len(msg.ciphertext) // 2,  # hex chars / 2 = bytes
+                    auth_tag_hex=msg.auth_tag,
+                    hkdf_salt_hex=msg.hkdf_salt,
+                    storage_context=storage_context,
+                )
+            )
 
     # 8. Verification steps
     verification_steps = VerificationSteps(

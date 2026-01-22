@@ -6,6 +6,7 @@ Security Note:
 - recovery_encrypted_private_key can ONLY be decrypted with recovery code
 - Server cannot access private key without user-provided secret
 """
+
 from datetime import datetime
 from typing import Optional
 
@@ -25,6 +26,7 @@ class User(Base):
         key_salt: Salt for Argon2id passcode derivation
         recovery_*: Backup encryption using recovery code
     """
+
     __tablename__ = "users"
 
     # Primary key (from Clerk)
@@ -58,25 +60,15 @@ class User(Base):
     # Relationships
     # =========================================================================
 
-    memberships = relationship(
-        "OrganizationMembership",
-        back_populates="user",
-        cascade="all, delete-orphan"
-    )
+    memberships = relationship("OrganizationMembership", back_populates="user", cascade="all, delete-orphan")
 
-    sessions = relationship(
-        "Session",
-        back_populates="user",
-        cascade="all, delete-orphan"
-    )
+    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 
     # =========================================================================
     # Indexes
     # =========================================================================
 
-    __table_args__ = (
-        Index('ix_users_has_encryption', 'has_encryption_keys'),
-    )
+    __table_args__ = (Index("ix_users_has_encryption", "has_encryption_keys"),)
 
     # =========================================================================
     # Helper Properties
@@ -98,10 +90,7 @@ class User(Base):
         return {
             "has_encryption_keys": bool(self.has_encryption_keys),
             "public_key": self.public_key,
-            "encryption_created_at": (
-                self.encryption_created_at.isoformat()
-                if self.encryption_created_at else None
-            ),
+            "encryption_created_at": (self.encryption_created_at.isoformat() if self.encryption_created_at else None),
         }
 
     # =========================================================================

@@ -3,6 +3,7 @@
 Provides a unified interface for getting/setting context based on
 the current auth context (personal vs organization).
 """
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -17,11 +18,13 @@ router = APIRouter(prefix="/context", tags=["context"])
 
 class ContextRequest(BaseModel):
     """Request body for updating context."""
+
     context_data: dict
 
 
 class ContextResponse(BaseModel):
     """Response for context operations."""
+
     owner_type: str  # "user" or "org"
     context_data: dict | None
 

@@ -1,4 +1,5 @@
 """Tests for organization encryption models."""
+
 import uuid
 from datetime import datetime
 
@@ -507,9 +508,7 @@ class TestOrganizationMembershipPersistence:
         assert fetched.role == MemberRole.MEMBER
 
     @pytest.mark.asyncio
-    async def test_membership_with_encrypted_key_persistence(
-        self, db_session, test_user, test_organization
-    ):
+    async def test_membership_with_encrypted_key_persistence(self, db_session, test_user, test_organization):
         """Membership with encrypted org key persists correctly."""
         membership = OrganizationMembership(
             id=str(uuid.uuid4()),
@@ -555,9 +554,7 @@ class TestOrganizationEncryptionPersistence:
         db_session.add(org)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(Organization).where(Organization.id == org.id)
-        )
+        result = await db_session.execute(select(Organization).where(Organization.id == org.id))
         fetched = result.scalar_one()
 
         assert fetched.has_encryption_keys is True

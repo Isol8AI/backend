@@ -1,4 +1,5 @@
 """Unit tests for encrypted Message model."""
+
 import uuid
 from datetime import datetime
 

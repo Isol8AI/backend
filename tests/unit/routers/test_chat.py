@@ -1,4 +1,5 @@
 """Unit tests for encrypted chat router."""
+
 import uuid
 from datetime import datetime, timedelta
 
@@ -181,7 +182,7 @@ class TestEncryptedChatStream:
                 "model": AVAILABLE_MODELS[0]["id"],
                 "encrypted_message": encrypted_message,
                 "client_transport_public_key": "ff" * 32,  # 32 bytes as hex
-            }
+            },
         )
 
         assert response.status_code == 400
@@ -196,23 +197,29 @@ class TestEncryptedChatStream:
     @pytest.mark.asyncio
     async def test_requires_model_field(self, async_client, test_user):
         """Request must include model field."""
-        response = await async_client.post("/api/v1/chat/encrypted/stream", json={
-            "encrypted_message": {
-                "ephemeral_public_key": "aa" * 32,
-                "iv": "bb" * 16,
-                "ciphertext": "cc" * 32,
-                "auth_tag": "dd" * 16,
-                "hkdf_salt": "ee" * 32,
-            }
-        })
+        response = await async_client.post(
+            "/api/v1/chat/encrypted/stream",
+            json={
+                "encrypted_message": {
+                    "ephemeral_public_key": "aa" * 32,
+                    "iv": "bb" * 16,
+                    "ciphertext": "cc" * 32,
+                    "auth_tag": "dd" * 16,
+                    "hkdf_salt": "ee" * 32,
+                }
+            },
+        )
         assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_requires_encrypted_message_field(self, async_client, test_user):
         """Request must include encrypted_message field."""
-        response = await async_client.post("/api/v1/chat/encrypted/stream", json={
-            "model": AVAILABLE_MODELS[0]["id"],
-        })
+        response = await async_client.post(
+            "/api/v1/chat/encrypted/stream",
+            json={
+                "model": AVAILABLE_MODELS[0]["id"],
+            },
+        )
         assert response.status_code == 422
 
     @pytest.mark.asyncio
@@ -244,7 +251,7 @@ class TestEncryptedChatStream:
                     "hkdf_salt": "ee" * 32,
                 },
                 "client_transport_public_key": "ff" * 32,  # 32 bytes as hex
-            }
+            },
         )
 
         assert response.status_code == 400

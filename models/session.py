@@ -4,6 +4,7 @@ Chat session model.
 Sessions can be personal (org_id=None) or organization-scoped (org_id set).
 All messages in sessions are encrypted - this is a zero-trust platform.
 """
+
 import uuid
 from datetime import datetime
 
@@ -21,21 +22,12 @@ class Session(Base):
     - Personal sessions (org_id=NULL): Encrypted to user's public key
     - Organization sessions (org_id set): Encrypted to org's public key
     """
+
     __tablename__ = "sessions"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(
-        String,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
-    org_id = Column(
-        String,
-        ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True
-    )
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id = Column(String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String, default="New Chat")
 
     # Timestamps
@@ -43,18 +35,13 @@ class Session(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Composite index for common query pattern (user's sessions in an org context)
-    __table_args__ = (
-        Index("ix_sessions_user_org", "user_id", "org_id"),
-    )
+    __table_args__ = (Index("ix_sessions_user_org", "user_id", "org_id"),)
 
     # Relationships
     user = relationship("User", back_populates="sessions")
     organization = relationship("Organization", back_populates="sessions")
     messages = relationship(
-        "Message",
-        back_populates="session",
-        cascade="all, delete-orphan",
-        order_by="Message.created_at"
+        "Message", back_populates="session", cascade="all, delete-orphan", order_by="Message.created_at"
     )
 
     # =========================================================================

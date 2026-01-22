@@ -37,9 +37,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_clerk_issuer(cls, v: str) -> str:
         if "your-clerk-domain" in v:
-            raise ValueError(
-                "CLERK_ISSUER not configured. Set the CLERK_ISSUER environment variable."
-            )
+            raise ValueError("CLERK_ISSUER not configured. Set the CLERK_ISSUER environment variable.")
         return v
 
     @field_validator("HUGGINGFACE_TOKEN")
@@ -47,10 +45,8 @@ class Settings(BaseSettings):
     def validate_hf_token(cls, v: Optional[str]) -> Optional[str]:
         if not v:
             import warnings
-            warnings.warn(
-                "HUGGINGFACE_TOKEN not set. LLM features will not work.",
-                UserWarning
-            )
+
+            warnings.warn("HUGGINGFACE_TOKEN not set. LLM features will not work.", UserWarning)
         return v
 
     class Config:

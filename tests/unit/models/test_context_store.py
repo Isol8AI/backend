@@ -1,4 +1,5 @@
 """Unit tests for ContextStore model."""
+
 import uuid
 
 import pytest
@@ -13,11 +14,7 @@ class TestContextStoreModel:
 
     def test_context_store_creation(self):
         """ContextStore can be created with required fields."""
-        store = ContextStore(
-            id="ctx_123",
-            owner_type="user",
-            owner_id="user_123"
-        )
+        store = ContextStore(id="ctx_123", owner_type="user", owner_id="user_123")
         assert store.owner_type == "user"
         assert store.owner_id == "user_123"
 
@@ -33,10 +30,7 @@ class TestContextStoreModel:
     def test_context_store_has_context_data(self):
         """ContextStore has context_data JSONB field."""
         store = ContextStore(
-            id="ctx_123",
-            owner_type="user",
-            owner_id="user_123",
-            context_data={"preferences": {"theme": "dark"}}
+            id="ctx_123", owner_type="user", owner_id="user_123", context_data={"preferences": {"theme": "dark"}}
         )
         assert store.context_data == {"preferences": {"theme": "dark"}}
 
@@ -49,17 +43,12 @@ class TestContextStoreModel:
     async def test_context_store_for_user(self, db_session, test_user):
         """ContextStore can be created for a user."""
         store = ContextStore(
-            id=f"ctx_user_{uuid.uuid4()}",
-            owner_type="user",
-            owner_id=test_user.id,
-            context_data={"test": "value"}
+            id=f"ctx_user_{uuid.uuid4()}", owner_type="user", owner_id=test_user.id, context_data={"test": "value"}
         )
         db_session.add(store)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(ContextStore).where(ContextStore.id == store.id)
-        )
+        result = await db_session.execute(select(ContextStore).where(ContextStore.id == store.id))
         fetched = result.scalar_one()
 
         assert fetched.owner_type == "user"
@@ -74,14 +63,12 @@ class TestContextStoreModel:
             id=f"ctx_org_{uuid.uuid4()}",
             owner_type="org",
             owner_id=test_organization.id,
-            context_data={"shared": "context"}
+            context_data={"shared": "context"},
         )
         db_session.add(store)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(ContextStore).where(ContextStore.id == store.id)
-        )
+        result = await db_session.execute(select(ContextStore).where(ContextStore.id == store.id))
         fetched = result.scalar_one()
 
         assert fetched.owner_type == "org"
@@ -90,16 +77,8 @@ class TestContextStoreModel:
     @pytest.mark.asyncio
     async def test_context_store_unique_owner(self, db_session, test_user):
         """Only one context store per owner_type/owner_id combination."""
-        store1 = ContextStore(
-            id="ctx_dup_1",
-            owner_type="user",
-            owner_id=test_user.id
-        )
-        store2 = ContextStore(
-            id="ctx_dup_2",
-            owner_type="user",
-            owner_id=test_user.id
-        )
+        store1 = ContextStore(id="ctx_dup_1", owner_type="user", owner_id=test_user.id)
+        store2 = ContextStore(id="ctx_dup_2", owner_type="user", owner_id=test_user.id)
 
         db_session.add(store1)
         await db_session.flush()
@@ -112,24 +91,14 @@ class TestContextStoreModel:
     async def test_context_store_different_owner_types(self, db_session, test_user, test_organization):
         """Same owner_id with different owner_types are allowed."""
         # This tests that "user_123" as a user and "user_123" as an org are separate
-        store1 = ContextStore(
-            id="ctx_type_1",
-            owner_type="user",
-            owner_id="shared_id_123"
-        )
-        store2 = ContextStore(
-            id="ctx_type_2",
-            owner_type="org",
-            owner_id="shared_id_123"
-        )
+        store1 = ContextStore(id="ctx_type_1", owner_type="user", owner_id="shared_id_123")
+        store2 = ContextStore(id="ctx_type_2", owner_type="org", owner_id="shared_id_123")
 
         db_session.add(store1)
         db_session.add(store2)
         await db_session.flush()  # Should not raise
 
-        result = await db_session.execute(
-            select(ContextStore).where(ContextStore.owner_id == "shared_id_123")
-        )
+        result = await db_session.execute(select(ContextStore).where(ContextStore.owner_id == "shared_id_123"))
         stores = result.scalars().all()
         assert len(stores) == 2
 
@@ -141,14 +110,12 @@ class TestContextStoreModel:
             owner_type="user",
             owner_id=test_user.id,
             store_type="vector",
-            context_data={"vector_config": {"provider": "pinecone"}}
+            context_data={"vector_config": {"provider": "pinecone"}},
         )
         db_session.add(store)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(ContextStore).where(ContextStore.id == store.id)
-        )
+        result = await db_session.execute(select(ContextStore).where(ContextStore.id == store.id))
         fetched = result.scalar_one()
 
         assert fetched.store_type == "vector"

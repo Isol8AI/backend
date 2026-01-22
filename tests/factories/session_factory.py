@@ -1,4 +1,5 @@
 """Factory for creating Session test instances."""
+
 import uuid
 
 import factory

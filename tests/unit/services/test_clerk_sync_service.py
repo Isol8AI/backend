@@ -1,4 +1,5 @@
 """Tests for ClerkSyncService."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,6 +12,7 @@ from models.organization_membership import OrganizationMembership, MemberRole
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_db():
@@ -41,6 +43,7 @@ def mock_execute_result_scalars(items):
 # =============================================================================
 # Test User Sync
 # =============================================================================
+
 
 class TestUserSync:
     """Tests for user sync operations."""
@@ -84,10 +87,12 @@ class TestUserSync:
     async def test_update_user_not_found_creates(self, mock_db):
         """Creates user if not found during update."""
         # First call returns None (not found), second returns None (for create check)
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(None),
-            mock_execute_result(None),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(None),
+                mock_execute_result(None),
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
         user = await service.update_user({"id": "user_123"})
@@ -101,10 +106,12 @@ class TestUserSync:
         user = User(id="user_123")
         user.has_encryption_keys = False
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),
-            mock_execute_result_scalars([]),  # No memberships
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),
+                mock_execute_result_scalars([]),  # No memberships
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
         await service.delete_user({"id": "user_123"})
@@ -128,10 +135,12 @@ class TestUserSync:
             recovery_salt="33" * 32,
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),
-            mock_execute_result_scalars([]),  # No memberships
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),
+                mock_execute_result_scalars([]),  # No memberships
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
         await service.delete_user({"id": "user_123"})
@@ -153,10 +162,12 @@ class TestUserSync:
             role=MemberRole.MEMBER,
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(user),
-            mock_execute_result_scalars([membership]),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(user),
+                mock_execute_result_scalars([membership]),
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
         await service.delete_user({"id": "user_123"})
@@ -179,6 +190,7 @@ class TestUserSync:
 # Test Organization Sync
 # =============================================================================
 
+
 class TestOrganizationSync:
     """Tests for organization sync operations."""
 
@@ -188,11 +200,13 @@ class TestOrganizationSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(None))
 
         service = ClerkSyncService(mock_db)
-        org = await service.create_organization({
-            "id": "org_123",
-            "name": "Test Org",
-            "slug": "test-org",
-        })
+        org = await service.create_organization(
+            {
+                "id": "org_123",
+                "name": "Test Org",
+                "slug": "test-org",
+            }
+        )
 
         assert org.id == "org_123"
         assert org.name == "Test Org"
@@ -206,10 +220,12 @@ class TestOrganizationSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(existing_org))
 
         service = ClerkSyncService(mock_db)
-        org = await service.create_organization({
-            "id": "org_123",
-            "name": "New Name",
-        })
+        org = await service.create_organization(
+            {
+                "id": "org_123",
+                "name": "New Name",
+            }
+        )
 
         assert org.name == "New Name"
 
@@ -220,11 +236,13 @@ class TestOrganizationSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(existing_org))
 
         service = ClerkSyncService(mock_db)
-        org = await service.update_organization({
-            "id": "org_123",
-            "name": "New Name",
-            "slug": "new-slug",
-        })
+        org = await service.update_organization(
+            {
+                "id": "org_123",
+                "name": "New Name",
+                "slug": "new-slug",
+            }
+        )
 
         assert org.name == "New Name"
         assert org.slug == "new-slug"
@@ -234,10 +252,12 @@ class TestOrganizationSync:
         """Deletes organization and clears all org keys."""
         org = Organization(id="org_123", name="Test Org")
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(org),
-            mock_execute_result_scalars([]),  # No memberships
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(org),
+                mock_execute_result_scalars([]),  # No memberships
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
         await service.delete_organization({"id": "org_123"})
@@ -264,10 +284,12 @@ class TestOrganizationSync:
             distributed_by_user_id="admin_123",
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(org),
-            mock_execute_result_scalars([membership]),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(org),
+                mock_execute_result_scalars([membership]),
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
         await service.delete_organization({"id": "org_123"})
@@ -279,6 +301,7 @@ class TestOrganizationSync:
 # Test Membership Sync
 # =============================================================================
 
+
 class TestMembershipSync:
     """Tests for membership sync operations."""
 
@@ -289,19 +312,23 @@ class TestMembershipSync:
         user = User(id="user_123")
 
         # Returns: org, user, no existing membership
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(org),
-            mock_execute_result(user),
-            mock_execute_result(None),  # No existing membership
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(org),
+                mock_execute_result(user),
+                mock_execute_result(None),  # No existing membership
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
-        membership = await service.create_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-            "role": "org:member",
-        })
+        membership = await service.create_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+                "role": "org:member",
+            }
+        )
 
         assert membership.id == "mem_123"
         assert not membership.has_org_key  # Pending distribution (None or False)
@@ -312,19 +339,23 @@ class TestMembershipSync:
         """Creates organization if it doesn't exist."""
         user = User(id="user_123")
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(None),  # No org
-            mock_execute_result(user),
-            mock_execute_result(None),  # No existing membership
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(None),  # No org
+                mock_execute_result(user),
+                mock_execute_result(None),  # No existing membership
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
-        membership = await service.create_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456", "name": "New Org"},
-            "role": "org:admin",
-        })
+        membership = await service.create_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456", "name": "New Org"},
+                "role": "org:admin",
+            }
+        )
 
         assert membership.role == MemberRole.ADMIN
         # Org should have been added
@@ -337,19 +368,23 @@ class TestMembershipSync:
         """Creates user if it doesn't exist."""
         org = Organization(id="org_456", name="Test Org")
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(org),
-            mock_execute_result(None),  # No user
-            mock_execute_result(None),  # No existing membership
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(org),
+                mock_execute_result(None),  # No user
+                mock_execute_result(None),  # No existing membership
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
-        await service.create_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-            "role": "org:member",
-        })
+        await service.create_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+                "role": "org:member",
+            }
+        )
 
         # User should have been added
         added_objects = [call.args[0] for call in mock_db.add.call_args_list]
@@ -368,19 +403,23 @@ class TestMembershipSync:
             role=MemberRole.MEMBER,
         )
 
-        mock_db.execute = AsyncMock(side_effect=[
-            mock_execute_result(org),
-            mock_execute_result(user),
-            mock_execute_result(existing_membership),
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_execute_result(org),
+                mock_execute_result(user),
+                mock_execute_result(existing_membership),
+            ]
+        )
 
         service = ClerkSyncService(mock_db)
-        membership = await service.create_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-            "role": "org:admin",  # Changed to admin
-        })
+        membership = await service.create_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+                "role": "org:admin",  # Changed to admin
+            }
+        )
 
         assert membership.role == MemberRole.ADMIN
 
@@ -388,10 +427,12 @@ class TestMembershipSync:
     async def test_create_membership_missing_fields(self, mock_db):
         """Handles missing required fields gracefully."""
         service = ClerkSyncService(mock_db)
-        membership = await service.create_membership({
-            "id": "mem_123",
-            # Missing public_user_data and organization
-        })
+        membership = await service.create_membership(
+            {
+                "id": "mem_123",
+                # Missing public_user_data and organization
+            }
+        )
 
         assert membership is None
         mock_db.execute.assert_not_called()
@@ -409,11 +450,13 @@ class TestMembershipSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(existing_membership))
 
         service = ClerkSyncService(mock_db)
-        membership = await service.update_membership({
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-            "role": "org:admin",
-        })
+        membership = await service.update_membership(
+            {
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+                "role": "org:admin",
+            }
+        )
 
         assert membership.role == MemberRole.ADMIN
         # Audit log should be created
@@ -432,11 +475,13 @@ class TestMembershipSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(membership))
 
         service = ClerkSyncService(mock_db)
-        await service.delete_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-        })
+        await service.delete_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+            }
+        )
 
         mock_db.delete.assert_called_with(membership)
 
@@ -461,11 +506,13 @@ class TestMembershipSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(membership))
 
         service = ClerkSyncService(mock_db)
-        await service.delete_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-        })
+        await service.delete_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+            }
+        )
 
         # Key should be cleared before deletion
         assert membership.has_org_key is False
@@ -478,10 +525,12 @@ class TestMembershipSync:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(None))
 
         service = ClerkSyncService(mock_db)
-        await service.delete_membership({
-            "id": "mem_123",
-            "public_user_data": {"user_id": "user_123"},
-            "organization": {"id": "org_456"},
-        })
+        await service.delete_membership(
+            {
+                "id": "mem_123",
+                "public_user_data": {"user_id": "user_123"},
+                "organization": {"id": "org_456"},
+            }
+        )
 
         mock_db.delete.assert_not_called()

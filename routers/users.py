@@ -1,4 +1,5 @@
 """User API endpoints including encryption key management."""
+
 import logging
 from typing import List
 
@@ -30,10 +31,7 @@ router = APIRouter()
 
 
 @router.post("/sync")
-async def sync_user(
-    auth: AuthContext = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
+async def sync_user(auth: AuthContext = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Ensures the logged-in user exists in the database."""
     user_id = auth.user_id
 
@@ -66,6 +64,7 @@ async def sync_user(
 # =============================================================================
 # Encryption Key Endpoints
 # =============================================================================
+
 
 @router.get("/me/encryption-status", response_model=EncryptionStatusResponse)
 async def get_encryption_status(
@@ -114,10 +113,7 @@ async def create_encryption_keys(
         )
         return {"status": "created", "public_key": request.public_key}
     except KeysAlreadyExistError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User already has encryption keys"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already has encryption keys")
     except UserKeyServiceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -137,10 +133,7 @@ async def get_encryption_keys(
         keys = await service.get_encryption_keys(auth.user_id)
         return UserKeysResponse(**keys)
     except KeysNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User has no encryption keys"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User has no encryption keys")
     except UserKeyServiceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -167,10 +160,7 @@ async def get_recovery_keys(
             salt=keys["salt"],
         )
     except KeysNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User has no encryption keys"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User has no encryption keys")
     except UserKeyServiceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -208,10 +198,7 @@ async def get_user_public_key(
     service = UserKeyService(db)
     public_key = await service.get_public_key(user_id)
     if not public_key:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User has no public key"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User has no public key")
     return {"user_id": user_id, "public_key": public_key}
 
 
@@ -219,8 +206,10 @@ async def get_user_public_key(
 # Membership Endpoints
 # =============================================================================
 
+
 class MembershipItem(BaseModel):
     """Membership item for list response."""
+
     id: str
     org_id: str
     org_name: str | None
@@ -232,6 +221,7 @@ class MembershipItem(BaseModel):
 
 class MembershipsResponse(BaseModel):
     """Response for user's memberships list."""
+
     memberships: List[MembershipItem]
 
 
@@ -258,7 +248,7 @@ async def get_my_memberships(
             id=membership.id,
             org_id=membership.org_id,
             org_name=org.name if org else None,
-            role=membership.role.value if hasattr(membership.role, 'value') else str(membership.role),
+            role=membership.role.value if hasattr(membership.role, "value") else str(membership.role),
             has_org_key=membership.has_org_key,
             key_distributed_at=membership.key_distributed_at.isoformat() if membership.key_distributed_at else None,
             joined_at=membership.joined_at.isoformat() if membership.joined_at else None,

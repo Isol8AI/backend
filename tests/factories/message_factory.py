@@ -1,4 +1,5 @@
 """Factory for creating encrypted Message test instances."""
+
 import uuid
 
 import factory
@@ -20,11 +21,7 @@ def generate_encrypted_payload(content: str = "Test message content") -> dict:
     recipient = generate_x25519_keypair()
 
     # Encrypt the content
-    payload = encrypt_to_public_key(
-        recipient.public_key,
-        content.encode("utf-8"),
-        "user-message-storage"
-    )
+    payload = encrypt_to_public_key(recipient.public_key, content.encode("utf-8"), "user-message-storage")
 
     # Return as hex strings matching the model structure
     return {
@@ -50,21 +47,11 @@ class EncryptedMessageFactory(factory.Factory):
     output_tokens = None
 
     # Encrypted payload fields - generated lazily
-    ephemeral_public_key = factory.LazyAttribute(
-        lambda o: generate_encrypted_payload()["ephemeral_public_key"]
-    )
-    iv = factory.LazyAttribute(
-        lambda o: generate_encrypted_payload()["iv"]
-    )
-    ciphertext = factory.LazyAttribute(
-        lambda o: generate_encrypted_payload()["ciphertext"]
-    )
-    auth_tag = factory.LazyAttribute(
-        lambda o: generate_encrypted_payload()["auth_tag"]
-    )
-    hkdf_salt = factory.LazyAttribute(
-        lambda o: generate_encrypted_payload()["hkdf_salt"]
-    )
+    ephemeral_public_key = factory.LazyAttribute(lambda o: generate_encrypted_payload()["ephemeral_public_key"])
+    iv = factory.LazyAttribute(lambda o: generate_encrypted_payload()["iv"])
+    ciphertext = factory.LazyAttribute(lambda o: generate_encrypted_payload()["ciphertext"])
+    auth_tag = factory.LazyAttribute(lambda o: generate_encrypted_payload()["auth_tag"])
+    hkdf_salt = factory.LazyAttribute(lambda o: generate_encrypted_payload()["hkdf_salt"])
 
     @classmethod
     def create_with_content(cls, content: str, **kwargs) -> Message:
@@ -81,7 +68,7 @@ class EncryptedMessageFactory(factory.Factory):
             ciphertext=payload["ciphertext"],
             auth_tag=payload["auth_tag"],
             hkdf_salt=payload["hkdf_salt"],
-            **kwargs
+            **kwargs,
         )
 
 

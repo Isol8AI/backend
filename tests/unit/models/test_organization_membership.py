@@ -1,4 +1,5 @@
 """Unit tests for OrganizationMembership model."""
+
 import uuid
 
 import pytest
@@ -14,12 +15,7 @@ class TestOrganizationMembershipModel:
 
     def test_membership_creation(self):
         """OrganizationMembership can be created with required fields."""
-        membership = OrganizationMembership(
-            id="mem_123",
-            user_id="user_123",
-            org_id="org_123",
-            role=MemberRole.MEMBER
-        )
+        membership = OrganizationMembership(id="mem_123", user_id="user_123", org_id="org_123", role=MemberRole.MEMBER)
         assert membership.user_id == "user_123"
         assert membership.org_id == "org_123"
         assert membership.role == MemberRole.MEMBER
@@ -41,10 +37,7 @@ class TestOrganizationMembershipModel:
     async def test_membership_persistence(self, db_session, test_user, test_organization):
         """OrganizationMembership can be persisted and retrieved from database."""
         membership = OrganizationMembership(
-            id=f"mem_{uuid.uuid4()}",
-            user_id=test_user.id,
-            org_id=test_organization.id,
-            role=MemberRole.ADMIN
+            id=f"mem_{uuid.uuid4()}", user_id=test_user.id, org_id=test_organization.id, role=MemberRole.ADMIN
         )
         db_session.add(membership)
         await db_session.flush()
@@ -63,10 +56,7 @@ class TestOrganizationMembershipModel:
     async def test_membership_user_foreign_key(self, db_session, test_organization):
         """OrganizationMembership requires valid user_id foreign key."""
         membership = OrganizationMembership(
-            id="mem_invalid_user",
-            user_id="nonexistent_user",
-            org_id=test_organization.id,
-            role=MemberRole.MEMBER
+            id="mem_invalid_user", user_id="nonexistent_user", org_id=test_organization.id, role=MemberRole.MEMBER
         )
         db_session.add(membership)
 
@@ -77,10 +67,7 @@ class TestOrganizationMembershipModel:
     async def test_membership_org_foreign_key(self, db_session, test_user):
         """OrganizationMembership requires valid org_id foreign key."""
         membership = OrganizationMembership(
-            id="mem_invalid_org",
-            user_id=test_user.id,
-            org_id="nonexistent_org",
-            role=MemberRole.MEMBER
+            id="mem_invalid_org", user_id=test_user.id, org_id="nonexistent_org", role=MemberRole.MEMBER
         )
         db_session.add(membership)
 
@@ -91,16 +78,10 @@ class TestOrganizationMembershipModel:
     async def test_membership_unique_user_org_pair(self, db_session, test_user, test_organization):
         """User can only have one membership per organization."""
         mem1 = OrganizationMembership(
-            id="mem_dup_1",
-            user_id=test_user.id,
-            org_id=test_organization.id,
-            role=MemberRole.MEMBER
+            id="mem_dup_1", user_id=test_user.id, org_id=test_organization.id, role=MemberRole.MEMBER
         )
         mem2 = OrganizationMembership(
-            id="mem_dup_2",
-            user_id=test_user.id,
-            org_id=test_organization.id,
-            role=MemberRole.ADMIN
+            id="mem_dup_2", user_id=test_user.id, org_id=test_organization.id, role=MemberRole.ADMIN
         )
 
         db_session.add(mem1)
@@ -119,18 +100,8 @@ class TestOrganizationMembershipModel:
         db_session.add(org2)
         await db_session.flush()
 
-        mem1 = OrganizationMembership(
-            id="mem_multi_1",
-            user_id=test_user.id,
-            org_id=org1.id,
-            role=MemberRole.MEMBER
-        )
-        mem2 = OrganizationMembership(
-            id="mem_multi_2",
-            user_id=test_user.id,
-            org_id=org2.id,
-            role=MemberRole.MEMBER
-        )
+        mem1 = OrganizationMembership(id="mem_multi_1", user_id=test_user.id, org_id=org1.id, role=MemberRole.MEMBER)
+        mem2 = OrganizationMembership(id="mem_multi_2", user_id=test_user.id, org_id=org2.id, role=MemberRole.MEMBER)
 
         db_session.add(mem1)
         db_session.add(mem2)

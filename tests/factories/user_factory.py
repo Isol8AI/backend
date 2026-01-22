@@ -1,4 +1,5 @@
 """Factory for creating User test instances."""
+
 import factory
 
 from models.user import User

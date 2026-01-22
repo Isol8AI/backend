@@ -1,4 +1,5 @@
 """Tests for Clerk webhooks router."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 # =============================================================================
 # Test Webhook Endpoint
 # =============================================================================
+
 
 class TestClerkWebhookEndpoint:
     """Tests for the clerk webhook endpoint."""
@@ -22,10 +24,10 @@ class TestClerkWebhookEndpoint:
             "data": {"id": "user_123"},
         }
 
-        with patch('routers.webhooks.verify_webhook', new_callable=AsyncMock) as mock_verify:
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = payload
 
-            with patch('routers.webhooks.ClerkSyncService') as MockService:
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
                 mock_service = MagicMock()
                 mock_service.create_user = AsyncMock()
                 MockService.return_value = mock_service
@@ -38,7 +40,7 @@ class TestClerkWebhookEndpoint:
                         "svix-id": "test",
                         "svix-timestamp": "123",
                         "svix-signature": "test",
-                    }
+                    },
                 )
 
                 assert response.status_code == 200
@@ -55,10 +57,10 @@ class TestClerkWebhookEndpoint:
             "data": {"id": "user_123"},
         }
 
-        with patch('routers.webhooks.verify_webhook', new_callable=AsyncMock) as mock_verify:
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = payload
 
-            with patch('routers.webhooks.ClerkSyncService') as MockService:
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
                 mock_service = MagicMock()
                 mock_service.delete_user = AsyncMock()
                 MockService.return_value = mock_service
@@ -71,7 +73,7 @@ class TestClerkWebhookEndpoint:
                         "svix-id": "test",
                         "svix-timestamp": "123",
                         "svix-signature": "test",
-                    }
+                    },
                 )
 
                 assert response.status_code == 200
@@ -87,10 +89,10 @@ class TestClerkWebhookEndpoint:
             "data": {"id": "org_123", "name": "Test Org"},
         }
 
-        with patch('routers.webhooks.verify_webhook', new_callable=AsyncMock) as mock_verify:
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = payload
 
-            with patch('routers.webhooks.ClerkSyncService') as MockService:
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
                 mock_service = MagicMock()
                 mock_service.create_organization = AsyncMock()
                 MockService.return_value = mock_service
@@ -103,7 +105,7 @@ class TestClerkWebhookEndpoint:
                         "svix-id": "test",
                         "svix-timestamp": "123",
                         "svix-signature": "test",
-                    }
+                    },
                 )
 
                 assert response.status_code == 200
@@ -124,10 +126,10 @@ class TestClerkWebhookEndpoint:
             },
         }
 
-        with patch('routers.webhooks.verify_webhook', new_callable=AsyncMock) as mock_verify:
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = payload
 
-            with patch('routers.webhooks.ClerkSyncService') as MockService:
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
                 mock_service = MagicMock()
                 mock_service.create_membership = AsyncMock()
                 MockService.return_value = mock_service
@@ -140,7 +142,7 @@ class TestClerkWebhookEndpoint:
                         "svix-id": "test",
                         "svix-timestamp": "123",
                         "svix-signature": "test",
-                    }
+                    },
                 )
 
                 assert response.status_code == 200
@@ -160,10 +162,10 @@ class TestClerkWebhookEndpoint:
             },
         }
 
-        with patch('routers.webhooks.verify_webhook', new_callable=AsyncMock) as mock_verify:
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = payload
 
-            with patch('routers.webhooks.ClerkSyncService') as MockService:
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
                 mock_service = MagicMock()
                 mock_service.delete_membership = AsyncMock()
                 MockService.return_value = mock_service
@@ -176,7 +178,7 @@ class TestClerkWebhookEndpoint:
                         "svix-id": "test",
                         "svix-timestamp": "123",
                         "svix-signature": "test",
-                    }
+                    },
                 )
 
                 assert response.status_code == 200
@@ -192,10 +194,10 @@ class TestClerkWebhookEndpoint:
             "data": {"id": "sess_123"},
         }
 
-        with patch('routers.webhooks.verify_webhook', new_callable=AsyncMock) as mock_verify:
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = payload
 
-            with patch('routers.webhooks.ClerkSyncService') as MockService:
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
                 mock_service = MagicMock()
                 MockService.return_value = mock_service
 
@@ -207,7 +209,7 @@ class TestClerkWebhookEndpoint:
                         "svix-id": "test",
                         "svix-timestamp": "123",
                         "svix-signature": "test",
-                    }
+                    },
                 )
 
                 assert response.status_code == 200
@@ -217,6 +219,7 @@ class TestClerkWebhookEndpoint:
 # =============================================================================
 # Test Webhook Verification
 # =============================================================================
+
 
 class TestWebhookVerification:
     """Tests for webhook signature verification."""
@@ -230,7 +233,7 @@ class TestWebhookVerification:
         mock_request = MagicMock()
         mock_request.body = AsyncMock(return_value=b'{"type": "test", "data": {}}')
 
-        with patch('routers.webhooks.settings') as mock_settings:
+        with patch("routers.webhooks.settings") as mock_settings:
             mock_settings.CLERK_WEBHOOK_SECRET = None
 
             payload = await verify_webhook(mock_request, None, None, None)
@@ -245,7 +248,7 @@ class TestWebhookVerification:
         mock_request = MagicMock()
         mock_request.body = AsyncMock(return_value=b'{"type": "test"}')
 
-        with patch('routers.webhooks.settings') as mock_settings:
+        with patch("routers.webhooks.settings") as mock_settings:
             mock_settings.CLERK_WEBHOOK_SECRET = "whsec_test123"
 
             with pytest.raises(HTTPException) as exc_info:
@@ -263,17 +266,12 @@ class TestWebhookVerification:
         mock_request = MagicMock()
         mock_request.body = AsyncMock(return_value=b'{"type": "test"}')
 
-        with patch('routers.webhooks.settings') as mock_settings:
+        with patch("routers.webhooks.settings") as mock_settings:
             # Svix expects base64-encoded secrets
             mock_settings.CLERK_WEBHOOK_SECRET = "whsec_dGVzdHNlY3JldHRlc3RzZWNyZXQ="
 
             with pytest.raises(HTTPException) as exc_info:
-                await verify_webhook(
-                    mock_request,
-                    "msg_test123",
-                    "1234567890",
-                    "v1,invalid_signature"
-                )
+                await verify_webhook(mock_request, "msg_test123", "1234567890", "v1,invalid_signature")
 
             assert exc_info.value.status_code == 401
             assert "Invalid webhook signature" in exc_info.value.detail

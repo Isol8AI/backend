@@ -1,4 +1,5 @@
 """Database models for the encrypted LLM platform."""
+
 from .base import Base
 from .user import User
 from .organization import Organization

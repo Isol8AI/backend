@@ -1,4 +1,5 @@
 """Tests for memory extraction functionality in the enclave."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import json
@@ -10,15 +11,14 @@ from core.enclave import MockEnclave, ExtractedMemory, EncryptionContext
 # Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def mock_enclave():
     """Create a MockEnclave with mocked dependencies."""
-    with patch.object(MockEnclave, '_get_embedding_model') as mock_embed:
+    with patch.object(MockEnclave, "_get_embedding_model") as mock_embed:
         # Mock the embedding model
         mock_model = MagicMock()
-        mock_model.encode.return_value = MagicMock(
-            tolist=lambda: [0.1] * 384
-        )
+        mock_model.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
         mock_embed.return_value = mock_model
 
         enclave = MockEnclave(
@@ -35,13 +35,9 @@ def sample_extraction_response():
         {
             "text": "User's favorite programming language is Python",
             "sector": "semantic",
-            "tags": ["programming", "preferences"]
+            "tags": ["programming", "preferences"],
         },
-        {
-            "text": "User prefers dark mode in their IDE",
-            "sector": "procedural",
-            "tags": ["preferences"]
-        }
+        {"text": "User prefers dark mode in their IDE", "sector": "procedural", "tags": ["preferences"]},
     ]
 
 
@@ -54,6 +50,7 @@ def sample_storage_public_key():
 # =============================================================================
 # Test Embedding Generation
 # =============================================================================
+
 
 class TestEmbeddingGeneration:
     """Tests for embedding generation."""
@@ -88,15 +85,13 @@ class TestEmbeddingGeneration:
 # Test Extraction Prompt
 # =============================================================================
 
+
 class TestExtractionPrompt:
     """Tests for extraction prompt building."""
 
     def test_builds_prompt_with_conversation(self, mock_enclave):
         """Prompt includes user message and assistant response."""
-        prompt = mock_enclave._build_extraction_prompt(
-            "What is Python?",
-            "Python is a programming language."
-        )
+        prompt = mock_enclave._build_extraction_prompt("What is Python?", "Python is a programming language.")
 
         assert "User: What is Python?" in prompt
         assert "Assistant: Python is a programming language." in prompt
@@ -122,6 +117,7 @@ class TestExtractionPrompt:
 # =============================================================================
 # Test Extraction LLM Call
 # =============================================================================
+
 
 class TestExtractionLLMCall:
     """Tests for extraction LLM API call."""
@@ -149,9 +145,7 @@ class TestExtractionLLMCall:
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {
-                "choices": [{"message": {"content": json_content}}]
-            }
+            mock_response.json.return_value = {"choices": [{"message": {"content": json_content}}]}
             mock_client.return_value.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
 
             result = await mock_enclave._call_extraction_llm("test prompt")
@@ -177,9 +171,7 @@ class TestExtractionLLMCall:
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {
-                "choices": [{"message": {"content": "not valid json"}}]
-            }
+            mock_response.json.return_value = {"choices": [{"message": {"content": "not valid json"}}]}
             mock_client.return_value.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
 
             result = await mock_enclave._call_extraction_llm("test prompt")
@@ -192,9 +184,7 @@ class TestExtractionLLMCall:
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {
-                "choices": [{"message": {"content": "[]"}}]
-            }
+            mock_response.json.return_value = {"choices": [{"message": {"content": "[]"}}]}
             mock_client.return_value.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
 
             result = await mock_enclave._call_extraction_llm("test prompt")
@@ -205,6 +195,7 @@ class TestExtractionLLMCall:
 # =============================================================================
 # Test Memory Encryption
 # =============================================================================
+
 
 class TestMemoryEncryption:
     """Tests for memory content encryption."""
@@ -230,6 +221,7 @@ class TestMemoryEncryption:
 # Test Extract Memories (Integration)
 # =============================================================================
 
+
 class TestExtractMemories:
     """Tests for the full extract_memories method."""
 
@@ -241,14 +233,14 @@ class TestExtractMemories:
         sample_storage_public_key,
     ):
         """Successfully extracts and encrypts memories."""
-        with patch.object(mock_enclave, '_call_extraction_llm', new_callable=AsyncMock) as mock_extract:
+        with patch.object(mock_enclave, "_call_extraction_llm", new_callable=AsyncMock) as mock_extract:
             mock_extract.return_value = sample_extraction_response
 
-            with patch.object(mock_enclave, 'encrypt_for_memory_storage') as mock_encrypt:
+            with patch.object(mock_enclave, "encrypt_for_memory_storage") as mock_encrypt:
                 mock_payload = MagicMock()
-                mock_payload.iv = b'\x00' * 16
-                mock_payload.auth_tag = b'\x00' * 16
-                mock_payload.ephemeral_public_key = b'\x00' * 32
+                mock_payload.iv = b"\x00" * 16
+                mock_payload.auth_tag = b"\x00" * 16
+                mock_payload.ephemeral_public_key = b"\x00" * 32
                 mock_encrypt.return_value = mock_payload
 
                 memories = await mock_enclave.extract_memories(
@@ -267,7 +259,7 @@ class TestExtractMemories:
         sample_storage_public_key,
     ):
         """Returns empty list when no memories extracted."""
-        with patch.object(mock_enclave, '_call_extraction_llm', new_callable=AsyncMock) as mock_extract:
+        with patch.object(mock_enclave, "_call_extraction_llm", new_callable=AsyncMock) as mock_extract:
             mock_extract.return_value = []
 
             memories = await mock_enclave.extract_memories(
@@ -285,16 +277,14 @@ class TestExtractMemories:
         sample_storage_public_key,
     ):
         """Invalid sectors default to semantic."""
-        with patch.object(mock_enclave, '_call_extraction_llm', new_callable=AsyncMock) as mock_extract:
-            mock_extract.return_value = [
-                {"text": "some fact", "sector": "invalid_sector", "tags": []}
-            ]
+        with patch.object(mock_enclave, "_call_extraction_llm", new_callable=AsyncMock) as mock_extract:
+            mock_extract.return_value = [{"text": "some fact", "sector": "invalid_sector", "tags": []}]
 
-            with patch.object(mock_enclave, 'encrypt_for_memory_storage') as mock_encrypt:
+            with patch.object(mock_enclave, "encrypt_for_memory_storage") as mock_encrypt:
                 mock_payload = MagicMock()
-                mock_payload.iv = b'\x00' * 16
-                mock_payload.auth_tag = b'\x00' * 16
-                mock_payload.ephemeral_public_key = b'\x00' * 32
+                mock_payload.iv = b"\x00" * 16
+                mock_payload.auth_tag = b"\x00" * 16
+                mock_payload.ephemeral_public_key = b"\x00" * 32
                 mock_encrypt.return_value = mock_payload
 
                 memories = await mock_enclave.extract_memories(
@@ -313,17 +303,17 @@ class TestExtractMemories:
         sample_storage_public_key,
     ):
         """Skips items with empty text."""
-        with patch.object(mock_enclave, '_call_extraction_llm', new_callable=AsyncMock) as mock_extract:
+        with patch.object(mock_enclave, "_call_extraction_llm", new_callable=AsyncMock) as mock_extract:
             mock_extract.return_value = [
                 {"text": "", "sector": "semantic", "tags": []},
-                {"text": "valid fact", "sector": "semantic", "tags": []}
+                {"text": "valid fact", "sector": "semantic", "tags": []},
             ]
 
-            with patch.object(mock_enclave, 'encrypt_for_memory_storage') as mock_encrypt:
+            with patch.object(mock_enclave, "encrypt_for_memory_storage") as mock_encrypt:
                 mock_payload = MagicMock()
-                mock_payload.iv = b'\x00' * 16
-                mock_payload.auth_tag = b'\x00' * 16
-                mock_payload.ephemeral_public_key = b'\x00' * 32
+                mock_payload.iv = b"\x00" * 16
+                mock_payload.auth_tag = b"\x00" * 16
+                mock_payload.ephemeral_public_key = b"\x00" * 32
                 mock_encrypt.return_value = mock_payload
 
                 memories = await mock_enclave.extract_memories(
@@ -342,10 +332,10 @@ class TestExtractMemories:
         sample_storage_public_key,
     ):
         """Extracted memories include encryption metadata."""
-        with patch.object(mock_enclave, '_call_extraction_llm', new_callable=AsyncMock) as mock_extract:
+        with patch.object(mock_enclave, "_call_extraction_llm", new_callable=AsyncMock) as mock_extract:
             mock_extract.return_value = sample_extraction_response[:1]
 
-            with patch.object(mock_enclave, 'encrypt_for_memory_storage') as mock_encrypt:
+            with patch.object(mock_enclave, "encrypt_for_memory_storage") as mock_encrypt:
                 mock_payload = MagicMock()
                 mock_payload.iv = bytes.fromhex("a" * 32)
                 mock_payload.auth_tag = bytes.fromhex("b" * 32)

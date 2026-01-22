@@ -1,4 +1,5 @@
 """Unit tests for configuration module."""
+
 from core.config import AVAILABLE_MODELS, settings
 
 

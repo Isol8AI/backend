@@ -5,6 +5,7 @@ Security Note:
 - CreateUserKeysRequest contains encrypted data only
 - Server never sees plaintext private keys
 """
+
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
@@ -34,35 +35,14 @@ class EncryptedPayload(BaseModel):
 
     Used for both storage and transmission of encrypted data.
     """
+
     ephemeral_public_key: str = Field(
-        ...,
-        min_length=64,
-        max_length=64,
-        description="Sender's ephemeral X25519 public key (32 bytes hex)"
+        ..., min_length=64, max_length=64, description="Sender's ephemeral X25519 public key (32 bytes hex)"
     )
-    iv: str = Field(
-        ...,
-        min_length=32,
-        max_length=32,
-        description="AES-GCM initialization vector (16 bytes hex)"
-    )
-    ciphertext: str = Field(
-        ...,
-        min_length=1,
-        description="Encrypted content (variable length hex)"
-    )
-    auth_tag: str = Field(
-        ...,
-        min_length=32,
-        max_length=32,
-        description="AES-GCM authentication tag (16 bytes hex)"
-    )
-    hkdf_salt: str = Field(
-        ...,
-        min_length=64,
-        max_length=64,
-        description="HKDF derivation salt (32 bytes hex)"
-    )
+    iv: str = Field(..., min_length=32, max_length=32, description="AES-GCM initialization vector (16 bytes hex)")
+    ciphertext: str = Field(..., min_length=1, description="Encrypted content (variable length hex)")
+    auth_tag: str = Field(..., min_length=32, max_length=32, description="AES-GCM authentication tag (16 bytes hex)")
+    hkdf_salt: str = Field(..., min_length=64, max_length=64, description="HKDF derivation salt (32 bytes hex)")
 
     @field_validator("ephemeral_public_key")
     @classmethod
@@ -96,6 +76,7 @@ class EncryptedPayload(BaseModel):
         Use this when passing encrypted data to crypto operations.
         """
         from core.crypto import EncryptedPayload as CryptoEncryptedPayload
+
         return CryptoEncryptedPayload(
             ephemeral_public_key=bytes.fromhex(self.ephemeral_public_key),
             iv=bytes.fromhex(self.iv),
@@ -127,62 +108,20 @@ class CreateUserKeysRequest(BaseModel):
     All private key data is already encrypted client-side.
     Server stores but cannot decrypt.
     """
-    public_key: str = Field(
-        ...,
-        min_length=64,
-        max_length=64,
-        description="X25519 public key (32 bytes hex)"
-    )
+
+    public_key: str = Field(..., min_length=64, max_length=64, description="X25519 public key (32 bytes hex)")
 
     # Passcode-encrypted private key
-    encrypted_private_key: str = Field(
-        ...,
-        min_length=1,
-        description="AES-GCM encrypted private key (hex)"
-    )
-    iv: str = Field(
-        ...,
-        min_length=32,
-        max_length=32,
-        description="AES-GCM IV (16 bytes hex)"
-    )
-    tag: str = Field(
-        ...,
-        min_length=32,
-        max_length=32,
-        description="AES-GCM auth tag (16 bytes hex)"
-    )
-    salt: str = Field(
-        ...,
-        min_length=64,
-        max_length=64,
-        description="Argon2id salt (32 bytes hex)"
-    )
+    encrypted_private_key: str = Field(..., min_length=1, description="AES-GCM encrypted private key (hex)")
+    iv: str = Field(..., min_length=32, max_length=32, description="AES-GCM IV (16 bytes hex)")
+    tag: str = Field(..., min_length=32, max_length=32, description="AES-GCM auth tag (16 bytes hex)")
+    salt: str = Field(..., min_length=64, max_length=64, description="Argon2id salt (32 bytes hex)")
 
     # Recovery-encrypted private key
-    recovery_encrypted_private_key: str = Field(
-        ...,
-        min_length=1,
-        description="Recovery-encrypted private key (hex)"
-    )
-    recovery_iv: str = Field(
-        ...,
-        min_length=32,
-        max_length=32,
-        description="Recovery AES-GCM IV (16 bytes hex)"
-    )
-    recovery_tag: str = Field(
-        ...,
-        min_length=32,
-        max_length=32,
-        description="Recovery AES-GCM auth tag (16 bytes hex)"
-    )
-    recovery_salt: str = Field(
-        ...,
-        min_length=64,
-        max_length=64,
-        description="Recovery Argon2id salt (32 bytes hex)"
-    )
+    recovery_encrypted_private_key: str = Field(..., min_length=1, description="Recovery-encrypted private key (hex)")
+    recovery_iv: str = Field(..., min_length=32, max_length=32, description="Recovery AES-GCM IV (16 bytes hex)")
+    recovery_tag: str = Field(..., min_length=32, max_length=32, description="Recovery AES-GCM auth tag (16 bytes hex)")
+    recovery_salt: str = Field(..., min_length=64, max_length=64, description="Recovery Argon2id salt (32 bytes hex)")
 
     @field_validator("public_key")
     @classmethod
@@ -232,6 +171,7 @@ class CreateUserKeysRequest(BaseModel):
 
 class UserKeysResponse(BaseModel):
     """Response with user's encrypted keys for client-side decryption."""
+
     public_key: str
     encrypted_private_key: str
     iv: str
@@ -249,6 +189,7 @@ class UserKeysResponse(BaseModel):
 
 class EncryptionStatusResponse(BaseModel):
     """User's encryption status."""
+
     has_encryption_keys: bool
     public_key: Optional[str] = None
     encryption_created_at: Optional[datetime] = None
@@ -258,6 +199,7 @@ class EncryptionStatusResponse(BaseModel):
 
 class EncryptedMessageResponse(BaseModel):
     """Message in API response - always encrypted in zero-trust model."""
+
     id: str
     session_id: str
     role: str
@@ -275,35 +217,24 @@ class SendEncryptedMessageRequest(BaseModel):
     The message content is encrypted TO the enclave's public key.
     The enclave will decrypt, process with LLM, and re-encrypt for storage.
     """
-    session_id: Optional[str] = Field(
-        None,
-        description="Session ID. If None, creates new session."
-    )
-    model: str = Field(
-        ...,
-        description="Model ID to use for response"
-    )
-    encrypted_message: EncryptedPayload = Field(
-        ...,
-        description="Message encrypted to enclave's public key"
-    )
+
+    session_id: Optional[str] = Field(None, description="Session ID. If None, creates new session.")
+    model: str = Field(..., description="Model ID to use for response")
+    encrypted_message: EncryptedPayload = Field(..., description="Message encrypted to enclave's public key")
     encrypted_history: Optional[list[EncryptedPayload]] = Field(
-        None,
-        description="Previous messages re-encrypted to enclave for context"
+        None, description="Previous messages re-encrypted to enclave for context"
     )
     encrypted_memories: Optional[list[EncryptedPayload]] = Field(
-        None,
-        description="Relevant memories re-encrypted to enclave for context injection"
+        None, description="Relevant memories re-encrypted to enclave for context injection"
     )
     facts_context: Optional[str] = Field(
-        None,
-        description="Client-side formatted facts context string (already decrypted by client)"
+        None, description="Client-side formatted facts context string (already decrypted by client)"
     )
     client_transport_public_key: str = Field(
         ...,
         min_length=64,
         max_length=64,
-        description="Client's ephemeral X25519 public key for response encryption (32 bytes hex)"
+        description="Client's ephemeral X25519 public key for response encryption (32 bytes hex)",
     )
 
     @field_validator("client_transport_public_key")
@@ -314,12 +245,10 @@ class SendEncryptedMessageRequest(BaseModel):
 
 class EncryptedChatResponse(BaseModel):
     """Response from encrypted chat endpoint."""
+
     session_id: str
     message_id: str
-    encrypted_response: EncryptedPayload = Field(
-        ...,
-        description="Assistant response encrypted to user's public key"
-    )
+    encrypted_response: EncryptedPayload = Field(..., description="Assistant response encrypted to user's public key")
     model_used: str
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None

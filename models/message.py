@@ -9,6 +9,7 @@ Security Note:
 Zero-Trust Principle:
   The server NEVER stores readable message content. Period.
 """
+
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -21,6 +22,7 @@ from .base import Base
 
 class MessageRole(str, Enum):
     """Message role in conversation."""
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -40,15 +42,11 @@ class Message(Base):
     - auth_tag: AES-GCM authentication tag
     - hkdf_salt: Salt used in HKDF key derivation
     """
+
     __tablename__ = "messages"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(
-        String,
-        ForeignKey("sessions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
+    session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Role
     role = Column(String, nullable=False)
@@ -94,9 +92,7 @@ class Message(Base):
     # Indexes
     # =========================================================================
 
-    __table_args__ = (
-        Index('ix_messages_session_created', 'session_id', 'created_at'),
-    )
+    __table_args__ = (Index("ix_messages_session_created", "session_id", "created_at"),)
 
     # =========================================================================
     # Properties

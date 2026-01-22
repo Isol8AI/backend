@@ -1,4 +1,5 @@
 """Tests for user encryption model fields and methods."""
+
 import pytest
 
 from models.user import User
@@ -312,9 +313,7 @@ class TestUserEncryptionPersistence:
         db_session.add(user)
         await db_session.flush()
 
-        result = await db_session.execute(
-            select(User).where(User.id == "user_persist_encryption")
-        )
+        result = await db_session.execute(select(User).where(User.id == "user_persist_encryption"))
         fetched_user = result.scalar_one()
 
         assert fetched_user.has_encryption_keys is True

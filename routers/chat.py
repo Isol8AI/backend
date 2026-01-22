@@ -6,6 +6,7 @@ Security Note:
 - All messages encrypted to enclave (transport) or user/org (storage)
 - SSE streaming delivers encrypted chunks to client
 """
+
 import json
 import logging
 from typing import Optional
@@ -41,8 +42,10 @@ VALID_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
 # Schema for API Responses
 # =============================================================================
 
+
 class SessionOut(BaseModel):
     """Session for API response."""
+
     id: str
     name: str
     org_id: Optional[str] = None
@@ -55,6 +58,7 @@ class SessionOut(BaseModel):
 
 class ModelOut(BaseModel):
     """Model info for API response."""
+
     id: str
     name: str
 
@@ -62,6 +66,7 @@ class ModelOut(BaseModel):
 # =============================================================================
 # Enclave Info
 # =============================================================================
+
 
 @router.get("/enclave/info", response_model=EnclaveInfoResponse)
 async def get_enclave_info(
@@ -86,6 +91,7 @@ async def get_enclave_info(
 # Models
 # =============================================================================
 
+
 @router.get("/models", response_model=list[ModelOut])
 async def get_available_models() -> list[ModelOut]:
     """Get list of available LLM models."""
@@ -95,6 +101,7 @@ async def get_available_models() -> list[ModelOut]:
 # =============================================================================
 # Session Management
 # =============================================================================
+
 
 @router.post("/sessions", response_model=SessionResponse)
 async def create_session(
@@ -245,6 +252,7 @@ async def delete_all_sessions(
 # Encrypted Message Streaming
 # =============================================================================
 
+
 @router.post("/encrypted/stream")
 async def chat_stream_encrypted(
     request: SendEncryptedMessageRequest,
@@ -282,10 +290,7 @@ async def chat_stream_encrypted(
 
     # Validate model
     if request.model not in VALID_MODEL_IDS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid model. Available models: {list(VALID_MODEL_IDS)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid model. Available models: {list(VALID_MODEL_IDS)}")
 
     async with session_factory() as service_db:
         service = ChatService(service_db)
@@ -373,10 +378,12 @@ async def chat_stream_encrypted(
                             facts_data = []
                             for fact in chunk.extracted_facts:
                                 api_payload = EncryptedPayload.from_crypto_payload(fact.encrypted_payload)
-                                facts_data.append({
-                                    'fact_id': fact.fact_id,
-                                    'encrypted_payload': api_payload.model_dump(),
-                                })
+                                facts_data.append(
+                                    {
+                                        "fact_id": fact.fact_id,
+                                        "encrypted_payload": api_payload.model_dump(),
+                                    }
+                                )
                             logger.debug("Sending %d extracted facts for session_id=%s", len(facts_data), session_id)
                             yield f"data: {json.dumps({'type': 'extracted_facts', 'facts': facts_data})}\n\n"
 
@@ -397,13 +404,14 @@ async def chat_stream_encrypted(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
-        }
+        },
     )
 
 
 # =============================================================================
 # Encryption Status Check
 # =============================================================================
+
 
 @router.get("/encryption-status")
 async def get_encryption_status(

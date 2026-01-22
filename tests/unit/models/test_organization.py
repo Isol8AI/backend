@@ -1,4 +1,5 @@
 """Unit tests for Organization model."""
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -30,7 +31,7 @@ class TestOrganizationModel:
             id="org_123",
             name="Test Org",
             custom_model_endpoint="https://models.example.com",
-            fine_tuned_model_id="ft_model_123"
+            fine_tuned_model_id="ft_model_123",
         )
         assert org.custom_model_endpoint == "https://models.example.com"
         assert org.fine_tuned_model_id == "ft_model_123"

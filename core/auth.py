@@ -158,19 +158,12 @@ async def get_current_user(
 async def require_org_context(auth: AuthContext = Depends(get_current_user)) -> AuthContext:
     """Dependency that requires an active organization context."""
     if not auth.is_org_context:
-        raise HTTPException(
-            status_code=403,
-            detail="This action requires an active organization context"
-        )
+        raise HTTPException(status_code=403, detail="This action requires an active organization context")
     return auth
 
 
 async def require_org_admin(auth: AuthContext = Depends(get_current_user)) -> AuthContext:
     """Dependency that requires org admin role."""
     if not auth.is_org_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="This action requires organization admin privileges"
-        )
+        raise HTTPException(status_code=403, detail="This action requires organization admin privileges")
     return auth
-

@@ -7,6 +7,7 @@ Security Note:
 - Enclave decrypts, processes, and re-encrypts for storage
 - Messages stored encrypted to user's or org's public key
 """
+
 import logging
 from datetime import datetime
 from typing import AsyncGenerator, Optional, Tuple
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class StorageKeyNotFoundError(ValueError):
     """Raised when encryption key cannot be found for storage."""
+
     pass
 
 
@@ -118,10 +120,7 @@ class ChatService:
         await self.db.commit()
         await self.db.refresh(session)
 
-        logger.info(
-            "Created session %s for user %s (org: %s)",
-            session.id, user_id, org_id
-        )
+        logger.info("Created session %s for user %s (org: %s)", session.id, user_id, org_id)
         return session
 
     async def get_session(
@@ -203,9 +202,7 @@ class ChatService:
 
     async def update_session_timestamp(self, session_id: str) -> None:
         """Update session's updated_at timestamp."""
-        result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
-        )
+        result = await self.db.execute(select(Session).where(Session.id == session_id))
         session = result.scalar_one_or_none()
         if session:
             session.updated_at = datetime.utcnow()
@@ -285,10 +282,7 @@ class ChatService:
 
         await self.db.commit()
 
-        logger.warning(
-            "Deleted %d sessions for user %s (org: %s)",
-            len(sessions), user_id, org_id
-        )
+        logger.warning("Deleted %d sessions for user %s (org: %s)", len(sessions), user_id, org_id)
         return len(sessions)
 
     # =========================================================================
@@ -321,9 +315,7 @@ class ChatService:
             raise ValueError("Session not found or access denied")
 
         result = await self.db.execute(
-            select(Message)
-            .where(Message.session_id == session_id)
-            .order_by(Message.created_at.asc())
+            select(Message).where(Message.session_id == session_id).order_by(Message.created_at.asc())
         )
         return list(result.scalars().all())
 
@@ -353,6 +345,7 @@ class ChatService:
         Returns:
             Created Message object
         """
+
         # Convert bytes to hex strings for database storage
         # The crypto layer uses bytes, but the database stores hex strings
         def to_hex(value) -> str:
@@ -382,7 +375,7 @@ class ChatService:
             "Stored encrypted %s message %s in session %s",
             role.value if isinstance(role, MessageRole) else role,
             message.id,
-            session_id
+            session_id,
         )
         return message
 
@@ -413,29 +406,21 @@ class ChatService:
         """
         if org_id:
             # Org session - use org's key
-            result = await self.db.execute(
-                select(Organization).where(Organization.id == org_id)
-            )
+            result = await self.db.execute(select(Organization).where(Organization.id == org_id))
             org = result.scalar_one_or_none()
             if not org:
                 raise StorageKeyNotFoundError(f"Organization {org_id} not found")
             if not org.has_encryption_keys:
-                raise StorageKeyNotFoundError(
-                    f"Organization {org_id} has no encryption keys configured"
-                )
+                raise StorageKeyNotFoundError(f"Organization {org_id} has no encryption keys configured")
             return bytes.fromhex(org.org_public_key)
         else:
             # Personal session - use user's key
-            result = await self.db.execute(
-                select(User).where(User.id == user_id)
-            )
+            result = await self.db.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
             if not user:
                 raise StorageKeyNotFoundError(f"User {user_id} not found")
             if not user.has_encryption_keys:
-                raise StorageKeyNotFoundError(
-                    f"User {user_id} has not set up encryption keys"
-                )
+                raise StorageKeyNotFoundError(f"User {user_id} has not set up encryption keys")
             return bytes.fromhex(user.public_key)
 
     async def get_user_public_key(self, user_id: str) -> Optional[bytes]:
@@ -451,9 +436,7 @@ class ChatService:
         Returns:
             Public key bytes, or None if not found
         """
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if user and user.has_encryption_keys:
             return bytes.fromhex(user.public_key)
@@ -563,9 +546,7 @@ class ChatService:
 
     async def _get_user(self, user_id: str) -> Optional[User]:
         """Get user by ID."""
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def _get_membership(
@@ -645,9 +626,7 @@ class ChatService:
                     logger.debug("Skipped duplicate memory for %s", memory_user_id)
 
             except Exception as e:
-                logger.warning(
-                    "Failed to store extracted memory (non-fatal): %s", str(e)
-                )
+                logger.warning("Failed to store extracted memory (non-fatal): %s", str(e))
 
         logger.info(
             "Memories for %s: %d stored, %d skipped (duplicates)",
@@ -680,9 +659,7 @@ class ChatService:
 
         # Check org has keys (if org context)
         if org_id:
-            result = await self.db.execute(
-                select(Organization).where(Organization.id == org_id)
-            )
+            result = await self.db.execute(select(Organization).where(Organization.id == org_id))
             org = result.scalar_one_or_none()
             if not org:
                 return False, "Organization not found"

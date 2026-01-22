@@ -1,12 +1,13 @@
 """Tests for memories router endpoints."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-
 
 
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_memory_service():
@@ -72,11 +73,14 @@ def sample_memory_list():
 # Test Store Memory Endpoint
 # =============================================================================
 
+
 class TestStoreMemoryEndpoint:
     """Tests for POST /memories/store endpoint."""
 
     @pytest.mark.asyncio
-    async def test_stores_memory_successfully(self, async_client, mock_memory_service, sample_embedding, sample_stored_memory):
+    async def test_stores_memory_successfully(
+        self, async_client, mock_memory_service, sample_embedding, sample_stored_memory
+    ):
         """Successfully stores a memory."""
         mock_memory_service.store_memory.return_value = sample_stored_memory
 
@@ -99,7 +103,9 @@ class TestStoreMemoryEndpoint:
         assert data["salience"] == 0.5
 
     @pytest.mark.asyncio
-    async def test_stores_memory_with_org_context(self, async_client, mock_memory_service, sample_embedding, sample_stored_memory):
+    async def test_stores_memory_with_org_context(
+        self, async_client, mock_memory_service, sample_embedding, sample_stored_memory
+    ):
         """Stores memory in org context."""
         mock_memory_service.store_memory.return_value = sample_stored_memory
 
@@ -122,6 +128,7 @@ class TestStoreMemoryEndpoint:
     async def test_returns_500_on_service_error(self, async_client, mock_memory_service, sample_embedding):
         """Returns 500 when service raises error."""
         from core.services.memory_service import MemoryServiceError
+
         mock_memory_service.store_memory.side_effect = MemoryServiceError("Storage failed")
 
         with patch("routers.memories.MemoryService", return_value=mock_memory_service):
@@ -154,11 +161,14 @@ class TestStoreMemoryEndpoint:
 # Test Search Memories Endpoint
 # =============================================================================
 
+
 class TestSearchMemoriesEndpoint:
     """Tests for POST /memories/search endpoint."""
 
     @pytest.mark.asyncio
-    async def test_searches_memories_successfully(self, async_client, mock_memory_service, sample_embedding, sample_memory_list):
+    async def test_searches_memories_successfully(
+        self, async_client, mock_memory_service, sample_embedding, sample_memory_list
+    ):
         """Successfully searches memories."""
         mock_memory_service.search_memories.return_value = sample_memory_list
 
@@ -179,7 +189,9 @@ class TestSearchMemoriesEndpoint:
         assert data["memories"][0]["id"] == "mem_1"
 
     @pytest.mark.asyncio
-    async def test_searches_with_org_context(self, async_client, mock_memory_service, sample_embedding, sample_memory_list):
+    async def test_searches_with_org_context(
+        self, async_client, mock_memory_service, sample_embedding, sample_memory_list
+    ):
         """Searches with org context."""
         mock_memory_service.search_memories.return_value = sample_memory_list
 
@@ -219,6 +231,7 @@ class TestSearchMemoriesEndpoint:
 # =============================================================================
 # Test List Memories Endpoint
 # =============================================================================
+
 
 class TestListMemoriesEndpoint:
     """Tests for GET /memories endpoint."""
@@ -273,6 +286,7 @@ class TestListMemoriesEndpoint:
 # Test Get Memory Endpoint
 # =============================================================================
 
+
 class TestGetMemoryEndpoint:
     """Tests for GET /memories/{memory_id} endpoint."""
 
@@ -318,6 +332,7 @@ class TestGetMemoryEndpoint:
 # Test Delete Memory Endpoint
 # =============================================================================
 
+
 class TestDeleteMemoryEndpoint:
     """Tests for DELETE /memories/{memory_id} endpoint."""
 
@@ -361,6 +376,7 @@ class TestDeleteMemoryEndpoint:
 # Test Delete All Memories Endpoint
 # =============================================================================
 
+
 class TestDeleteAllMemoriesEndpoint:
     """Tests for DELETE /memories endpoint."""
 
@@ -402,6 +418,7 @@ class TestDeleteAllMemoriesEndpoint:
     async def test_returns_500_on_service_error(self, async_client, mock_memory_service):
         """Returns 500 when service raises error."""
         from core.services.memory_service import MemoryServiceError
+
         mock_memory_service.delete_all_memories.side_effect = MemoryServiceError("Delete failed")
 
         with patch("routers.memories.MemoryService", return_value=mock_memory_service):
@@ -417,6 +434,7 @@ class TestDeleteAllMemoriesEndpoint:
 # =============================================================================
 # Test Authentication
 # =============================================================================
+
 
 class TestMemoriesAuthentication:
     """Tests for authentication on memories endpoints."""

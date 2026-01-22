@@ -1,4 +1,5 @@
 """Tests for UserKeyService."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,6 +15,7 @@ from models.user import User
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_db():
@@ -78,6 +80,7 @@ def mock_execute_result(user):
 # Test GetEncryptionStatus
 # =============================================================================
 
+
 class TestGetEncryptionStatus:
     """Tests for get_encryption_status method."""
 
@@ -125,6 +128,7 @@ class TestGetEncryptionStatus:
 # Test StoreEncryptionKeys
 # =============================================================================
 
+
 class TestStoreEncryptionKeys:
     """Tests for store_encryption_keys method."""
 
@@ -134,10 +138,7 @@ class TestStoreEncryptionKeys:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(user_without_keys))
 
         service = UserKeyService(mock_db)
-        result = await service.store_encryption_keys(
-            user_id="user_123",
-            **valid_key_data
-        )
+        result = await service.store_encryption_keys(user_id="user_123", **valid_key_data)
 
         assert result.has_encryption_keys is True
         assert result.public_key == "aa" * 32
@@ -151,10 +152,7 @@ class TestStoreEncryptionKeys:
 
         service = UserKeyService(mock_db)
         with pytest.raises(KeysAlreadyExistError):
-            await service.store_encryption_keys(
-                user_id="user_456",
-                **valid_key_data
-            )
+            await service.store_encryption_keys(user_id="user_456", **valid_key_data)
 
     @pytest.mark.asyncio
     async def test_allows_overwrite_when_flag_set(self, mock_db, user_with_keys, valid_key_data):
@@ -162,11 +160,7 @@ class TestStoreEncryptionKeys:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(user_with_keys))
 
         service = UserKeyService(mock_db)
-        result = await service.store_encryption_keys(
-            user_id="user_456",
-            allow_overwrite=True,
-            **valid_key_data
-        )
+        result = await service.store_encryption_keys(user_id="user_456", allow_overwrite=True, **valid_key_data)
 
         assert result.has_encryption_keys is True
         mock_db.commit.assert_called_once()
@@ -218,10 +212,7 @@ class TestStoreEncryptionKeys:
 
         service = UserKeyService(mock_db)
         with pytest.raises(UserKeyServiceError, match="not found"):
-            await service.store_encryption_keys(
-                user_id="nonexistent_user",
-                **valid_key_data
-            )
+            await service.store_encryption_keys(user_id="nonexistent_user", **valid_key_data)
 
     @pytest.mark.asyncio
     async def test_creates_audit_log(self, mock_db, user_without_keys, valid_key_data):
@@ -229,15 +220,13 @@ class TestStoreEncryptionKeys:
         mock_db.execute = AsyncMock(return_value=mock_execute_result(user_without_keys))
 
         service = UserKeyService(mock_db)
-        await service.store_encryption_keys(
-            user_id="user_123",
-            **valid_key_data
-        )
+        await service.store_encryption_keys(user_id="user_123", **valid_key_data)
 
         # Verify audit log was added
         assert mock_db.add.call_count >= 1
         added_objects = [call.args[0] for call in mock_db.add.call_args_list]
         from models.audit_log import AuditLog
+
         audit_logs = [obj for obj in added_objects if isinstance(obj, AuditLog)]
         assert len(audit_logs) == 1
 
@@ -245,6 +234,7 @@ class TestStoreEncryptionKeys:
 # =============================================================================
 # Test GetEncryptionKeys
 # =============================================================================
+
 
 class TestGetEncryptionKeys:
     """Tests for get_encryption_keys method."""
@@ -299,6 +289,7 @@ class TestGetEncryptionKeys:
 # Test GetRecoveryKeys
 # =============================================================================
 
+
 class TestGetRecoveryKeys:
     """Tests for get_recovery_keys method."""
 
@@ -341,6 +332,7 @@ class TestGetRecoveryKeys:
 # =============================================================================
 # Test DeleteEncryptionKeys
 # =============================================================================
+
 
 class TestDeleteEncryptionKeys:
     """Tests for delete_encryption_keys method."""
@@ -393,6 +385,7 @@ class TestDeleteEncryptionKeys:
 # =============================================================================
 # Test GetPublicKey
 # =============================================================================
+
 
 class TestGetPublicKey:
     """Tests for get_public_key method."""
