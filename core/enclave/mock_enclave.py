@@ -21,6 +21,7 @@ from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
 import httpx
 
+from core.config import settings
 from core.crypto import (
     KeyPair,
     EncryptedPayload,
@@ -30,6 +31,12 @@ from core.crypto import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _debug_print(*args, **kwargs):
+    """Print only when DEBUG mode is enabled."""
+    if settings.DEBUG:
+        print(*args, **kwargs)
 
 
 # =============================================================================
@@ -567,65 +574,65 @@ class MockEnclave(EnclaveInterface):
             StreamChunk objects with encrypted content or final stored messages
         """
         try:
-            print("\n" + "=" * 80)
-            print("🔐 ENCRYPTED CHAT FLOW - ENCLAVE (Backend)")
-            print("=" * 80)
-            print(f"Session ID: {session_id}")
-            print(f"Model: {model}")
+            _debug_print("\n" + "=" * 80)
+            _debug_print("🔐 ENCRYPTED CHAT FLOW - ENCLAVE (Backend)")
+            _debug_print("=" * 80)
+            _debug_print(f"Session ID: {session_id}")
+            _debug_print(f"Model: {model}")
 
             # 1. Decrypt the new user message
-            print("\n📥 STEP 1: Decrypt User Message from Client")
-            print("-" * 60)
-            print("Enclave Private Key: [HELD SECURELY IN ENCLAVE]")
-            print("Encrypted Message:")
-            print(f"  ephemeral_public_key: {encrypted_message.ephemeral_public_key.hex()[:32]}...")
-            print(f"  iv: {encrypted_message.iv.hex()}")
-            print(f"  ciphertext: {encrypted_message.ciphertext.hex()[:32]}...")
-            print(f"  auth_tag: {encrypted_message.auth_tag.hex()}")
+            _debug_print("\n📥 STEP 1: Decrypt User Message from Client")
+            _debug_print("-" * 60)
+            _debug_print("Enclave Private Key: [HELD SECURELY IN ENCLAVE]")
+            _debug_print("Encrypted Message:")
+            _debug_print(f"  ephemeral_public_key: {encrypted_message.ephemeral_public_key.hex()[:32]}...")
+            _debug_print(f"  iv: {encrypted_message.iv.hex()}")
+            _debug_print(f"  ciphertext: {encrypted_message.ciphertext.hex()[:32]}...")
+            _debug_print(f"  auth_tag: {encrypted_message.auth_tag.hex()}")
 
             user_plaintext = self.decrypt_transport_message(encrypted_message)
             user_content = user_plaintext.decode("utf-8")
-            print(f"✅ Decrypted User Message: {user_content}")
+            _debug_print(f"✅ Decrypted User Message: {user_content}")
 
             # 2. Decrypt history messages
             if encrypted_history:
-                print(f"\n📥 STEP 2: Decrypt History ({len(encrypted_history)} messages)")
-                print("-" * 60)
+                _debug_print(f"\n📥 STEP 2: Decrypt History ({len(encrypted_history)} messages)")
+                _debug_print("-" * 60)
             history = self._decrypt_history(encrypted_history)
             for i, msg in enumerate(history):
-                print(f"  [{i}] {msg.role}: {msg.content[:50]}..." if len(msg.content) > 50 else f"  [{i}] {msg.role}: {msg.content}")
+                _debug_print(f"  [{i}] {msg.role}: {msg.content[:50]}..." if len(msg.content) > 50 else f"  [{i}] {msg.role}: {msg.content}")
 
             # 2b. Decrypt memories for context injection
             memories = []
             if encrypted_memories:
-                print(f"\n🧠 STEP 2b: Decrypt Memories ({len(encrypted_memories)} memories)")
-                print("-" * 60)
+                _debug_print(f"\n🧠 STEP 2b: Decrypt Memories ({len(encrypted_memories)} memories)")
+                _debug_print("-" * 60)
                 memories = self._decrypt_memories(encrypted_memories)
                 for i, mem in enumerate(memories):
                     preview = mem[:60] + "..." if len(mem) > 60 else mem
-                    print(f"  [{i}] {preview}")
-                print(f"✅ Decrypted {len(memories)} memories for context injection")
+                    _debug_print(f"  [{i}] {preview}")
+                _debug_print(f"✅ Decrypted {len(memories)} memories for context injection")
 
             # 2c. Log facts context if provided
             if facts_context:
-                print(f"\n📋 STEP 2c: Session Facts Context")
-                print("-" * 60)
+                _debug_print(f"\n📋 STEP 2c: Session Facts Context")
+                _debug_print("-" * 60)
                 preview = facts_context[:200] + "..." if len(facts_context) > 200 else facts_context
-                print(f"Facts context: {preview}")
+                _debug_print(f"Facts context: {preview}")
 
             # 3. Stream LLM inference, encrypting each chunk for transport
-            print("\n🤖 STEP 3: Call LLM Inference")
-            print("-" * 60)
-            print(f"Model: {model}")
-            print(f"Messages count: {len(history) + 1}")
-            print(f"Memories injected: {len(memories)}")
-            print(f"Facts context: {'Yes' if facts_context else 'No'}")
+            _debug_print("\n🤖 STEP 3: Call LLM Inference")
+            _debug_print("-" * 60)
+            _debug_print(f"Model: {model}")
+            _debug_print(f"Messages count: {len(history) + 1}")
+            _debug_print(f"Memories injected: {len(memories)}")
+            _debug_print(f"Facts context: {'Yes' if facts_context else 'No'}")
 
             full_response = ""
             chunk_count = 0
-            print("\n📤 STEP 4: Stream Encrypted Chunks to Client")
-            print("-" * 60)
-            print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
+            _debug_print("\n📤 STEP 4: Stream Encrypted Chunks to Client")
+            _debug_print("-" * 60)
+            _debug_print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
             async for chunk in self._call_inference_stream(user_content, history, model, memories, facts_context):
                 full_response += chunk
@@ -635,16 +642,16 @@ class MockEnclave(EnclaveInterface):
                     chunk.encode("utf-8"),
                     client_public_key,
                 )
-                print(f"  Chunk {chunk_count}: '{chunk}' → encrypted")
+                _debug_print(f"  Chunk {chunk_count}: '{chunk}' → encrypted")
                 yield StreamChunk(encrypted_content=encrypted_chunk)
 
-            print(f"\n✅ Total chunks streamed: {chunk_count}")
-            print(f"Full response: {full_response[:100]}..." if len(full_response) > 100 else f"Full response: {full_response}")
+            _debug_print(f"\n✅ Total chunks streamed: {chunk_count}")
+            _debug_print(f"Full response: {full_response[:100]}..." if len(full_response) > 100 else f"Full response: {full_response}")
 
             # 4. Build final encrypted messages for storage
-            print("\n💾 STEP 5: Encrypt Messages for Storage")
-            print("-" * 60)
-            print(f"Storage Public Key: {storage_public_key.hex()[:32]}...")
+            _debug_print("\n💾 STEP 5: Encrypt Messages for Storage")
+            _debug_print("-" * 60)
+            _debug_print(f"Storage Public Key: {storage_public_key.hex()[:32]}...")
 
             user_bytes = user_content.encode("utf-8")
             assistant_bytes = full_response.encode("utf-8")
@@ -652,20 +659,20 @@ class MockEnclave(EnclaveInterface):
             stored_user = self.encrypt_for_storage(user_bytes, storage_public_key, is_assistant=False)
             stored_assistant = self.encrypt_for_storage(assistant_bytes, storage_public_key, is_assistant=True)
 
-            print("User message encrypted for storage:")
-            print(f"  ephemeral_public_key: {stored_user.ephemeral_public_key.hex()[:32]}...")
-            print(f"  ciphertext length: {len(stored_user.ciphertext)} bytes")
-            print("Assistant message encrypted for storage:")
-            print(f"  ephemeral_public_key: {stored_assistant.ephemeral_public_key.hex()[:32]}...")
-            print(f"  ciphertext length: {len(stored_assistant.ciphertext)} bytes")
+            _debug_print("User message encrypted for storage:")
+            _debug_print(f"  ephemeral_public_key: {stored_user.ephemeral_public_key.hex()[:32]}...")
+            _debug_print(f"  ciphertext length: {len(stored_user.ciphertext)} bytes")
+            _debug_print("Assistant message encrypted for storage:")
+            _debug_print(f"  ephemeral_public_key: {stored_assistant.ephemeral_public_key.hex()[:32]}...")
+            _debug_print(f"  ciphertext length: {len(stored_assistant.ciphertext)} bytes")
 
             # Estimate tokens for streaming
             estimated_input_tokens = len(user_content) // 4 + sum(len(m.content) for m in history) // 4
             estimated_output_tokens = len(full_response) // 4
 
             # 5. Extract memories from conversation (async - runs in background)
-            print("\n🧠 STEP 6: Extract Memories from Conversation")
-            print("-" * 60)
+            _debug_print("\n🧠 STEP 6: Extract Memories from Conversation")
+            _debug_print("-" * 60)
             extracted_memories = []
             try:
                 extracted_memories = await self.extract_memories(
@@ -673,16 +680,16 @@ class MockEnclave(EnclaveInterface):
                     assistant_response=full_response,
                     storage_public_key=storage_public_key,
                 )
-                print(f"Extracted {len(extracted_memories)} memories")
+                _debug_print(f"Extracted {len(extracted_memories)} memories")
                 for mem in extracted_memories:
-                    print(f"  - [{mem.sector}]")
+                    _debug_print(f"  - [{mem.sector}]")
             except Exception as e:
                 logger.warning(f"Memory extraction failed (non-fatal): {e}")
-                print(f"  Memory extraction failed (non-fatal): {e}")
+                _debug_print(f"  Memory extraction failed (non-fatal): {e}")
 
             # 6. Extract facts from conversation (encrypted to client for local storage)
-            print("\n📝 STEP 7: Extract Facts from Conversation")
-            print("-" * 60)
+            _debug_print("\n📝 STEP 7: Extract Facts from Conversation")
+            _debug_print("-" * 60)
             extracted_facts = []
             try:
                 extracted_facts = await self.extract_facts(
@@ -690,22 +697,22 @@ class MockEnclave(EnclaveInterface):
                     assistant_response=full_response,
                     client_public_key=client_public_key,
                 )
-                print(f"Extracted {len(extracted_facts)} facts")
+                _debug_print(f"Extracted {len(extracted_facts)} facts")
                 for fact in extracted_facts:
-                    print(f"  - fact_id: {fact.fact_id[:8]}...")
+                    _debug_print(f"  - fact_id: {fact.fact_id[:8]}...")
             except Exception as e:
                 logger.warning(f"Fact extraction failed (non-fatal): {e}")
-                print(f"  Fact extraction failed (non-fatal): {e}")
+                _debug_print(f"  Fact extraction failed (non-fatal): {e}")
 
-            print("\n📋 FINAL SUMMARY")
-            print("-" * 60)
-            print(f"Session facts injected: {'Yes' if facts_context else 'No'}")
-            print(f"Long-term memories injected: {len(memories)}")
-            print(f"Input tokens (estimated): {estimated_input_tokens}")
-            print(f"Output tokens (estimated): {estimated_output_tokens}")
-            print(f"New memories extracted: {len(extracted_memories)}")
-            print(f"New facts extracted: {len(extracted_facts)}")
-            print("=" * 80 + "\n")
+            _debug_print("\n📋 FINAL SUMMARY")
+            _debug_print("-" * 60)
+            _debug_print(f"Session facts injected: {'Yes' if facts_context else 'No'}")
+            _debug_print(f"Long-term memories injected: {len(memories)}")
+            _debug_print(f"Input tokens (estimated): {estimated_input_tokens}")
+            _debug_print(f"Output tokens (estimated): {estimated_output_tokens}")
+            _debug_print(f"New memories extracted: {len(extracted_memories)}")
+            _debug_print(f"New facts extracted: {len(extracted_facts)}")
+            _debug_print("=" * 80 + "\n")
 
             # 7. Final chunk with stored messages, memories, and facts
             yield StreamChunk(
@@ -721,8 +728,8 @@ class MockEnclave(EnclaveInterface):
 
         except Exception as e:
             logger.exception("Streaming error in enclave")
-            print(f"\n❌ ENCLAVE ERROR: {str(e)}")
-            print("=" * 80 + "\n")
+            _debug_print(f"\n❌ ENCLAVE ERROR: {str(e)}")
+            _debug_print("=" * 80 + "\n")
             yield StreamChunk(error=str(e), is_final=True)
 
     # -------------------------------------------------------------------------

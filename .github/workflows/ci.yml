@@ -1,0 +1,101 @@
+# =============================================================================
+# Backend CI Workflow
+# =============================================================================
+# Runs on all PRs and pushes to main
+# - Runs pytest tests against isolated PostgreSQL (NOT Supabase)
+# - Runs linting (ruff)
+# - Validates Docker build
+#
+# NOTE: Tests run against a local PostgreSQL service in GitHub Actions.
+# This is intentional - tests should never hit Supabase (production/staging).
+# The local PostgreSQL is ephemeral and has the same interface as Supabase.
+# =============================================================================
+
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    services:
+      # Ephemeral PostgreSQL for testing only (same interface as Supabase)
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: freebird_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov ruff
+
+      - name: Run linting
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Run tests
+        env:
+          # Local PostgreSQL for isolated testing (NOT Supabase)
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/freebird_test
+          CLERK_ISSUER: https://test.clerk.accounts.dev
+          HUGGINGFACE_TOKEN: test_token
+          DEBUG: "false"
+        run: |
+          pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  docker-build:
+    name: Validate Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: freebird-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

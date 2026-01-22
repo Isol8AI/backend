@@ -1111,3 +1111,102 @@ class TestStreamingWithFactExtraction:
         assert final_chunk.extracted_facts is not None
         assert len(final_chunk.extracted_facts) == 1
         assert final_chunk.extracted_facts[0].fact_id == "test-fact-id"
+
+
+# =============================================================================
+# DEBUG Flag Tests
+# =============================================================================
+
+class TestDebugFlagControl:
+    """Tests for DEBUG flag controlling verbose output."""
+
+    @pytest.fixture
+    def enclave(self):
+        return MockEnclave(
+            inference_url="http://mock.llm",
+            inference_token="test_token",
+        )
+
+    @pytest.fixture
+    def user_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.fixture
+    def storage_keypair(self):
+        return generate_x25519_keypair()
+
+    @pytest.mark.asyncio
+    async def test_debug_false_suppresses_print_output(
+        self, enclave, user_keypair, storage_keypair, capsys
+    ):
+        """When DEBUG=False, process_message_streaming should not print debug info."""
+        enclave_public_key = enclave.get_info().enclave_public_key
+
+        encrypted_input = encrypt_to_public_key(
+            enclave_public_key,
+            b"Test message",
+            EncryptionContext.CLIENT_TO_ENCLAVE.value,
+        )
+
+        # Mock streaming inference
+        async def mock_stream(*args, **kwargs):
+            yield "Hello"
+
+        with patch('core.enclave.mock_enclave.settings') as mock_settings:
+            mock_settings.DEBUG = False
+            with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
+                with patch.object(enclave, 'extract_memories', new_callable=AsyncMock, return_value=[]):
+                    with patch.object(enclave, 'extract_facts', new_callable=AsyncMock, return_value=[]):
+                        async for _ in enclave.process_message_streaming(
+                            encrypted_message=encrypted_input,
+                            encrypted_history=[],
+                            encrypted_memories=[],
+                            facts_context=None,
+                            storage_public_key=storage_keypair.public_key,
+                            client_public_key=user_keypair.public_key,
+                            session_id="test-session",
+                            model="test-model",
+                        ):
+                            pass
+
+        captured = capsys.readouterr()
+        # When DEBUG=False, should NOT see the encryption flow banner
+        assert "ENCRYPTED CHAT FLOW" not in captured.out
+
+    @pytest.mark.asyncio
+    async def test_debug_true_shows_print_output(
+        self, enclave, user_keypair, storage_keypair, capsys
+    ):
+        """When DEBUG=True, process_message_streaming should print debug info."""
+        enclave_public_key = enclave.get_info().enclave_public_key
+
+        encrypted_input = encrypt_to_public_key(
+            enclave_public_key,
+            b"Test message",
+            EncryptionContext.CLIENT_TO_ENCLAVE.value,
+        )
+
+        # Mock streaming inference
+        async def mock_stream(*args, **kwargs):
+            yield "Hello"
+
+        with patch('core.enclave.mock_enclave.settings') as mock_settings:
+            mock_settings.DEBUG = True
+            with patch.object(enclave, '_call_inference_stream', side_effect=mock_stream):
+                with patch.object(enclave, 'extract_memories', new_callable=AsyncMock, return_value=[]):
+                    with patch.object(enclave, 'extract_facts', new_callable=AsyncMock, return_value=[]):
+                        async for _ in enclave.process_message_streaming(
+                            encrypted_message=encrypted_input,
+                            encrypted_history=[],
+                            encrypted_memories=[],
+                            facts_context=None,
+                            storage_public_key=storage_keypair.public_key,
+                            client_public_key=user_keypair.public_key,
+                            session_id="test-session",
+                            model="test-model",
+                        ):
+                            pass
+
+        captured = capsys.readouterr()
+        # When DEBUG=True, should see the encryption flow banner
+        assert "ENCRYPTED CHAT FLOW" in captured.out

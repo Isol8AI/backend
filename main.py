@@ -160,13 +160,28 @@ async def root():
 
 @app.get("/health")
 async def health_check(db = Depends(get_db)):
-    """Health check that validates database connectivity."""
+    """
+    Health check that validates database connectivity.
+
+    Returns:
+        HTTP 200 with {"status": "healthy"} when all checks pass
+        HTTP 503 with {"status": "unhealthy"} when any check fails
+
+    ALB health checks require proper HTTP status codes:
+    - 200-299: healthy, route traffic to this instance
+    - 503: unhealthy, stop routing traffic to this instance
+    """
+    from fastapi.responses import JSONResponse
+
     try:
         await db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "database": "disconnected"}
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "disconnected"}
+        )
 
 
 @app.get("/protected")
