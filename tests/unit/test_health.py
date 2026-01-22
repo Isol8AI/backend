@@ -9,8 +9,7 @@ This is critical for ALB health checks - returning 200 on failure
 would cause ALB to route traffic to unhealthy instances.
 """
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, MagicMock
 from httpx import AsyncClient
 
 

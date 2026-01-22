@@ -8,7 +8,6 @@ Security Note:
 - The server stores encrypted blobs and embeddings only
 """
 import asyncio
-import json
 import logging
 from typing import List, Dict, Any, Optional
 

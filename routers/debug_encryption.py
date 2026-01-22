@@ -23,7 +23,6 @@ from core.auth import get_current_user, AuthContext
 from core.database import get_db
 from core.enclave import get_enclave, EncryptionContext
 from models.user import User
-from models.organization import Organization
 from models.organization_membership import OrganizationMembership
 from models.session import Session
 from models.message import Message

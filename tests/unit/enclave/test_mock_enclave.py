@@ -824,7 +824,6 @@ class TestFactExtraction:
     async def test_extract_facts_returns_encrypted_facts(self, enclave, client_keypair):
         """extract_facts returns list of ExtractedFact objects."""
         from core.enclave.mock_enclave import ExtractedFact
-        import json
 
         # Mock the LLM response with extracted facts (list of dicts, not JSON string)
         mock_llm_response = [
@@ -895,7 +894,6 @@ class TestFactExtraction:
     @pytest.mark.asyncio
     async def test_extract_facts_filters_low_confidence(self, enclave, client_keypair):
         """Facts with confidence < 0.5 are filtered out."""
-        import json
 
         # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
         mock_llm_response = [
@@ -920,7 +918,6 @@ class TestFactExtraction:
     @pytest.mark.asyncio
     async def test_extract_facts_validates_predicates(self, enclave, client_keypair):
         """Only valid predicates are accepted."""
-        import json
 
         # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
         mock_llm_response = [
@@ -945,7 +942,6 @@ class TestFactExtraction:
     @pytest.mark.asyncio
     async def test_extract_facts_handles_empty_response(self, enclave, client_keypair):
         """Handles case where no facts are extracted."""
-        import json
 
         # _call_fact_extraction_llm returns empty list, not JSON string
         mock_llm_response = []
@@ -1052,8 +1048,7 @@ class TestStreamingWithFactExtraction:
         self, enclave, user_keypair, storage_keypair
     ):
         """Streaming returns extracted facts in the final chunk."""
-        from core.enclave.mock_enclave import ExtractedFact, StreamChunk
-        import json
+        from core.enclave.mock_enclave import ExtractedFact
 
         enclave_public_key = enclave.get_info().enclave_public_key
 

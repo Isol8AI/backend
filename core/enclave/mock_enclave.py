@@ -615,7 +615,7 @@ class MockEnclave(EnclaveInterface):
 
             # 2c. Log facts context if provided
             if facts_context:
-                _debug_print(f"\n📋 STEP 2c: Session Facts Context")
+                _debug_print("\n📋 STEP 2c: Session Facts Context")
                 _debug_print("-" * 60)
                 preview = facts_context[:200] + "..." if len(facts_context) > 200 else facts_context
                 _debug_print(f"Facts context: {preview}")

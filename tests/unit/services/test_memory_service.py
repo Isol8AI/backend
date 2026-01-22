@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from core.services.memory_service import (
     MemoryService,
     MemoryServiceError,
-    MemoryNotFoundError,
 )
 
 
@@ -154,7 +153,7 @@ class TestStoreMemory:
         with patch.object(MemoryService, '_memory', mock_openmemory):
             with patch.object(MemoryService, '_initialized', True):
                 service = MemoryService()
-                result = await service.store_memory(
+                await service.store_memory(
                     encrypted_content="<org_ciphertext>",
                     embedding=sample_embedding,
                     user_id="user_123",
@@ -271,7 +270,7 @@ class TestSearchMemories:
         with patch.object(MemoryService, '_memory', mock_openmemory):
             with patch.object(MemoryService, '_initialized', True):
                 service = MemoryService()
-                results = await service.search_memories(
+                await service.search_memories(
                     query_text="test query",
                     query_embedding=sample_embedding,
                     user_id="user_123",
@@ -480,7 +479,7 @@ class TestListMemories:
         with patch.object(MemoryService, '_memory', mock_openmemory):
             with patch.object(MemoryService, '_initialized', True):
                 service = MemoryService()
-                results = await service.list_memories(
+                await service.list_memories(
                     user_id="user_123",
                     org_id="org_456",
                     limit=10,

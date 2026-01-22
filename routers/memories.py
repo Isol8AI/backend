@@ -18,7 +18,6 @@ from core.auth import get_current_user, AuthContext
 from core.services.memory_service import (
     MemoryService,
     MemoryServiceError,
-    MemoryNotFoundError,
 )
 
 logger = logging.getLogger(__name__)

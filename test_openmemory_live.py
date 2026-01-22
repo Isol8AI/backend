@@ -31,7 +31,7 @@ async def main():
     backend = os.getenv("OM_METADATA_BACKEND")
     dsn = os.getenv("OM_PG_DSN")
 
-    print(f"\nEnvironment:")
+    print("\nEnvironment:")
     print(f"  OM_METADATA_BACKEND: {backend}")
     print(f"  OM_PG_DSN: {'***' if dsn else 'NOT SET'}")
 
@@ -140,7 +140,7 @@ async def main():
     print("\n6. Deleting test memory...")
     try:
         await mem.delete(memory_id)
-        print(f"   ✓ Memory deleted")
+        print("   ✓ Memory deleted")
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         import traceback
