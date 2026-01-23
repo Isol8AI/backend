@@ -25,9 +25,13 @@ class Settings(BaseSettings):
     # Using HuggingFace Inference Providers router (OpenAI-compatible)
     HF_API_URL: str = os.getenv("HF_API_URL", "https://router.huggingface.co/v1")
 
-    # CORS Configuration
-    # Comma-separated list of allowed origins (e.g., "https://dev.isol8.co,https://localhost:3000")
-    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    # CORS Configuration (comma-separated origins)
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse CORS_ORIGINS as comma-separated list."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     # Enclave Configuration
     # In production, this would be the Nitro enclave endpoint
