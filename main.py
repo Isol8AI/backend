@@ -9,7 +9,6 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from core.config import settings
@@ -131,17 +130,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS configuration from environment
-cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else ["http://localhost:3000"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
-)
-
 # Public routes
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
@@ -158,7 +146,7 @@ app.include_router(debug_encryption.router, prefix="/api/v1", tags=["debug"])
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to Freebird Chat API"}
+    return {"message": "Welcome to Isol8 Chat API"}
 
 
 @app.get("/health")

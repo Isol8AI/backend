@@ -6,14 +6,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Freebird Chat"
+    PROJECT_NAME: str = "Isol8 Chat"
     API_V1_STR: str = "/api/v1"
 
     # Environment mode
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
-
-    # CORS - comma-separated list of allowed origins
-    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3000")
 
     # Clerk Auth
     CLERK_ISSUER: str = os.getenv("CLERK_ISSUER", "https://your-clerk-domain.clerk.accounts.dev")

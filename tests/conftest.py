@@ -1,5 +1,5 @@
 """
-Shared test fixtures for Freebird backend tests.
+Shared test fixtures for Isol8 backend tests.
 
 Tests use a real PostgreSQL database to match production behavior.
 Run `docker-compose up -d` before running tests to start the database.
@@ -506,6 +506,6 @@ def mock_settings():
         mock.HUGGINGFACE_TOKEN = "hf_test_token"
         mock.HF_API_URL = "https://router.huggingface.co/v1"
         mock.DATABASE_URL = TEST_DATABASE_URL
-        mock.PROJECT_NAME = "Freebird Test"
+        mock.PROJECT_NAME = "Isol8 Test"
         mock.API_V1_STR = "/api/v1"
         yield mock

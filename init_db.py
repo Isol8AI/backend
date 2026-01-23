@@ -1,30 +1,59 @@
 import asyncio
+import os
 import sys
+import re
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from core.database import engine
 from models import Base
 
 
+def get_schema_from_env() -> str:
+    """
+    Get the schema name from DATABASE_URL or ENVIRONMENT variable.
+    Defaults to 'public' if not set.
+    """
+    # First try to parse from DATABASE_URL search_path option
+    db_url = os.getenv("DATABASE_URL", "")
+    match = re.search(r"search_path[=%]3D(\w+)", db_url)
+    if match:
+        return match.group(1)
+
+    # Fall back to ENVIRONMENT variable
+    env = os.getenv("ENVIRONMENT", "").lower()
+    if env in ("dev", "staging", "prod"):
+        return env
+
+    # Default to public
+    return "public"
+
+
 async def init_models(reset: bool = False):
+    schema = get_schema_from_env()
+    print(f"Using database schema: {schema}")
+
     retries = 5
     while retries > 0:
         try:
             async with engine.begin() as conn:
                 if reset:
-                    print("Dropping all tables...")
-                    # Drop schema and recreate to ensure clean slate
-                    await conn.execute(text("DROP SCHEMA public CASCADE"))
-                    await conn.execute(text("CREATE SCHEMA public"))
-                    await conn.execute(text("GRANT ALL ON SCHEMA public TO postgres"))
-                    await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+                    print(f"Dropping schema '{schema}' and recreating...")
+                    await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
 
-                # Enable pgvector extension
+                # Create schema if it doesn't exist
+                print(f"Creating schema '{schema}' if not exists...")
+                await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+                await conn.execute(text(f"GRANT ALL ON SCHEMA {schema} TO postgres"))
+
+                # Set search_path for this connection
+                await conn.execute(text(f"SET search_path TO {schema}"))
+
+                # Enable pgvector extension (in public schema, shared across all schemas)
                 print("Enabling pgvector extension...")
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
-                # Create SQLAlchemy tables
-                print("Creating SQLAlchemy tables...")
+                # Create SQLAlchemy tables in the schema
+                print(f"Creating SQLAlchemy tables in '{schema}' schema...")
                 await conn.run_sync(Base.metadata.create_all)
 
                 # Note: OpenMemory tables (openmemory_memories, openmemory_vectors, etc.)
@@ -32,10 +61,10 @@ async def init_models(reset: bool = False):
                 # See memory/packages/openmemory-py/src/openmemory/core/db.py:_init_pg_schema()
                 print("OpenMemory tables will be created on first SDK use...")
 
-            print("Database initialization complete.")
+            print(f"Database initialization complete for schema '{schema}'.")
             return
-        except OperationalError:
-            print("Database not ready yet, retrying in 2 seconds...")
+        except OperationalError as e:
+            print(f"Database not ready yet ({e}), retrying in 2 seconds...")
             retries -= 1
             await asyncio.sleep(2)
 

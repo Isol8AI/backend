@@ -1,5 +1,5 @@
 """
-Core services for Freebird.
+Core services for Isol8.
 
 Services encapsulate business logic for encryption key management,
 organization operations, and other domain-specific operations.

@@ -1,10 +1,10 @@
 # =============================================================================
-# Freebird Backend Dockerfile
+# Isol8 Backend Dockerfile
 # =============================================================================
 # Multi-stage build with pre-downloaded embedding model for faster cold starts.
 #
-# Build: docker build -t freebird-backend .
-# Run:   docker run -p 8000:8000 --env-file .env freebird-backend
+# Build: docker build -t isol8-backend .
+# Run:   docker run -p 8000:8000 --env-file .env isol8-backend
 # =============================================================================
 
 # -----------------------------------------------------------------------------

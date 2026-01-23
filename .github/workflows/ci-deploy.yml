@@ -1,9 +1,7 @@
 # =============================================================================
 # Backend CI/CD Workflow
 # =============================================================================
-# Combined workflow that runs tests, linting, and deploys on success.
-# Deploy only runs on push to main and after CI passes.
-#
+# Staggered deployments: dev → staging → prod (with manual approval for prod)
 # Uses GitHub OIDC for secure AWS authentication (no long-lived credentials).
 # =============================================================================
 
@@ -17,11 +15,11 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment to deploy to"
-        required: true
-        default: "dev"
+        description: "Deploy to specific environment only"
+        required: false
         type: choice
         options:
+          - all
           - dev
           - staging
           - prod
@@ -29,7 +27,7 @@ on:
 env:
   PYTHON_VERSION: "3.11"
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: freebird-backend
+  ECR_REPOSITORY: isol8-backend
 
 # Required for OIDC authentication
 permissions:
@@ -46,11 +44,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: freebird_test
+          POSTGRES_DB: isol8_test
         ports:
           - 5432:5432
         options: >-
@@ -82,7 +80,7 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/freebird_test
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/isol8_test
           CLERK_ISSUER: https://test.clerk.accounts.dev
           HUGGINGFACE_TOKEN: test_token
           DEBUG: "false"
@@ -96,15 +94,15 @@ jobs:
           fail_ci_if_error: false
 
   # ===========================================================================
-  # Deploy: Build and push to ECR, deploy to EC2
+  # Build: Build and push Docker image to ECR
   # ===========================================================================
-  deploy:
-    name: Deploy to ${{ github.event.inputs.environment || 'dev' }}
+  build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
     needs: test
-    # Only deploy on push to main (not PRs) or manual trigger
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    outputs:
+      image_tag: ${{ steps.build.outputs.image_tag }}
 
     steps:
       - name: Checkout code
@@ -113,7 +111,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/freebird-${{ github.event.inputs.environment || 'dev' }}-github-actions
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/isol8-dev-github-actions
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -124,6 +122,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -134,10 +133,37 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Output image tag
+        run: echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # Deploy to Dev (automatic)
+  # ===========================================================================
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'all' || github.event.inputs.environment == 'dev'))
+    environment:
+      name: dev
+      url: https://api-dev.isol8.co
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/isol8-dev-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Deploy to EC2 via SSM
         run: |
-          # Get instance IDs from Auto Scaling Group
-          ASG_NAME="freebird-${{ github.event.inputs.environment || 'dev' }}-asg"
+          ASG_NAME="isol8-dev-asg"
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-names $ASG_NAME \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
@@ -150,7 +176,6 @@ jobs:
 
           echo "Deploying to instances: $INSTANCE_IDS"
 
-          # Run deployment command on each instance via SSM
           for INSTANCE_ID in $INSTANCE_IDS; do
             echo "Deploying to $INSTANCE_ID..."
 
@@ -158,37 +183,42 @@ jobs:
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --parameters 'commands=[
-                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
-                "docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}",
-                "docker stop freebird || true",
-                "docker rm freebird || true",
-                "docker run -d --name freebird --env-file /home/ec2-user/.env -p 8000:8000 --restart unless-stopped ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+                "aws ecr get-login-password --region '"${{ env.AWS_REGION }}"' | docker login --username AWS --password-stdin '"${{ steps.login-ecr.outputs.registry }}"'",
+                "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
+                "docker stop isol8 || true",
+                "docker rm isol8 || true",
+                "docker run -d --name isol8 --env-file /home/ec2-user/.env -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
               ]' \
               --query 'Command.CommandId' \
               --output text)
 
-            echo "Command ID: $COMMAND_ID"
-
-            # Wait for command to complete
-            aws ssm wait command-executed \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" || true
-
-            # Check command result
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --query 'Status' \
-              --output text
+            aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+            aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text
           done
+
+      - name: Run database initialization
+        run: |
+          ASG_NAME="isol8-dev-asg"
+          INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names $ASG_NAME \
+            --query 'AutoScalingGroups[0].Instances[0].InstanceId' \
+            --output text)
+
+          sleep 10
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["docker exec isol8 python init_db.py"]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query '[Status, StandardOutputContent]' --output text
 
       - name: Health check
         run: |
-          # Get API Gateway URL (public endpoint)
-          API_URL=$(aws apigatewayv2 get-apis \
-            --query "Items[?Name=='freebird-${{ github.event.inputs.environment || 'dev' }}-api'].ApiEndpoint" \
-            --output text)
-
+          API_URL=$(aws apigatewayv2 get-apis --query "Items[?Name=='isol8-dev-api'].ApiEndpoint" --output text)
           echo "Checking health at $API_URL/health"
 
           for i in {1..10}; do
@@ -197,8 +227,205 @@ jobs:
               echo "Health check passed!"
               exit 0
             fi
-            echo "Attempt $i: Status $STATUS, retrying..."
+            echo "Attempt $i: Status $STATUS, retrying in 5s..."
+            sleep 5
           done
 
-          echo "Health check failed after 10 attempts"
+          echo "Health check failed"
+          exit 1
+
+  # ===========================================================================
+  # Deploy to Staging (automatic after dev)
+  # ===========================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'all' || github.event.inputs.environment == 'staging'))
+    environment:
+      name: staging
+      url: https://api-staging.isol8.co
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/isol8-staging-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          ASG_NAME="isol8-staging-asg"
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names $ASG_NAME \
+            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
+            --output text)
+
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "No instances found in ASG $ASG_NAME"
+            exit 1
+          fi
+
+          echo "Deploying to instances: $INSTANCE_IDS"
+
+          for INSTANCE_ID in $INSTANCE_IDS; do
+            echo "Deploying to $INSTANCE_ID..."
+
+            COMMAND_ID=$(aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=[
+                "aws ecr get-login-password --region '"${{ env.AWS_REGION }}"' | docker login --username AWS --password-stdin '"${{ steps.login-ecr.outputs.registry }}"'",
+                "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
+                "docker stop isol8 || true",
+                "docker rm isol8 || true",
+                "docker run -d --name isol8 --env-file /home/ec2-user/.env -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
+              ]' \
+              --query 'Command.CommandId' \
+              --output text)
+
+            aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+            aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text
+          done
+
+      - name: Run database initialization
+        run: |
+          ASG_NAME="isol8-staging-asg"
+          INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names $ASG_NAME \
+            --query 'AutoScalingGroups[0].Instances[0].InstanceId' \
+            --output text)
+
+          sleep 10
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["docker exec isol8 python init_db.py"]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query '[Status, StandardOutputContent]' --output text
+
+      - name: Health check
+        run: |
+          API_URL=$(aws apigatewayv2 get-apis --query "Items[?Name=='isol8-staging-api'].ApiEndpoint" --output text)
+          echo "Checking health at $API_URL/health"
+
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" --max-time 5 || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: Status $STATUS, retrying in 5s..."
+            sleep 5
+          done
+
+          echo "Health check failed"
+          exit 1
+
+  # ===========================================================================
+  # Deploy to Production (requires manual approval)
+  # ===========================================================================
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'all' || github.event.inputs.environment == 'prod'))
+    environment:
+      name: production
+      url: https://api.isol8.co
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/isol8-prod-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          ASG_NAME="isol8-prod-asg"
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names $ASG_NAME \
+            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
+            --output text)
+
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "No instances found in ASG $ASG_NAME"
+            exit 1
+          fi
+
+          echo "Deploying to instances: $INSTANCE_IDS"
+
+          for INSTANCE_ID in $INSTANCE_IDS; do
+            echo "Deploying to $INSTANCE_ID..."
+
+            COMMAND_ID=$(aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=[
+                "aws ecr get-login-password --region '"${{ env.AWS_REGION }}"' | docker login --username AWS --password-stdin '"${{ steps.login-ecr.outputs.registry }}"'",
+                "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
+                "docker stop isol8 || true",
+                "docker rm isol8 || true",
+                "docker run -d --name isol8 --env-file /home/ec2-user/.env -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
+              ]' \
+              --query 'Command.CommandId' \
+              --output text)
+
+            aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+            aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text
+          done
+
+      - name: Run database initialization
+        run: |
+          ASG_NAME="isol8-prod-asg"
+          INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names $ASG_NAME \
+            --query 'AutoScalingGroups[0].Instances[0].InstanceId' \
+            --output text)
+
+          sleep 10
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["docker exec isol8 python init_db.py"]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query '[Status, StandardOutputContent]' --output text
+
+      - name: Health check
+        run: |
+          API_URL=$(aws apigatewayv2 get-apis --query "Items[?Name=='isol8-prod-api'].ApiEndpoint" --output text)
+          echo "Checking health at $API_URL/health"
+
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" --max-time 5 || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: Status $STATUS, retrying in 5s..."
+            sleep 5
+          done
+
+          echo "Health check failed"
           exit 1

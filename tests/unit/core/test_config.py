@@ -8,7 +8,7 @@ class TestSettings:
 
     def test_project_name_default(self):
         """Project name has expected default value."""
-        assert settings.PROJECT_NAME == "Freebird Chat"
+        assert settings.PROJECT_NAME == "Isol8 Chat"
 
     def test_api_v1_str_default(self):
         """API version string has expected default value."""
