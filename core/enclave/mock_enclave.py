@@ -1412,7 +1412,7 @@ If no facts worth extracting, output: []"""
         try:
             messages = [{"role": "user", "content": prompt}]
             # Use the configured extraction model
-            model = EXTRACTION_MODEL
+            model = self.EXTRACTION_MODEL
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
