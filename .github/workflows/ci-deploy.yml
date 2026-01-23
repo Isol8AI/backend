@@ -108,6 +108,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout memory repo
+        uses: actions/checkout@v4
+        with:
+          repository: Isol8AI/memory
+          path: memory
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

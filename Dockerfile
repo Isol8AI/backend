@@ -30,6 +30,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install OpenMemory SDK (copied from memory repo during CI build)
+COPY memory/packages/openmemory-py /tmp/openmemory-py
+RUN pip install --no-cache-dir /tmp/openmemory-py && rm -rf /tmp/openmemory-py
+
 # -----------------------------------------------------------------------------
 # Stage 2: Download embedding model
 # -----------------------------------------------------------------------------
