@@ -189,7 +189,7 @@ jobs:
                 "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
                 "docker stop isol8 || true",
                 "docker rm isol8 || true",
-                "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS='"${{ env.CORS_ORIGINS }}"' -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
+                "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS=${{ env.CORS_ORIGINS }} -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
               ]' \
               --query 'Command.CommandId' \
               --output text)
@@ -289,7 +289,7 @@ jobs:
                 "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
                 "docker stop isol8 || true",
                 "docker rm isol8 || true",
-                "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS='"${{ env.CORS_ORIGINS }}"' -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
+                "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS=${{ env.CORS_ORIGINS }} -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
               ]' \
               --query 'Command.CommandId' \
               --output text)
@@ -389,7 +389,7 @@ jobs:
                 "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
                 "docker stop isol8 || true",
                 "docker rm isol8 || true",
-                "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS='"${{ env.CORS_ORIGINS }}"' -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
+                "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS=${{ env.CORS_ORIGINS }} -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'"
               ]' \
               --query 'Command.CommandId' \
               --output text)
