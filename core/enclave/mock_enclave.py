@@ -320,8 +320,9 @@ class MockEnclave(EnclaveInterface):
     - In production (Nitro), the private key never leaves the enclave
     """
 
-    # Model for memory extraction (uses Gemma 2 2B by default)
-    EXTRACTION_MODEL = "google/gemma-2-2b-it"
+    # Model for memory extraction (configurable via EXTRACTION_MODEL env var)
+    # Uses smaller, faster model for efficient fact extraction
+    EXTRACTION_MODEL = settings.EXTRACTION_MODEL
 
     # Embedding model for generating embeddings from plaintext
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     ENCLAVE_MODE: str = os.getenv("ENCLAVE_MODE", "mock")  # "mock" or "nitro"
     ENCLAVE_INFERENCE_TIMEOUT: float = float(os.getenv("ENCLAVE_INFERENCE_TIMEOUT", "120.0"))
 
+    # Memory extraction model (smaller, faster model for fact extraction)
+    EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+
     @field_validator("CLERK_ISSUER")
     @classmethod
     def validate_clerk_issuer(cls, v: str) -> str:
@@ -63,9 +66,12 @@ settings = Settings()
 
 # Available models for the frontend selector
 # Models confirmed to work via HuggingFace Inference Providers (serverless)
+# Query available models: curl "https://huggingface.co/api/models?inference_provider=all&pipeline_tag=text-generation"
 AVAILABLE_MODELS = [
     {"id": "Qwen/Qwen2.5-72B-Instruct", "name": "Qwen 2.5 72B"},
     {"id": "meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B"},
-    {"id": "google/gemma-2-2b-it", "name": "Gemma 2 2B"},
+    {"id": "google/gemma-2-9b-it", "name": "Gemma 2 9B"},
     {"id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "name": "DeepSeek R1 32B"},
+    {"id": "Qwen/Qwen2.5-7B-Instruct", "name": "Qwen 2.5 7B"},
+    {"id": "meta-llama/Llama-3.1-8B-Instruct", "name": "Llama 3.1 8B"},
 ]
