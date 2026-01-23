@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Using HuggingFace Inference Providers router (OpenAI-compatible)
     HF_API_URL: str = os.getenv("HF_API_URL", "https://router.huggingface.co/v1")
 
+    # CORS Configuration
+    # Comma-separated list of allowed origins (e.g., "https://dev.isol8.co,https://localhost:3000")
+    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+
     # Enclave Configuration
     # In production, this would be the Nitro enclave endpoint
     ENCLAVE_MODE: str = os.getenv("ENCLAVE_MODE", "mock")  # "mock" or "nitro"
