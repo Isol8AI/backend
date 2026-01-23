@@ -10,6 +10,7 @@ from models import Base
 # Check if OpenMemory SDK is available and configured for PostgreSQL
 try:
     from openmemory.core.db import _init_pg_pool, is_pg as openmemory_is_pg
+
     OPENMEMORY_AVAILABLE = True
 except ImportError:
     OPENMEMORY_AVAILABLE = False
