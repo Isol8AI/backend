@@ -25,8 +25,9 @@ from models.organization_membership import OrganizationMembership, MemberRole
 from models.session import Session
 from models.user import User
 
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
+# Check TEST_DATABASE_URL first (explicit), then DATABASE_URL (CI sets this), then fallback to remote
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL") or os.getenv(
+    "DATABASE_URL",
     "postgresql+asyncpg://postgres:AnkleTaker2314_@db.asisbbkdmtioeowicepp.supabase.co:5432/postgres",
 )
 
