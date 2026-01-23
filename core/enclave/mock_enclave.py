@@ -1411,14 +1411,14 @@ If no facts worth extracting, output: []"""
         # Use the same LLM as memory extraction
         try:
             messages = [{"role": "user", "content": prompt}]
-            # Use a smaller, faster model for extraction
-            model = "mistralai/Mistral-7B-Instruct-v0.3"
+            # Use the configured extraction model
+            model = EXTRACTION_MODEL
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    f"{self.inference_url}/chat/completions",
+                    f"{self._inference_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {self.inference_token}",
+                        "Authorization": f"Bearer {self._inference_token}",
                         "Content-Type": "application/json",
                     },
                     json={
