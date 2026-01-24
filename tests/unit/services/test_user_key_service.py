@@ -373,13 +373,16 @@ class TestDeleteEncryptionKeys:
         mock_db.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_raises_error_for_nonexistent_user(self, mock_db):
-        """Raises error when user doesn't exist."""
+    async def test_noop_for_nonexistent_user(self, mock_db):
+        """No-op when user doesn't exist (allows E2E tests to reset state)."""
         mock_db.execute = AsyncMock(return_value=mock_execute_result(None))
 
         service = UserKeyService(mock_db)
-        with pytest.raises(UserKeyServiceError, match="not found"):
-            await service.delete_encryption_keys("nonexistent_user")
+        # Should not raise - service is designed to be a no-op for nonexistent users
+        await service.delete_encryption_keys("nonexistent_user")
+
+        # Should not have committed anything (no changes)
+        mock_db.commit.assert_not_called()
 
 
 # =============================================================================
