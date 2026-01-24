@@ -31,6 +31,7 @@ from core.crypto import (
     decrypt_with_private_key,
 )
 from core.enclave.embeddings import EnclaveEmbeddings
+from core.enclave.fact_extraction import FactExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +350,9 @@ class MockEnclave(EnclaveInterface):
 
         # Embedding generator for memory extraction
         self._embeddings = EnclaveEmbeddings()
+
+        # Pattern-based fact extractor (fast, no LLM needed)
+        self._fact_extractor = FactExtractor()
 
         logger.info("MockEnclave initialized with public key: %s", self._keypair.public_key.hex()[:16] + "...")
 
@@ -1240,6 +1244,8 @@ If nothing memorable, output: []"""
         queried later. They are encrypted to the client's transport key so
         the client can decrypt and store them in local IndexedDB.
 
+        Uses pattern-based extraction (FactExtractor) for speed instead of LLM.
+
         Args:
             user_message: Plaintext user message
             assistant_response: Plaintext assistant response
@@ -1250,85 +1256,38 @@ If nothing memorable, output: []"""
         """
         import uuid
 
-        # Build fact extraction prompt
-        prompt = self._build_fact_extraction_prompt(user_message, assistant_response)
-
-        # Call extraction LLM with error handling
-        try:
-            extracted = await self._call_fact_extraction_llm(prompt)
-        except Exception as e:
-            logger.warning(f"Fact extraction LLM call failed: {e}")
-            return []
+        # Use pattern-based extraction (fast, no LLM needed)
+        extracted = self._fact_extractor.extract(
+            user_message=user_message,
+            assistant_response=assistant_response,
+        )
 
         if not extracted:
             logger.debug("No facts extracted from conversation")
             return []
 
-        logger.info(f"Extracted {len(extracted)} potential facts")
+        logger.info(f"Extracted {len(extracted)} facts via pattern matching")
 
         facts = []
-        valid_predicates = {
-            "prefers",
-            "works_at",
-            "located_in",
-            "interested_in",
-            "has_skill",
-            "dislikes",
-            "plans_to",
-            "uses",
-            "knows",
-            "mentioned",
-        }
-        predicate_to_type = {
-            "prefers": "preference",
-            "works_at": "identity",
-            "located_in": "identity",
-            "interested_in": "preference",
-            "has_skill": "identity",
-            "dislikes": "preference",
-            "plans_to": "plan",
-            "uses": "preference",
-            "knows": "observation",
-            "mentioned": "observation",
-        }
-
         for item in extracted:
             try:
-                subject = item.get("subject", "").lower().strip()
-                predicate = item.get("predicate", "").lower().strip()
-                obj = item.get("object", "").strip()
-                confidence = item.get("confidence", 0.7)
-
-                if not subject or not predicate or not obj:
-                    continue
-
-                if predicate not in valid_predicates:
-                    continue
-
-                # Validate confidence
-                try:
-                    confidence = float(confidence)
-                    confidence = max(0.0, min(1.0, confidence))
-                except (ValueError, TypeError):
-                    confidence = 0.7
-
-                # Skip low confidence
-                if confidence < 0.5:
+                # Skip low confidence facts
+                if item.confidence < 0.5:
                     continue
 
                 # Generate fact ID
                 fact_id = str(uuid.uuid4())
 
-                # Build fact data
+                # Build fact data from ExtractedFact dataclass
                 fact_data = {
                     "id": fact_id,
-                    "subject": subject,
-                    "predicate": predicate,
-                    "object": obj,
-                    "confidence": confidence,
-                    "type": predicate_to_type.get(predicate, "observation"),
-                    "source": "system",  # 'system' matches frontend FactSource type
-                    "entities": self._extract_entities(obj, predicate),
+                    "subject": item.subject,
+                    "predicate": item.predicate,
+                    "object": item.object,
+                    "confidence": item.confidence,
+                    "type": item.type,
+                    "source": item.source,
+                    "entities": item.entities,
                 }
 
                 # Encrypt fact data to client's transport key
@@ -1346,7 +1305,10 @@ If nothing memorable, output: []"""
                     )
                 )
 
-                logger.debug(f"Extracted fact: {subject} {predicate} {obj} (confidence: {confidence})")
+                logger.debug(
+                    f"Extracted fact: {item.subject} {item.predicate} {item.object} "
+                    f"(confidence: {item.confidence})"
+                )
 
             except Exception as e:
                 logger.warning(f"Failed to process extracted fact: {e}")
@@ -1354,81 +1316,6 @@ If nothing memorable, output: []"""
 
         logger.info(f"Successfully processed {len(facts)} facts")
         return facts
-
-    def _build_fact_extraction_prompt(self, user_message: str, assistant_response: str) -> str:
-        """Build prompt for fact extraction LLM."""
-        return f"""Extract facts from this conversation as JSON. Only extract facts worth remembering long-term.
-
-Valid predicates: prefers, works_at, located_in, interested_in, has_skill, dislikes, plans_to, uses, knows, mentioned
-
-Conversation:
-User: {user_message}
-Assistant: {assistant_response}
-
-Output ONLY a valid JSON array with this format (no other text):
-[{{"subject": "user", "predicate": "prefers", "object": "TypeScript", "confidence": 0.9}}]
-
-If no facts worth extracting, output: []"""
-
-    async def _call_fact_extraction_llm(self, prompt: str) -> List[Dict]:
-        """Call extraction LLM for facts."""
-        # Use the same LLM as memory extraction
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            # Use the configured extraction model
-            model = self.EXTRACTION_MODEL
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self._inference_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._inference_token}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "messages": messages,
-                        "max_tokens": 256,
-                        "temperature": 0.3,
-                    },
-                )
-                response.raise_for_status()
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-
-                # Parse JSON from response
-                import re
-
-                json_match = re.search(r"\[[\s\S]*?\]", content)
-                if json_match:
-                    return json.loads(json_match.group())
-                return []
-
-        except Exception as e:
-            logger.warning(f"Fact extraction LLM call failed: {e}")
-            return []
-
-    def _extract_entities(self, obj: str, predicate: str) -> List[str]:
-        """Extract entity tags from the object and predicate."""
-        import re
-
-        entities = []
-
-        # Normalize object
-        normalized = re.sub(r"[^a-z0-9\s]", "", obj.lower()).strip()
-        if len(normalized) > 2:
-            entities.append(normalized)
-
-        # Add predicate as category
-        entities.append(predicate)
-
-        # Split multi-word objects
-        words = [w for w in normalized.split() if len(w) > 3]
-        for word in words:
-            if word not in entities:
-                entities.append(word)
-
-        return entities
 
 
 # =============================================================================

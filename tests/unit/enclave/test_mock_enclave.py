@@ -815,7 +815,7 @@ class TestExtractedFact:
 
 
 class TestFactExtraction:
-    """Tests for fact extraction from messages."""
+    """Tests for fact extraction from messages using pattern-based FactExtractor."""
 
     @pytest.fixture
     def enclave(self):
@@ -833,22 +833,15 @@ class TestFactExtraction:
         """extract_facts returns list of ExtractedFact objects."""
         from core.enclave.mock_enclave import ExtractedFact
 
-        # Mock the LLM response with extracted facts (list of dicts, not JSON string)
-        mock_llm_response = [{"subject": "user", "predicate": "prefers", "object": "dark mode", "confidence": 0.9}]
+        # Pattern-based extraction should find "I prefer dark mode"
+        facts = await enclave.extract_facts(
+            user_message="I prefer dark mode for coding",
+            assistant_response="I'll remember that you prefer dark mode.",
+            client_public_key=client_keypair.public_key,
+        )
 
-        with patch.object(
-            enclave,
-            "_call_fact_extraction_llm",
-            new_callable=AsyncMock,
-            return_value=mock_llm_response,
-        ):
-            facts = await enclave.extract_facts(
-                user_message="I really like dark mode",
-                assistant_response="I'll remember that you prefer dark mode.",
-                client_public_key=client_keypair.public_key,
-            )
-
-        assert len(facts) == 1
+        # Should extract at least one fact from "I prefer dark mode"
+        assert len(facts) >= 1
         assert isinstance(facts[0], ExtractedFact)
         assert facts[0].fact_id is not None
 
@@ -857,20 +850,14 @@ class TestFactExtraction:
         """Extracted facts are encrypted to client's transport key."""
         import json
 
-        # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
-        mock_llm_response = [{"subject": "user", "predicate": "works_at", "object": "Anthropic", "confidence": 0.85}]
+        # Pattern should match "I work at Anthropic"
+        facts = await enclave.extract_facts(
+            user_message="I work at Anthropic",
+            assistant_response="Nice, you work at Anthropic!",
+            client_public_key=client_keypair.public_key,
+        )
 
-        with patch.object(
-            enclave,
-            "_call_fact_extraction_llm",
-            new_callable=AsyncMock,
-            return_value=mock_llm_response,
-        ):
-            facts = await enclave.extract_facts(
-                user_message="I work at Anthropic",
-                assistant_response="Nice, you work at Anthropic!",
-                client_public_key=client_keypair.public_key,
-            )
+        assert len(facts) >= 1
 
         # Client should be able to decrypt the fact
         decrypted = decrypt_with_private_key(
@@ -882,142 +869,131 @@ class TestFactExtraction:
         fact_data = json.loads(decrypted.decode("utf-8"))
         assert fact_data["subject"] == "user"
         assert fact_data["predicate"] == "works_at"
-        assert fact_data["object"] == "Anthropic"
-        assert fact_data["confidence"] == 0.85
+        assert "anthropic" in fact_data["object"].lower()
         assert fact_data["type"] == "identity"
         assert fact_data["source"] == "system"
 
     @pytest.mark.asyncio
-    async def test_extract_facts_filters_low_confidence(self, enclave, client_keypair):
-        """Facts with confidence < 0.5 are filtered out."""
-
-        # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
-        mock_llm_response = [
-            {"subject": "user", "predicate": "prefers", "object": "coffee", "confidence": 0.9},
-            {"subject": "user", "predicate": "likes", "object": "tea", "confidence": 0.4},  # Low confidence
-        ]
-
-        with patch.object(
-            enclave,
-            "_call_fact_extraction_llm",
-            new_callable=AsyncMock,
-            return_value=mock_llm_response,
-        ):
-            facts = await enclave.extract_facts(
-                user_message="I love coffee but maybe tea is okay",
-                assistant_response="Got it!",
-                client_public_key=client_keypair.public_key,
-            )
-
-        # Only high confidence fact should be returned
-        assert len(facts) == 1
-
-    @pytest.mark.asyncio
-    async def test_extract_facts_validates_predicates(self, enclave, client_keypair):
-        """Only valid predicates are accepted."""
-
-        # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
-        mock_llm_response = [
-            {"subject": "user", "predicate": "prefers", "object": "vim", "confidence": 0.9},
-            {"subject": "user", "predicate": "invalid_predicate", "object": "emacs", "confidence": 0.9},
-        ]
-
-        with patch.object(
-            enclave,
-            "_call_fact_extraction_llm",
-            new_callable=AsyncMock,
-            return_value=mock_llm_response,
-        ):
-            facts = await enclave.extract_facts(
-                user_message="I prefer vim over emacs",
-                assistant_response="Vim is great!",
-                client_public_key=client_keypair.public_key,
-            )
-
-        # Only valid predicate should pass
-        assert len(facts) == 1
-
-    @pytest.mark.asyncio
     async def test_extract_facts_handles_empty_response(self, enclave, client_keypair):
         """Handles case where no facts are extracted."""
-
-        # _call_fact_extraction_llm returns empty list, not JSON string
-        mock_llm_response = []
-
-        with patch.object(
-            enclave,
-            "_call_fact_extraction_llm",
-            new_callable=AsyncMock,
-            return_value=mock_llm_response,
-        ):
-            facts = await enclave.extract_facts(
-                user_message="What's the weather?",
-                assistant_response="I don't know the current weather.",
-                client_public_key=client_keypair.public_key,
-            )
+        # Use a message with no extractable patterns
+        facts = await enclave.extract_facts(
+            user_message="What's the weather?",
+            assistant_response="I don't know the current weather.",
+            client_public_key=client_keypair.public_key,
+        )
 
         assert len(facts) == 0
 
     @pytest.mark.asyncio
-    async def test_extract_facts_handles_llm_error(self, enclave, client_keypair):
-        """Handles LLM errors gracefully."""
-        with patch.object(
-            enclave,
-            "_call_fact_extraction_llm",
-            new_callable=AsyncMock,
-            side_effect=Exception("LLM error"),
-        ):
-            facts = await enclave.extract_facts(
-                user_message="Test message",
-                assistant_response="Test response",
-                client_public_key=client_keypair.public_key,
-            )
-
-        # Should return empty list on error, not raise
-        assert len(facts) == 0
-
-    @pytest.mark.asyncio
-    async def test_extract_facts_maps_predicate_to_type(self, enclave, client_keypair):
-        """Predicates are correctly mapped to fact types."""
+    async def test_extract_facts_extracts_preferences(self, enclave, client_keypair):
+        """Pattern extractor finds preference patterns."""
         import json
 
-        # Test various predicate -> type mappings
-        test_cases = [
-            ("prefers", "preference"),
-            ("works_at", "identity"),
-            ("located_in", "identity"),
-            ("interested_in", "preference"),
-            ("has_skill", "identity"),
-            ("dislikes", "preference"),
-            ("plans_to", "plan"),
-            ("uses", "preference"),
-            ("knows", "observation"),
-            ("mentioned", "observation"),
-        ]
+        facts = await enclave.extract_facts(
+            user_message="I prefer Python over JavaScript",
+            assistant_response="Python is great!",
+            client_public_key=client_keypair.public_key,
+        )
 
-        for predicate, expected_type in test_cases:
-            # _call_fact_extraction_llm returns parsed list of dicts, not JSON string
-            mock_llm_response = [{"subject": "user", "predicate": predicate, "object": "test", "confidence": 0.9}]
+        assert len(facts) >= 1
 
-            with patch.object(
-                enclave,
-                "_call_fact_extraction_llm",
-                new_callable=AsyncMock,
-                return_value=mock_llm_response,
-            ):
-                facts = await enclave.extract_facts(
-                    user_message="Test",
-                    assistant_response="Test",
-                    client_public_key=client_keypair.public_key,
-                )
+        decrypted = decrypt_with_private_key(
+            client_keypair.private_key,
+            facts[0].encrypted_payload,
+            "fact-extraction",
+        )
+        fact_data = json.loads(decrypted.decode("utf-8"))
+        assert fact_data["predicate"] == "prefers"
+        assert fact_data["type"] == "preference"
 
-            decrypted = decrypt_with_private_key(
-                client_keypair.private_key,
-                facts[0].encrypted_payload,
-                "fact-extraction",
-            )
-            fact_data = json.loads(decrypted.decode("utf-8"))
-            assert fact_data["type"] == expected_type, f"Predicate {predicate} should map to {expected_type}"
+    @pytest.mark.asyncio
+    async def test_extract_facts_extracts_location(self, enclave, client_keypair):
+        """Pattern extractor finds location patterns."""
+        import json
+
+        facts = await enclave.extract_facts(
+            user_message="I live in San Francisco",
+            assistant_response="SF is a great city!",
+            client_public_key=client_keypair.public_key,
+        )
+
+        assert len(facts) >= 1
+
+        decrypted = decrypt_with_private_key(
+            client_keypair.private_key,
+            facts[0].encrypted_payload,
+            "fact-extraction",
+        )
+        fact_data = json.loads(decrypted.decode("utf-8"))
+        assert fact_data["predicate"] == "located_in"
+        assert fact_data["type"] == "identity"
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_extracts_interests(self, enclave, client_keypair):
+        """Pattern extractor finds interest patterns."""
+        import json
+
+        facts = await enclave.extract_facts(
+            user_message="I'm interested in machine learning",
+            assistant_response="ML is fascinating!",
+            client_public_key=client_keypair.public_key,
+        )
+
+        assert len(facts) >= 1
+
+        decrypted = decrypt_with_private_key(
+            client_keypair.private_key,
+            facts[0].encrypted_payload,
+            "fact-extraction",
+        )
+        fact_data = json.loads(decrypted.decode("utf-8"))
+        assert fact_data["predicate"] == "interested_in"
+        assert fact_data["type"] == "preference"
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_extracts_dislikes(self, enclave, client_keypair):
+        """Pattern extractor finds dislike patterns."""
+        import json
+
+        facts = await enclave.extract_facts(
+            user_message="I don't like Java",
+            assistant_response="I understand.",
+            client_public_key=client_keypair.public_key,
+        )
+
+        assert len(facts) >= 1
+
+        decrypted = decrypt_with_private_key(
+            client_keypair.private_key,
+            facts[0].encrypted_payload,
+            "fact-extraction",
+        )
+        fact_data = json.loads(decrypted.decode("utf-8"))
+        assert fact_data["predicate"] == "dislikes"
+        assert fact_data["type"] == "preference"
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_extracts_plans(self, enclave, client_keypair):
+        """Pattern extractor finds plan patterns."""
+        import json
+
+        facts = await enclave.extract_facts(
+            user_message="I plan to learn Rust",
+            assistant_response="Rust is a good choice!",
+            client_public_key=client_keypair.public_key,
+        )
+
+        assert len(facts) >= 1
+
+        decrypted = decrypt_with_private_key(
+            client_keypair.private_key,
+            facts[0].encrypted_payload,
+            "fact-extraction",
+        )
+        fact_data = json.loads(decrypted.decode("utf-8"))
+        assert fact_data["predicate"] == "plans_to"
+        assert fact_data["type"] == "plan"
 
 
 # =============================================================================
