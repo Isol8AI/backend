@@ -1,7 +1,7 @@
 """Tests for enclave fact extraction."""
 
 import pytest
-from core.enclave.fact_extraction import FactExtractor, ExtractedFact
+from core.enclave.fact_extraction import FactExtractor
 
 
 class TestFactExtractor:
