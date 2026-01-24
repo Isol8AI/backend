@@ -40,7 +40,8 @@ _db_schema, _clean_db_url = _get_schema_and_clean_url(settings.DATABASE_URL)
 # - NullPool: Let Supabase handle connection pooling, not SQLAlchemy
 # - statement_cache_size=0: Disable asyncpg's prepared statement cache
 # - prepared_statement_name_func: Use unnamed statements to avoid conflicts
-# - server_settings: Set search_path for schema isolation
+# - server_settings: Set search_path for schema isolation + public for pgvector
+_search_path = f"{_db_schema},public"
 engine = create_async_engine(
     _clean_db_url,
     echo=settings.DEBUG,
@@ -48,7 +49,7 @@ engine = create_async_engine(
     connect_args={
         "statement_cache_size": 0,
         "prepared_statement_name_func": lambda: "",
-        "server_settings": {"search_path": _db_schema},
+        "server_settings": {"search_path": _search_path},
     },
 )
 
@@ -79,8 +80,8 @@ async def get_memory_pool() -> asyncpg.Pool:
             command_timeout=30,
             # Supabase pooler compatibility
             statement_cache_size=0,
-            # Set search_path for schema isolation
-            server_settings={"search_path": _db_schema},
+            # Set search_path for schema isolation + public for pgvector
+            server_settings={"search_path": _search_path},
         )
     return _memory_pool
 

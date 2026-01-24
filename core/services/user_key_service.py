@@ -255,12 +255,14 @@ class UserKeyService:
         Args:
             user_id: The user's ID
 
-        Raises:
-            UserKeyServiceError: If user not found
+        Note:
+            If user doesn't exist or has no keys, this is a no-op.
+            This allows E2E tests to reset state without errors.
         """
         user = await self.get_user(user_id)
         if not user:
-            raise UserKeyServiceError(f"User {user_id} not found")
+            # User doesn't exist yet - nothing to delete
+            return
 
         if not user.has_encryption_keys:
             # Nothing to delete
