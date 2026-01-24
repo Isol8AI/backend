@@ -30,6 +30,7 @@ from core.crypto import (
     encrypt_to_public_key,
     decrypt_with_private_key,
 )
+from core.enclave.embeddings import EnclaveEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -324,9 +325,6 @@ class MockEnclave(EnclaveInterface):
     # Uses smaller, faster model for efficient fact extraction
     EXTRACTION_MODEL = settings.EXTRACTION_MODEL
 
-    # Embedding model for generating embeddings from plaintext
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-
     def __init__(
         self,
         inference_url: str = "https://router.huggingface.co/v1",
@@ -349,8 +347,8 @@ class MockEnclave(EnclaveInterface):
         self._inference_token = inference_token
         self._inference_timeout = inference_timeout
 
-        # Embedding model (lazy loaded)
-        self._embedding_model = None
+        # Embedding generator for memory extraction
+        self._embeddings = EnclaveEmbeddings()
 
         logger.info("MockEnclave initialized with public key: %s", self._keypair.public_key.hex()[:16] + "...")
 
@@ -1022,40 +1020,6 @@ class MockEnclave(EnclaveInterface):
     # Memory Extraction Methods
     # -------------------------------------------------------------------------
 
-    def _get_embedding_model(self):
-        """
-        Lazy-load the sentence-transformers embedding model.
-
-        Only loads on first use to avoid startup delay.
-        """
-        if self._embedding_model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-
-                self._embedding_model = SentenceTransformer(self.EMBEDDING_MODEL)
-                logger.info(f"Loaded embedding model: {self.EMBEDDING_MODEL}")
-            except ImportError:
-                logger.error("sentence-transformers not installed")
-                raise RuntimeError(
-                    "sentence-transformers package required for memory extraction. "
-                    "Install with: pip install sentence-transformers"
-                )
-        return self._embedding_model
-
-    def _generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate embedding vector from plaintext.
-
-        Args:
-            text: Plaintext to embed
-
-        Returns:
-            List of floats (384-dimensional for all-MiniLM-L6-v2)
-        """
-        model = self._get_embedding_model()
-        embedding = model.encode(text, normalize_embeddings=True)
-        return embedding.tolist()
-
     def _build_extraction_prompt(
         self,
         user_message: str,
@@ -1228,7 +1192,7 @@ If nothing memorable, output: []"""
                     salience = 0.5
 
                 # 2. Generate embedding from plaintext
-                embedding = self._generate_embedding(text)
+                embedding = self._embeddings.generate_embedding(text)
 
                 # 3. Encrypt the memory text
                 encrypted_content = self.encrypt_for_memory_storage(

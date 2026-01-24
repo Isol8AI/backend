@@ -14,18 +14,21 @@ from core.enclave import MockEnclave, ExtractedMemory, EncryptionContext
 
 @pytest.fixture
 def mock_enclave():
-    """Create a MockEnclave with mocked dependencies."""
-    with patch.object(MockEnclave, "_get_embedding_model") as mock_embed:
-        # Mock the embedding model
-        mock_model = MagicMock()
-        mock_model.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
-        mock_embed.return_value = mock_model
+    """Create a MockEnclave with mocked dependencies.
 
-        enclave = MockEnclave(
-            inference_url="https://test.api.com/v1",
-            inference_token="test-token",
-        )
-        yield enclave
+    Note: Embedding generation is now handled by EnclaveEmbeddings class
+    (tested separately in test_embeddings.py). We mock the _embeddings
+    attribute to avoid loading the actual sentence-transformers model.
+    """
+    enclave = MockEnclave(
+        inference_url="https://test.api.com/v1",
+        inference_token="test-token",
+    )
+    # Mock the embeddings service to avoid loading the actual model
+    mock_embeddings = MagicMock()
+    mock_embeddings.generate_embedding.return_value = [0.1] * 384
+    enclave._embeddings = mock_embeddings
+    yield enclave
 
 
 @pytest.fixture
@@ -48,42 +51,11 @@ def sample_storage_public_key():
 
 
 # =============================================================================
-# Test Embedding Generation
-# =============================================================================
-
-
-class TestEmbeddingGeneration:
-    """Tests for embedding generation."""
-
-    def test_lazy_loads_embedding_model(self, mock_enclave):
-        """Embedding model is loaded lazily on first use."""
-        # Initially None
-        assert mock_enclave._embedding_model is None
-
-        # After calling _get_embedding_model
-        model = mock_enclave._get_embedding_model()
-        assert model is not None
-
-    def test_generates_384_dim_embedding(self, mock_enclave):
-        """Generates 384-dimensional embedding vector."""
-        embedding = mock_enclave._generate_embedding("test text")
-
-        assert isinstance(embedding, list)
-        assert len(embedding) == 384
-        assert all(isinstance(x, float) for x in embedding)
-
-    def test_normalizes_embeddings(self, mock_enclave):
-        """Embeddings are normalized."""
-        model = mock_enclave._get_embedding_model()
-        mock_enclave._generate_embedding("test")
-
-        # Verify encode was called with normalize_embeddings=True
-        model.encode.assert_called_with("test", normalize_embeddings=True)
-
-
-# =============================================================================
 # Test Extraction Prompt
 # =============================================================================
+
+# Note: Embedding generation tests have been moved to test_embeddings.py
+# which tests the EnclaveEmbeddings class directly.
 
 
 class TestExtractionPrompt:
