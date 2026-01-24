@@ -2,17 +2,25 @@ import asyncio
 import os
 import sys
 import re
+from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from core.database import engine
 from models import Base
+
+# Add OpenMemory SDK to path (it's not installed as a pip package)
+# Path: backend/init_db.py -> freebird/memory/packages/openmemory-py/src
+memory_path = Path(__file__).parent.parent / "memory" / "packages" / "openmemory-py" / "src"
+if memory_path.exists() and str(memory_path) not in sys.path:
+    sys.path.insert(0, str(memory_path))
 
 # Check if OpenMemory SDK is available and configured for PostgreSQL
 try:
     from openmemory.core.db import _init_pg_pool, is_pg as openmemory_is_pg
 
     OPENMEMORY_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"Note: OpenMemory SDK not available ({e})")
     OPENMEMORY_AVAILABLE = False
     openmemory_is_pg = False
 

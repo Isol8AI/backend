@@ -20,6 +20,8 @@ from core.services.memory_service import (
     MemoryService,
     MemoryServiceError,
 )
+from core.enclave import get_enclave
+from core.crypto import EncryptedPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -103,6 +105,19 @@ class SearchMemoriesRequest(BaseModel):
     sector: Optional[str] = Field(default=None, description="Optional sector filter")
     org_id: Optional[str] = Field(default=None, description="Org ID for org context search")
     include_personal: bool = Field(default=True, description="Include personal memories in org search")
+
+
+class EncryptedSearchRequest(BaseModel):
+    """Request to search memories with encrypted query (enclave-side embedding)."""
+
+    encrypted_query: dict = Field(
+        ...,
+        description="Query encrypted to enclave transport key",
+    )
+    limit: int = Field(default=10, ge=1, le=50)
+    sector: Optional[str] = Field(default=None, description="Optional sector filter")
+    org_id: Optional[str] = Field(default=None, description="Org ID for org context search")
+    include_personal: bool = Field(default=False, description="Include personal memories in org search")
 
 
 class MemoryItem(BaseModel):
@@ -229,6 +244,85 @@ async def search_memories(
 
         return SearchMemoriesResponse(memories=memories, total=len(memories))
 
+    except MemoryServiceError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/search/encrypted", response_model=SearchMemoriesResponse)
+async def search_memories_encrypted(
+    request: EncryptedSearchRequest,
+    auth: AuthContext = Depends(get_current_user),
+    service: MemoryService = Depends(get_memory_service),
+):
+    """
+    Search memories with an encrypted query.
+
+    This endpoint:
+    1. Receives query encrypted to the enclave's transport key
+    2. Enclave decrypts and generates embedding from plaintext
+    3. Searches memories using the embedding
+    4. Returns encrypted memory content for client-side decryption
+
+    Security:
+    - Query plaintext only exists in enclave during embedding generation
+    - Server never sees query plaintext
+    - Memory content stays encrypted (decrypted client-side)
+    """
+    try:
+        # Get enclave and build encrypted payload
+        enclave = get_enclave()
+
+        # Convert the dict to EncryptedPayload
+        encrypted_query = EncryptedPayload(
+            ephemeral_public_key=bytes.fromhex(request.encrypted_query["ephemeral_public_key"]),
+            iv=bytes.fromhex(request.encrypted_query["iv"]),
+            ciphertext=bytes.fromhex(request.encrypted_query["ciphertext"]),
+            auth_tag=bytes.fromhex(request.encrypted_query["auth_tag"]),
+            hkdf_salt=bytes.fromhex(request.encrypted_query.get("hkdf_salt", "")),
+        )
+
+        # Decrypt query and generate embedding in enclave
+        embedding = enclave.generate_embedding_from_encrypted(encrypted_query)
+        print(f"[MEMORY_DEBUG] Generated embedding dim={len(embedding)}, user_id={auth.user_id}")
+
+        # Search memories using the embedding
+        # Note: We pass empty query_text since we can't access it
+        # The query was only used for keyword matching which we skip here
+        results = await service.search_memories(
+            query_text="",  # Not used when embedding is provided
+            query_embedding=embedding,
+            user_id=auth.user_id,
+            org_id=request.org_id,
+            limit=request.limit,
+            sector=request.sector,
+            include_personal_in_org=request.include_personal,
+        )
+        print(f"[MEMORY_DEBUG] Search returned {len(results)} results")
+
+        memories = [
+            MemoryItem(
+                id=str(r.get("id", "")),
+                content=r.get("content", ""),
+                primary_sector=r.get("primary_sector", "semantic"),
+                tags=parse_tags(r),
+                metadata=parse_metadata(r),
+                score=r.get("score"),
+                salience=r.get("salience", 0.5),
+                created_at=format_timestamp(r.get("created_at")),
+                last_accessed_at=format_timestamp(r.get("last_seen_at")),
+                is_org_memory=r.get("is_org_memory", False),
+            )
+            for r in results
+        ]
+
+        return SearchMemoriesResponse(memories=memories, total=len(memories))
+
+    except ValueError as e:
+        # Decryption or payload parsing failed
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid encrypted query: {str(e)}",
+        )
     except MemoryServiceError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

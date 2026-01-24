@@ -1059,22 +1059,23 @@ class TestStreamingWithFactExtraction:
                 new_callable=AsyncMock,
                 return_value=mock_facts,
             ):
-                chunks = []
-                final_chunk = None
+                with patch.object(enclave, "extract_memories", new_callable=AsyncMock, return_value=[]):
+                    chunks = []
+                    final_chunk = None
 
-                async for chunk in enclave.process_message_streaming(
-                    encrypted_message=encrypted_input,
-                    encrypted_history=[],
-                    encrypted_memories=[],
-                    facts_context=None,
-                    storage_public_key=storage_keypair.public_key,
-                    client_public_key=user_keypair.public_key,
-                    session_id="test-session",
-                    model="test-model",
-                ):
-                    chunks.append(chunk)
-                    if chunk.is_final:
-                        final_chunk = chunk
+                    async for chunk in enclave.process_message_streaming(
+                        encrypted_message=encrypted_input,
+                        encrypted_history=[],
+                        encrypted_memories=[],  # Option A: client provides pre-encrypted memories
+                        facts_context=None,
+                        storage_public_key=storage_keypair.public_key,
+                        client_public_key=user_keypair.public_key,
+                        session_id="test-session",
+                        model="test-model",
+                    ):
+                        chunks.append(chunk)
+                        if chunk.is_final:
+                            final_chunk = chunk
 
         # Final chunk should have extracted facts
         assert final_chunk is not None
@@ -1129,7 +1130,7 @@ class TestDebugFlagControl:
                         async for _ in enclave.process_message_streaming(
                             encrypted_message=encrypted_input,
                             encrypted_history=[],
-                            encrypted_memories=[],
+                            encrypted_memories=[],  # Option A: client provides pre-encrypted memories
                             facts_context=None,
                             storage_public_key=storage_keypair.public_key,
                             client_public_key=user_keypair.public_key,
@@ -1165,7 +1166,7 @@ class TestDebugFlagControl:
                         async for _ in enclave.process_message_streaming(
                             encrypted_message=encrypted_input,
                             encrypted_history=[],
-                            encrypted_memories=[],
+                            encrypted_memories=[],  # Option A: client provides pre-encrypted memories
                             facts_context=None,
                             storage_public_key=storage_keypair.public_key,
                             client_public_key=user_keypair.public_key,

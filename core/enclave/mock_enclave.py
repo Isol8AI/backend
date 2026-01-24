@@ -569,10 +569,19 @@ class MockEnclave(EnclaveInterface):
         This is the main streaming API for routes. Each chunk's content
         is encrypted to the client's public key for secure transport.
 
+        Zero-Trust Memory Flow (Option A):
+        - Client searches memories via /memories/search/encrypted (enclave generates embedding)
+        - Client receives encrypted memories (encrypted to user's key)
+        - Client decrypts with private key (key NEVER leaves client)
+        - Client re-encrypts memories TO enclave's public key
+        - Enclave decrypts using its own private key
+
+        This ensures user's private key never leaves the browser.
+
         Args:
             encrypted_message: User's message encrypted to enclave
             encrypted_history: Previous messages re-encrypted to enclave
-            encrypted_memories: Relevant memories re-encrypted to enclave for context
+            encrypted_memories: Relevant memories re-encrypted TO enclave by client
             facts_context: Client-side formatted facts context (already decrypted, plaintext)
             storage_public_key: Key for storage encryption (user or org)
             client_public_key: Client's ephemeral key for response encryption
@@ -615,16 +624,22 @@ class MockEnclave(EnclaveInterface):
                     else f"  [{i}] {msg.role}: {msg.content}"
                 )
 
-            # 2b. Decrypt memories for context injection
-            memories = []
-            if encrypted_memories:
-                _debug_print(f"\n🧠 STEP 2b: Decrypt Memories ({len(encrypted_memories)} memories)")
-                _debug_print("-" * 60)
-                memories = self._decrypt_memories(encrypted_memories)
+            # 2b. Decrypt memories (Option A: client searched, decrypted, re-encrypted TO enclave)
+            _debug_print("\n🧠 STEP 2b: Decrypt Memories (Zero-Trust Option A)")
+            _debug_print("-" * 60)
+            _debug_print(f"Memories provided by client: {len(encrypted_memories)}")
+
+            # Client already did the search and re-encrypted memories TO enclave's public key
+            # We just decrypt them using enclave's private key
+            memories = self._decrypt_memories(encrypted_memories)
+
+            if memories:
                 for i, mem in enumerate(memories):
                     preview = mem[:60] + "..." if len(mem) > 60 else mem
                     _debug_print(f"  [{i}] {preview}")
-                _debug_print(f"✅ Decrypted {len(memories)} memories for context injection")
+                _debug_print(f"✅ Decrypted {len(memories)} memories from client")
+            else:
+                _debug_print("  No memories provided by client")
 
             # 2c. Log facts context if provided
             if facts_context:
@@ -1230,6 +1245,126 @@ If nothing memorable, output: []"""
 
         logger.info(f"Successfully processed {len(memories)} memories")
         return memories
+
+    def generate_embedding_from_encrypted(
+        self,
+        encrypted_query: EncryptedPayload,
+    ) -> List[float]:
+        """
+        Decrypt a query and generate its embedding.
+
+        This is used for encrypted memory search where:
+        1. Client encrypts the query to the enclave
+        2. Enclave decrypts to plaintext
+        3. Enclave generates embedding from plaintext
+        4. Embedding is used for similarity search (not encrypted)
+
+        Args:
+            encrypted_query: Query text encrypted to enclave's transport key
+
+        Returns:
+            384-dimensional embedding vector
+        """
+        # Decrypt the query
+        plaintext = self.decrypt_transport_message(encrypted_query)
+        query_text = plaintext.decode("utf-8")
+
+        # Generate embedding from plaintext
+        embedding = self._embeddings.generate_embedding(query_text)
+
+        logger.debug(f"Generated embedding for encrypted query (length: {len(embedding)})")
+        return embedding
+
+    async def search_and_decrypt_memories(
+        self,
+        query_text: str,
+        user_id: str,
+        org_id: Optional[str],
+        storage_private_key: bytes,
+        limit: int = 5,
+    ) -> List[str]:
+        """
+        Search memories by semantic similarity and decrypt results.
+
+        This is the zero-trust memory search that runs entirely inside the enclave:
+        1. Generate embedding from plaintext query
+        2. Search memories via MemoryService
+        3. Decrypt memory content using storage private key
+        4. Return plaintext memories for LLM context injection
+
+        Args:
+            query_text: Plaintext query (already decrypted user message)
+            user_id: User ID for memory search
+            org_id: Optional org ID for org context
+            storage_private_key: User's or org's private key for decrypting memories
+            limit: Maximum number of memories to return
+
+        Returns:
+            List of decrypted memory texts
+        """
+        from core.services.memory_service import MemoryService
+
+        try:
+            # 1. Generate embedding from plaintext
+            embedding = self._embeddings.generate_embedding(query_text)
+            _debug_print(f"Generated embedding for memory search (dim: {len(embedding)})")
+
+            # 2. Search memories via MemoryService
+            service = MemoryService()
+            results = await service.search_memories(
+                query_text=query_text,
+                query_embedding=embedding,
+                user_id=user_id,
+                org_id=org_id,
+                limit=limit,
+                include_personal_in_org=False,
+            )
+
+            if not results:
+                _debug_print("No memories found")
+                return []
+
+            _debug_print(f"Found {len(results)} memories, decrypting...")
+
+            # 3. Decrypt each memory
+            decrypted_memories = []
+            for r in results:
+                try:
+                    # Get encrypted content and metadata
+                    content = r.get("content", "")
+                    meta = r.get("meta") or r.get("metadata") or {}
+                    if isinstance(meta, str):
+                        import json
+                        meta = json.loads(meta)
+
+                    # Build encrypted payload
+                    encrypted_payload = EncryptedPayload(
+                        ephemeral_public_key=bytes.fromhex(meta.get("ephemeral_public_key", "")),
+                        iv=bytes.fromhex(meta.get("iv", "")),
+                        ciphertext=bytes.fromhex(content),
+                        auth_tag=bytes.fromhex(meta.get("auth_tag", "")),
+                        hkdf_salt=bytes.fromhex(meta.get("hkdf_salt", "")),
+                    )
+
+                    # Decrypt using MEMORY_STORAGE context
+                    from . import EncryptionContext
+                    plaintext = decrypt_with_private_key(
+                        storage_private_key,
+                        encrypted_payload,
+                        EncryptionContext.MEMORY_STORAGE.value,
+                    )
+                    decrypted_memories.append(plaintext.decode("utf-8"))
+
+                except Exception as e:
+                    logger.warning(f"Failed to decrypt memory {r.get('id')}: {e}")
+                    continue
+
+            _debug_print(f"Successfully decrypted {len(decrypted_memories)} memories")
+            return decrypted_memories
+
+        except Exception as e:
+            logger.warning(f"Memory search failed (non-fatal): {e}")
+            return []
 
     async def extract_facts(
         self,
