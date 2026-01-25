@@ -18,18 +18,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies (git needed for pip install from GitHub)
+# Install system dependencies (git + ssh for private repo access)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies (includes openmemory-py from GitHub)
+# Install Python dependencies (uses SSH for private repo via BuildKit)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=ssh \
+    mkdir -p -m 0600 ~/.ssh && \
+    ssh-keyscan github.com >> ~/.ssh/known_hosts && \
+    git config --global url."git@github.com:".insteadOf "https://github.com/" && \
+    pip install --no-cache-dir -r requirements.txt
 
 # -----------------------------------------------------------------------------
 # Stage 2: Download embedding model
