@@ -29,10 +29,10 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: isol8-backend
 
-# Required for OIDC authentication
+# Required for OIDC authentication and auto-commit
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   # ===========================================================================
@@ -66,6 +66,15 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
+
+      - name: Setup SSH for private repos
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MEMORY_DEPLOY_KEY }}
+
+      - name: Configure git to use SSH for GitHub
+        run: |
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: |
