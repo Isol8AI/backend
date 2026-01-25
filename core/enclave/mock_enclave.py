@@ -1335,6 +1335,7 @@ If nothing memorable, output: []"""
                     meta = r.get("meta") or r.get("metadata") or {}
                     if isinstance(meta, str):
                         import json
+
                         meta = json.loads(meta)
 
                     # Build encrypted payload
@@ -1348,6 +1349,7 @@ If nothing memorable, output: []"""
 
                     # Decrypt using MEMORY_STORAGE context
                     from . import EncryptionContext
+
                     plaintext = decrypt_with_private_key(
                         storage_private_key,
                         encrypted_payload,
@@ -1441,8 +1443,7 @@ If nothing memorable, output: []"""
                 )
 
                 logger.debug(
-                    f"Extracted fact: {item.subject} {item.predicate} {item.object} "
-                    f"(confidence: {item.confidence})"
+                    f"Extracted fact: {item.subject} {item.predicate} {item.object} (confidence: {item.confidence})"
                 )
 
             except Exception as e:

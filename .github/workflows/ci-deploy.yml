@@ -29,10 +29,10 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: isol8-backend
 
-# Required for OIDC authentication and auto-commit
+# Required for OIDC authentication
 permissions:
   id-token: write
-  contents: write
+  contents: read
 
 jobs:
   # ===========================================================================
@@ -72,39 +72,20 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MEMORY_DEPLOY_KEY }}
 
-      - name: Configure git to use SSH for GitHub
-        run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
-
       - name: Install dependencies
         run: |
+          # Configure git to use SSH for GitHub (only during pip install)
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov ruff
+          pip install pytest pytest-asyncio pytest-cov ruff pre-commit
+          # Reset git config after install
+          git config --global --unset url."git@github.com:".insteadOf
 
-      - name: Auto-fix linting issues
+      - name: Run linting
         run: |
-          ruff check --fix .
-          ruff format .
-
-      - name: Check for linting changes
-        id: lint_check
-        run: |
-          if [[ -n "$(git status --porcelain)" ]]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
-            git diff --name-only
-          else
-            echo "changes=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit linting fixes
-        if: steps.lint_check.outputs.changes == 'true' && github.event_name == 'push'
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add -A
-          git commit -m "style: Auto-fix linting issues [skip ci]"
-          git push
+          ruff check .
+          ruff format --check .
 
       - name: Run tests
         env:

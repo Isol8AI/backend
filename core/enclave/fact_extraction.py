@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExtractedFact:
     """A fact extracted from conversation."""
+
     subject: str
     predicate: str
     object: str
@@ -169,15 +170,17 @@ class FactExtractor:
                 fact_type = PREDICATE_TO_TYPE.get(predicate, "observation")
                 entities = self._extract_entities(object_text, predicate)
 
-                facts.append(ExtractedFact(
-                    subject="user",
-                    predicate=predicate,
-                    object=object_text,
-                    confidence=base_confidence,
-                    type=fact_type,
-                    source="system",
-                    entities=entities,
-                ))
+                facts.append(
+                    ExtractedFact(
+                        subject="user",
+                        predicate=predicate,
+                        object=object_text,
+                        confidence=base_confidence,
+                        type=fact_type,
+                        source="system",
+                        entities=entities,
+                    )
+                )
 
         logger.debug(f"[FactExtraction] Extracted {len(facts)} facts")
         return facts

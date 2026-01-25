@@ -244,7 +244,9 @@ class MemoryService:
         else:
             # Single context search
             memory_user_id = self.get_memory_user_id(user_id, org_id)
-            print(f"[MEMORY_DEBUG] Searching with memory_user_id={memory_user_id}, embedding_dim={len(query_embedding)}, sector={sector}")
+            print(
+                f"[MEMORY_DEBUG] Searching with memory_user_id={memory_user_id}, embedding_dim={len(query_embedding)}, sector={sector}"
+            )
             results = await self._memory.search_with_embedding(
                 query_text=query_text,
                 query_embedding=query_embedding,

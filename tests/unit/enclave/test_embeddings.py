@@ -11,6 +11,7 @@ class TestEnclaveEmbeddings:
     def embeddings(self):
         """Create EnclaveEmbeddings instance."""
         from core.enclave.embeddings import EnclaveEmbeddings
+
         return EnclaveEmbeddings()
 
     def test_generate_embedding_returns_384_dimensions(self, embeddings):
