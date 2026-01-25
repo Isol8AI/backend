@@ -18,21 +18,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
+# Install system dependencies (git needed for pip install from GitHub)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install Python dependencies (includes openmemory-py from GitHub)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install OpenMemory SDK (copied from memory repo during CI build)
-COPY memory/packages/openmemory-py /tmp/openmemory-py
-RUN pip install --no-cache-dir /tmp/openmemory-py && rm -rf /tmp/openmemory-py
 
 # -----------------------------------------------------------------------------
 # Stage 2: Download embedding model
