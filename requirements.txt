@@ -18,6 +18,8 @@ mammoth>=1.6.0
 markdownify>=0.11.0
 # For memory embedding generation in enclave
 sentence-transformers==3.0.1
+# OpenMemory SDK - install from GitHub for latest version
+openmemory @ git+https://github.com/Isol8AI/memory.git@main#subdirectory=packages/openmemory-py
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4

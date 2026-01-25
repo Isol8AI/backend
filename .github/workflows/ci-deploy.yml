@@ -73,10 +73,29 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov ruff
 
-      - name: Run linting
+      - name: Auto-fix linting issues
         run: |
-          ruff check .
-          ruff format --check .
+          ruff check --fix .
+          ruff format .
+
+      - name: Check for linting changes
+        id: lint_check
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            git diff --name-only
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit linting fixes
+        if: steps.lint_check.outputs.changes == 'true' && github.event_name == 'push'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          git commit -m "style: Auto-fix linting issues [skip ci]"
+          git push
 
       - name: Run tests
         env:
