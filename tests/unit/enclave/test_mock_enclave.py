@@ -558,10 +558,10 @@ class TestStreamingMessageProcessing:
             EncryptionContext.CLIENT_TO_ENCLAVE.value,
         )
 
-        # Mock streaming inference
+        # Mock streaming inference - yields (chunk, is_thinking) tuples
         async def mock_stream(*args, **kwargs):
             for chunk in ["Once", " upon", " a", " time"]:
-                yield chunk
+                yield (chunk, False)
 
         with patch.object(
             enclave,
@@ -1033,10 +1033,10 @@ class TestStreamingWithFactExtraction:
             EncryptionContext.CLIENT_TO_ENCLAVE.value,
         )
 
-        # Mock streaming inference
+        # Mock streaming inference - yields (chunk, is_thinking) tuples
         async def mock_stream(*args, **kwargs):
             for chunk in ["That's", " great!"]:
-                yield chunk
+                yield (chunk, False)
 
         # Mock fact extraction
         mock_facts = [
@@ -1118,9 +1118,9 @@ class TestDebugFlagControl:
             EncryptionContext.CLIENT_TO_ENCLAVE.value,
         )
 
-        # Mock streaming inference
+        # Mock streaming inference - yields (chunk, is_thinking) tuples
         async def mock_stream(*args, **kwargs):
-            yield "Hello"
+            yield ("Hello", False)
 
         with patch("core.enclave.mock_enclave.settings") as mock_settings:
             mock_settings.DEBUG = False
@@ -1154,9 +1154,9 @@ class TestDebugFlagControl:
             EncryptionContext.CLIENT_TO_ENCLAVE.value,
         )
 
-        # Mock streaming inference
+        # Mock streaming inference - yields (chunk, is_thinking) tuples
         async def mock_stream(*args, **kwargs):
-            yield "Hello"
+            yield ("Hello", False)
 
         with patch("core.enclave.mock_enclave.settings") as mock_settings:
             mock_settings.DEBUG = True
