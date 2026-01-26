@@ -259,15 +259,13 @@ jobs:
           exit 1
 
   # ===========================================================================
-  # Deploy to Staging (automatic after dev)
+  # Deploy to Staging (DISABLED - instances stopped to save costs)
   # ===========================================================================
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: |
-      (github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'all' || github.event.inputs.environment == 'staging'))
+    if: false  # DISABLED - staging instance stopped to save costs
     environment:
       name: staging
       url: https://api-staging.isol8.co
@@ -359,15 +357,13 @@ jobs:
           exit 1
 
   # ===========================================================================
-  # Deploy to Production (requires manual approval)
+  # Deploy to Production (DISABLED - instances stopped to save costs)
   # ===========================================================================
   deploy-prod:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: deploy-staging
-    if: |
-      (github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'all' || github.event.inputs.environment == 'prod'))
+    if: false  # DISABLED - production instance stopped to save costs
     environment:
       name: production
       url: https://api.isol8.co
