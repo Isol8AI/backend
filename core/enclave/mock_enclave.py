@@ -670,15 +670,17 @@ class MockEnclave(EnclaveInterface):
             _debug_print("-" * 60)
             _debug_print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
-            async for chunk, is_thinking in self._call_inference_stream(user_content, history, model, memories, facts_context):
+            async for chunk, is_thinking in self._call_inference_stream(
+                user_content, history, model, memories, facts_context
+            ):
                 chunk_count += 1
-                
+
                 # Encrypt this chunk for transport to client
                 encrypted_chunk = self.encrypt_for_transport(
                     chunk.encode("utf-8"),
                     client_public_key,
                 )
-                
+
                 if is_thinking:
                     current_thinking += chunk
                     _debug_print(f"  Thinking Chunk {chunk_count}: '{chunk}' → encrypted")
@@ -1024,7 +1026,9 @@ class MockEnclave(EnclaveInterface):
         print(f"[LLM] API URL: {self._inference_url}/chat/completions")
         print(f"[LLM] Messages count: {len(messages)}")
         print(f"[LLM] Token present: {bool(self._inference_token)}")
-        print(f"[LLM] Token value (first 10 chars): {str(self._inference_token)[:10] if self._inference_token else 'None'}...")
+        print(
+            f"[LLM] Token value (first 10 chars): {str(self._inference_token)[:10] if self._inference_token else 'None'}..."
+        )
 
         if not self._inference_token:
             print("[LLM] ERROR: No inference token configured!")
@@ -1073,7 +1077,7 @@ class MockEnclave(EnclaveInterface):
                                 if "choices" in data and len(data["choices"]) > 0:
                                     delta = data["choices"][0].get("delta", {})
                                     content = delta.get("content", "")
-                                    
+
                                     if not content:
                                         continue
 
@@ -1083,7 +1087,7 @@ class MockEnclave(EnclaveInterface):
 
                                     # Process thinking tags
                                     buffer += content
-                                    
+
                                     while buffer:
                                         if not is_thinking:
                                             # Check for start of think tag
@@ -1096,7 +1100,10 @@ class MockEnclave(EnclaveInterface):
                                             else:
                                                 # Optimization: if no partial tag, yield everything
                                                 # Check if buffer ends with partial tag like "<", "<t", etc.
-                                                if any(buffer.endswith(x) for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]):
+                                                if any(
+                                                    buffer.endswith(x)
+                                                    for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]
+                                                ):
                                                     # Possible split tag, keep in buffer
                                                     break
                                                 else:
@@ -1112,7 +1119,10 @@ class MockEnclave(EnclaveInterface):
                                                 buffer = post_think
                                             else:
                                                 # Optimization: if no partial closing tag
-                                                if any(buffer.endswith(x) for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]):
+                                                if any(
+                                                    buffer.endswith(x)
+                                                    for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
+                                                ):
                                                     break
                                                 else:
                                                     yield (buffer, True)
@@ -1138,6 +1148,7 @@ class MockEnclave(EnclaveInterface):
             except Exception as e:
                 print(f"[LLM] Inference error: {str(e)}")
                 import traceback
+
                 traceback.print_exc()
                 yield (f"Error: {str(e)}", False)
 
