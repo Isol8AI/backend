@@ -361,6 +361,9 @@ def encrypt_to_public_key(
     if len(recipient_public_key) != 32:
         raise ValueError("Recipient public key must be 32 bytes")
 
+    if not plaintext:
+        raise ValueError("Plaintext cannot be empty")
+
     # 1. Generate ephemeral keypair
     ephemeral = generate_x25519_keypair()
 

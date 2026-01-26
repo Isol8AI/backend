@@ -99,6 +99,7 @@ class StreamChunk:
 
     Used for SSE streaming where each chunk may contain:
     - encrypted_content: Encrypted chunk for client (during streaming)
+    - encrypted_thinking: Encrypted thinking process chunk (during streaming)
     - stored_messages: Final encrypted messages for storage (at end)
     - extracted_memories: Memories extracted from conversation (at end)
     - extracted_facts: Facts extracted from conversation (at end, encrypted for client)
@@ -107,6 +108,7 @@ class StreamChunk:
     """
 
     encrypted_content: Optional[EncryptedPayload] = None
+    encrypted_thinking: Optional[EncryptedPayload] = None
     stored_user_message: Optional[EncryptedPayload] = None
     stored_assistant_message: Optional[EncryptedPayload] = None
     extracted_memories: Optional[List["ExtractedMemory"]] = None  # Forward reference
@@ -529,9 +531,14 @@ class MockEnclave(EnclaveInterface):
 
         # 3. Stream LLM inference, collecting full response
         full_response = ""
-        async for chunk in self._call_inference_stream(user_content, history, model):
-            full_response += chunk
-            yield (chunk, None)
+        async for chunk, is_thinking in self._call_inference_stream(user_content, history, model):
+            # For non-streaming endpoint, we might just ignore thinking or concatenate?
+            # Usually users of non-streaming want the final answer.
+            # But wait, this method process_message_stream yields plaintext chunks.
+            # Let's just yield content.
+            if not is_thinking:
+                full_response += chunk
+                yield (chunk, None)
 
         # 4. Build encrypted outputs
         # Note: For streaming, we estimate tokens based on character count (~4 chars/token)
@@ -657,21 +664,29 @@ class MockEnclave(EnclaveInterface):
             _debug_print(f"Facts context: {'Yes' if facts_context else 'No'}")
 
             full_response = ""
+            current_thinking = ""
             chunk_count = 0
             _debug_print("\n📤 STEP 4: Stream Encrypted Chunks to Client")
             _debug_print("-" * 60)
             _debug_print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
-            async for chunk in self._call_inference_stream(user_content, history, model, memories, facts_context):
-                full_response += chunk
+            async for chunk, is_thinking in self._call_inference_stream(user_content, history, model, memories, facts_context):
                 chunk_count += 1
+                
                 # Encrypt this chunk for transport to client
                 encrypted_chunk = self.encrypt_for_transport(
                     chunk.encode("utf-8"),
                     client_public_key,
                 )
-                _debug_print(f"  Chunk {chunk_count}: '{chunk}' → encrypted")
-                yield StreamChunk(encrypted_content=encrypted_chunk)
+                
+                if is_thinking:
+                    current_thinking += chunk
+                    _debug_print(f"  Thinking Chunk {chunk_count}: '{chunk}' → encrypted")
+                    yield StreamChunk(encrypted_thinking=encrypted_chunk)
+                else:
+                    full_response += chunk
+                    _debug_print(f"  Content Chunk {chunk_count}: '{chunk}' → encrypted")
+                    yield StreamChunk(encrypted_content=encrypted_chunk)
 
             _debug_print(f"\n✅ Total chunks streamed: {chunk_count}")
             _debug_print(
@@ -679,6 +694,23 @@ class MockEnclave(EnclaveInterface):
                 if len(full_response) > 100
                 else f"Full response: {full_response}"
             )
+            _debug_print(
+                f"Thinking content: {current_thinking[:100]}..."
+                if len(current_thinking) > 100
+                else f"Thinking content: {current_thinking}"
+            )
+
+            # Handle case where model only outputs thinking content (e.g., DeepSeek R1)
+            # If full_response is empty but we have thinking content, use that as the response
+            if not full_response.strip() and current_thinking.strip():
+                logger.warning("Model returned only thinking content, using as response")
+                _debug_print("⚠️ No content outside <think> tags, using thinking content as response")
+                full_response = current_thinking
+            elif not full_response.strip() and not current_thinking.strip():
+                # Both empty - likely an error occurred
+                logger.error("Model returned no content at all")
+                _debug_print("❌ No content received from model!")
+                full_response = "[Error: The model did not return a response. Please try again.]"
 
             # 4. Build final encrypted messages for storage
             _debug_print("\n💾 STEP 5: Encrypt Messages for Storage")
@@ -976,13 +1008,28 @@ class MockEnclave(EnclaveInterface):
         model: str,
         memories: Optional[List[str]] = None,
         facts_context: Optional[str] = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Tuple[str, bool], None]:
         """
-        Call LLM inference with streaming.
+        Call LLM inference with streaming, handling <think> tags.
 
-        Yields text chunks as they arrive.
+        Yields tuples of (text_chunk, is_thinking).
         """
         messages = self._build_messages_for_inference(user_message, history, memories, facts_context)
+
+        # State for thinking tags
+        is_thinking = False
+        buffer = ""
+
+        print(f"[LLM] Starting inference with model: {model}")
+        print(f"[LLM] API URL: {self._inference_url}/chat/completions")
+        print(f"[LLM] Messages count: {len(messages)}")
+        print(f"[LLM] Token present: {bool(self._inference_token)}")
+        print(f"[LLM] Token value (first 10 chars): {str(self._inference_token)[:10] if self._inference_token else 'None'}...")
+
+        if not self._inference_token:
+            print("[LLM] ERROR: No inference token configured!")
+            yield ("Error: HuggingFace API token is not configured. Please set HUGGINGFACE_TOKEN.", False)
+            return
 
         async with httpx.AsyncClient() as client:
             try:
@@ -992,7 +1039,7 @@ class MockEnclave(EnclaveInterface):
                     json={
                         "model": model,
                         "messages": messages,
-                        "max_tokens": 1024,
+                        "max_tokens": 4096,
                         "temperature": 0.7,
                         "top_p": 0.95,
                         "stream": True,
@@ -1003,14 +1050,17 @@ class MockEnclave(EnclaveInterface):
                     },
                     timeout=self._inference_timeout,
                 ) as response:
+                    print(f"[LLM] Response status: {response.status_code}")
+                    chunk_count = 0
+                    total_chars = 0
                     if response.status_code != 200:
                         error_text = await response.aread()
                         logger.error(
-                            "Stream inference error %d: %s",
+                            "[LLM] Stream inference error %d: %s",
                             response.status_code,
-                            error_text,
+                            error_text.decode() if isinstance(error_text, bytes) else error_text,
                         )
-                        yield f"Error: Inference failed with status {response.status_code}"
+                        yield (f"Error: Inference failed with status {response.status_code}", False)
                         return
 
                     async for line in response.aiter_lines():
@@ -1023,17 +1073,73 @@ class MockEnclave(EnclaveInterface):
                                 if "choices" in data and len(data["choices"]) > 0:
                                     delta = data["choices"][0].get("delta", {})
                                     content = delta.get("content", "")
-                                    if content:
-                                        yield content
+                                    
+                                    if not content:
+                                        continue
+
+                                    # Track chunks and characters
+                                    chunk_count += 1
+                                    total_chars += len(content)
+
+                                    # Process thinking tags
+                                    buffer += content
+                                    
+                                    while buffer:
+                                        if not is_thinking:
+                                            # Check for start of think tag
+                                            if "<think>" in buffer:
+                                                pre_think, post_think = buffer.split("<think>", 1)
+                                                if pre_think:
+                                                    yield (pre_think, False)
+                                                is_thinking = True
+                                                buffer = post_think
+                                            else:
+                                                # Optimization: if no partial tag, yield everything
+                                                # Check if buffer ends with partial tag like "<", "<t", etc.
+                                                if any(buffer.endswith(x) for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]):
+                                                    # Possible split tag, keep in buffer
+                                                    break
+                                                else:
+                                                    yield (buffer, False)
+                                                    buffer = ""
+                                        else:
+                                            # Inside think block, check for end tag
+                                            if "</think>" in buffer:
+                                                think_content, post_think = buffer.split("</think>", 1)
+                                                if think_content:
+                                                    yield (think_content, True)
+                                                is_thinking = False
+                                                buffer = post_think
+                                            else:
+                                                # Optimization: if no partial closing tag
+                                                if any(buffer.endswith(x) for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]):
+                                                    break
+                                                else:
+                                                    yield (buffer, True)
+                                                    buffer = ""
+
                             except json.JSONDecodeError:
+                                logger.debug(f"[LLM] Failed to parse JSON: {data_str[:100]}")
                                 continue
 
+                    # Flush remaining buffer
+                    if buffer:
+                        print(f"[LLM] Flushing remaining buffer: {len(buffer)} chars")
+                        yield (buffer, is_thinking)
+
+                    print(f"[LLM] Stream completed: {chunk_count} chunks, {total_chars} total chars")
+
             except httpx.ReadTimeout:
-                logger.error("Inference timeout")
-                yield "Error: The model is taking too long to respond."
+                print(f"[LLM] Inference timeout after {self._inference_timeout} seconds")
+                yield ("Error: The model is taking too long to respond.", False)
+            except httpx.ConnectError as e:
+                print(f"[LLM] Connection error: {str(e)}")
+                yield (f"Error: Could not connect to inference API: {str(e)}", False)
             except Exception as e:
-                logger.error("Inference error: %s", str(e))
-                yield f"Error: {str(e)}"
+                print(f"[LLM] Inference error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                yield (f"Error: {str(e)}", False)
 
     # -------------------------------------------------------------------------
     # Memory Extraction Methods

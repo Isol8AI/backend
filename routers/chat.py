@@ -368,6 +368,11 @@ async def chat_stream_encrypted(
                         api_payload = EncryptedPayload.from_crypto_payload(chunk.encrypted_content)
                         yield f"data: {json.dumps({'type': 'encrypted_chunk', 'encrypted_content': api_payload.model_dump()})}\n\n"
 
+                    if chunk.encrypted_thinking:
+                        # Send thinking chunk
+                        api_payload = EncryptedPayload.from_crypto_payload(chunk.encrypted_thinking)
+                        yield f"data: {json.dumps({'type': 'thinking', 'encrypted_content': api_payload.model_dump()})}\n\n"
+
                     if chunk.is_final and chunk.stored_user_message and chunk.stored_assistant_message:
                         # Send stored message info
                         logger.debug("Messages stored for session_id=%s", session_id)
