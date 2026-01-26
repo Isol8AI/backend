@@ -863,7 +863,7 @@ class TestFactExtraction:
         decrypted = decrypt_with_private_key(
             client_keypair.private_key,
             facts[0].encrypted_payload,
-            "EncryptionContext.ENCLAVE_TO_CLIENT.value",
+            EncryptionContext.ENCLAVE_TO_CLIENT.value,
         )
 
         fact_data = json.loads(decrypted.decode("utf-8"))
@@ -901,7 +901,7 @@ class TestFactExtraction:
         decrypted = decrypt_with_private_key(
             client_keypair.private_key,
             facts[0].encrypted_payload,
-            "EncryptionContext.ENCLAVE_TO_CLIENT.value",
+            EncryptionContext.ENCLAVE_TO_CLIENT.value,
         )
         fact_data = json.loads(decrypted.decode("utf-8"))
         assert fact_data["predicate"] == "prefers"
@@ -923,7 +923,7 @@ class TestFactExtraction:
         decrypted = decrypt_with_private_key(
             client_keypair.private_key,
             facts[0].encrypted_payload,
-            "EncryptionContext.ENCLAVE_TO_CLIENT.value",
+            EncryptionContext.ENCLAVE_TO_CLIENT.value,
         )
         fact_data = json.loads(decrypted.decode("utf-8"))
         assert fact_data["predicate"] == "located_in"
@@ -945,7 +945,7 @@ class TestFactExtraction:
         decrypted = decrypt_with_private_key(
             client_keypair.private_key,
             facts[0].encrypted_payload,
-            "EncryptionContext.ENCLAVE_TO_CLIENT.value",
+            EncryptionContext.ENCLAVE_TO_CLIENT.value,
         )
         fact_data = json.loads(decrypted.decode("utf-8"))
         assert fact_data["predicate"] == "interested_in"
@@ -967,7 +967,7 @@ class TestFactExtraction:
         decrypted = decrypt_with_private_key(
             client_keypair.private_key,
             facts[0].encrypted_payload,
-            "EncryptionContext.ENCLAVE_TO_CLIENT.value",
+            EncryptionContext.ENCLAVE_TO_CLIENT.value,
         )
         fact_data = json.loads(decrypted.decode("utf-8"))
         assert fact_data["predicate"] == "dislikes"
@@ -989,7 +989,7 @@ class TestFactExtraction:
         decrypted = decrypt_with_private_key(
             client_keypair.private_key,
             facts[0].encrypted_payload,
-            "EncryptionContext.ENCLAVE_TO_CLIENT.value",
+            EncryptionContext.ENCLAVE_TO_CLIENT.value,
         )
         fact_data = json.loads(decrypted.decode("utf-8"))
         assert fact_data["predicate"] == "plans_to"
