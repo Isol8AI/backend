@@ -1545,11 +1545,14 @@ If nothing memorable, output: []"""
                 }
 
                 # Encrypt fact data to client's transport key
+                # Use ENCLAVE_TO_CLIENT context to match frontend decryption
+                from . import EncryptionContext
+
                 fact_json = json.dumps(fact_data).encode("utf-8")
                 encrypted_fact = encrypt_to_public_key(
                     recipient_public_key=client_public_key,
                     plaintext=fact_json,
-                    context="fact-extraction",
+                    context=EncryptionContext.ENCLAVE_TO_CLIENT.value,
                 )
 
                 facts.append(
