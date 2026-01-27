@@ -30,7 +30,6 @@ from core.crypto import (
     encrypt_to_public_key,
     decrypt_with_private_key,
 )
-from core.enclave.embeddings import EnclaveEmbeddings
 from core.enclave.fact_extraction import FactExtractor
 
 logger = logging.getLogger(__name__)
@@ -349,9 +348,6 @@ class MockEnclave(EnclaveInterface):
         self._inference_url = inference_url
         self._inference_token = inference_token
         self._inference_timeout = inference_timeout
-
-        # Embedding generator for memory extraction
-        self._embeddings = EnclaveEmbeddings()
 
         # Pattern-based fact extractor (fast, no LLM needed)
         self._fact_extractor = FactExtractor()
@@ -1278,90 +1274,11 @@ If nothing memorable, output: []"""
         """
         Extract memories from a conversation turn.
 
-        This method:
-        1. Calls the extraction LLM to identify memorable facts
-        2. Generates embeddings from plaintext (for vector search)
-        3. Encrypts the memory text to the storage key
-        4. Returns ExtractedMemory objects ready for storage
-
-        Args:
-            user_message: Plaintext user message
-            assistant_response: Plaintext assistant response
-            storage_public_key: Public key for encrypting memory content
-                               (user's key for personal, org's key for org context)
-
-        Returns:
-            List of ExtractedMemory objects
+        Note: Temporarily disabled during migration to mem0.
+        Plan 2 will implement memory extraction and storage via mem0 inside the enclave.
         """
-        # 1. Call extraction LLM
-        prompt = self._build_extraction_prompt(user_message, assistant_response)
-        extracted = await self._call_extraction_llm(prompt)
-
-        if not extracted:
-            logger.debug("No memories extracted from conversation")
-            return []
-
-        logger.info(f"Extracted {len(extracted)} potential memories")
-
-        memories = []
-        for item in extracted:
-            try:
-                text = item.get("text", "")
-                sector = item.get("sector", "semantic")
-                salience = item.get("salience", 0.5)
-                # Tags removed for security - they could reveal content details
-                # Sectors provide sufficient categorization
-
-                if not text:
-                    continue
-
-                # Validate sector
-                valid_sectors = ["episodic", "semantic", "procedural", "emotional", "reflective"]
-                if sector not in valid_sectors:
-                    sector = "semantic"
-
-                # Validate salience (0.0-1.0)
-                try:
-                    salience = float(salience)
-                    salience = max(0.0, min(1.0, salience))
-                except (ValueError, TypeError):
-                    salience = 0.5
-
-                # 2. Generate embedding from plaintext
-                embedding = self._embeddings.generate_embedding(text)
-
-                # 3. Encrypt the memory text
-                encrypted_content = self.encrypt_for_memory_storage(
-                    text.encode("utf-8"),
-                    storage_public_key,
-                )
-
-                # 4. Build ExtractedMemory object
-                # Note: tags intentionally empty for security (content details stay encrypted)
-                memories.append(
-                    ExtractedMemory(
-                        encrypted_content=encrypted_content,
-                        embedding=embedding,
-                        sector=sector,
-                        tags=[],  # Empty - content categorization via sector only
-                        metadata={
-                            "iv": encrypted_content.iv.hex(),
-                            "auth_tag": encrypted_content.auth_tag.hex(),
-                            "ephemeral_public_key": encrypted_content.ephemeral_public_key.hex(),
-                            "hkdf_salt": encrypted_content.hkdf_salt.hex(),
-                        },
-                        salience=salience,
-                    )
-                )
-
-                logger.debug(f"Extracted memory: {text[:50]}... (sector: {sector}, salience: {salience})")
-
-            except Exception as e:
-                logger.warning(f"Failed to process extracted memory: {e}")
-                continue
-
-        logger.info(f"Successfully processed {len(memories)} memories")
-        return memories
+        # No-op during migration - mem0 will handle this in Plan 2
+        return []
 
     def generate_embedding_from_encrypted(
         self,
@@ -1370,27 +1287,11 @@ If nothing memorable, output: []"""
         """
         Decrypt a query and generate its embedding.
 
-        This is used for encrypted memory search where:
-        1. Client encrypts the query to the enclave
-        2. Enclave decrypts to plaintext
-        3. Enclave generates embedding from plaintext
-        4. Embedding is used for similarity search (not encrypted)
-
-        Args:
-            encrypted_query: Query text encrypted to enclave's transport key
-
-        Returns:
-            384-dimensional embedding vector
+        Note: Temporarily disabled during migration to mem0.
+        mem0 handles embedding generation internally.
         """
-        # Decrypt the query
-        plaintext = self.decrypt_transport_message(encrypted_query)
-        query_text = plaintext.decode("utf-8")
-
-        # Generate embedding from plaintext
-        embedding = self._embeddings.generate_embedding(query_text)
-
-        logger.debug(f"Generated embedding for encrypted query (length: {len(embedding)})")
-        return embedding
+        # No-op during migration - mem0 handles embeddings
+        return []
 
     async def search_and_decrypt_memories(
         self,
@@ -1403,11 +1304,8 @@ If nothing memorable, output: []"""
         """
         Search memories by semantic similarity and decrypt results.
 
-        This is the zero-trust memory search that runs entirely inside the enclave:
-        1. Generate embedding from plaintext query
-        2. Search memories via MemoryService
-        3. Decrypt memory content using storage private key
-        4. Return plaintext memories for LLM context injection
+        Note: Temporarily disabled during migration to mem0.
+        Plan 2 will implement this with mem0 inside the enclave.
 
         Args:
             query_text: Plaintext query (already decrypted user message)
@@ -1417,73 +1315,10 @@ If nothing memorable, output: []"""
             limit: Maximum number of memories to return
 
         Returns:
-            List of decrypted memory texts
+            List of decrypted memory texts (empty during migration)
         """
-        from core.services.memory_service import MemoryService
-
-        try:
-            # 1. Generate embedding from plaintext
-            embedding = self._embeddings.generate_embedding(query_text)
-            _debug_print(f"Generated embedding for memory search (dim: {len(embedding)})")
-
-            # 2. Search memories via MemoryService
-            service = MemoryService()
-            results = await service.search_memories(
-                query_text=query_text,
-                query_embedding=embedding,
-                user_id=user_id,
-                org_id=org_id,
-                limit=limit,
-                include_personal_in_org=False,
-            )
-
-            if not results:
-                _debug_print("No memories found")
-                return []
-
-            _debug_print(f"Found {len(results)} memories, decrypting...")
-
-            # 3. Decrypt each memory
-            decrypted_memories = []
-            for r in results:
-                try:
-                    # Get encrypted content and metadata
-                    content = r.get("content", "")
-                    meta = r.get("meta") or r.get("metadata") or {}
-                    if isinstance(meta, str):
-                        import json
-
-                        meta = json.loads(meta)
-
-                    # Build encrypted payload
-                    encrypted_payload = EncryptedPayload(
-                        ephemeral_public_key=bytes.fromhex(meta.get("ephemeral_public_key", "")),
-                        iv=bytes.fromhex(meta.get("iv", "")),
-                        ciphertext=bytes.fromhex(content),
-                        auth_tag=bytes.fromhex(meta.get("auth_tag", "")),
-                        hkdf_salt=bytes.fromhex(meta.get("hkdf_salt", "")),
-                    )
-
-                    # Decrypt using MEMORY_STORAGE context
-                    from . import EncryptionContext
-
-                    plaintext = decrypt_with_private_key(
-                        storage_private_key,
-                        encrypted_payload,
-                        EncryptionContext.MEMORY_STORAGE.value,
-                    )
-                    decrypted_memories.append(plaintext.decode("utf-8"))
-
-                except Exception as e:
-                    logger.warning(f"Failed to decrypt memory {r.get('id')}: {e}")
-                    continue
-
-            _debug_print(f"Successfully decrypted {len(decrypted_memories)} memories")
-            return decrypted_memories
-
-        except Exception as e:
-            logger.warning(f"Memory search failed (non-fatal): {e}")
-            return []
+        logger.info("[enclave] Memory search disabled during migration to mem0")
+        return []
 
     async def extract_facts(
         self,

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.crypto import EncryptedPayload
 from core.enclave import get_enclave
 from core.enclave.mock_enclave import StreamChunk
-from core.services.memory_service import MemoryService
+# Note: MemoryService removed during migration to mem0
 from models.audit_log import AuditLog
 from models.message import Message, MessageRole
 from models.session import Session
@@ -574,66 +574,11 @@ class ChatService:
         """
         Store extracted memories from conversation.
 
-        Args:
-            memories: List of ExtractedMemory objects from enclave
-            user_id: Clerk user ID (raw, without prefix)
-            org_id: Clerk org ID (raw, without prefix) or None for personal context
+        Note: Disabled during migration to mem0.
+        Plan 2 will handle memory storage entirely within the enclave.
         """
-        if not memories:
-            return
-
-        memory_service = MemoryService()
-
-        # Log the memory user_id for debugging (store_memory computes this internally)
-        memory_user_id = memory_service.get_memory_user_id(user_id, org_id)
-
-        stored_count = 0
-        skipped_count = 0
-
-        for memory in memories:
-            try:
-                # Convert the encrypted payload to the format expected by memory service
-                encrypted_content = memory.encrypted_content.ciphertext.hex()
-
-                # Pass raw user_id and org_id - store_memory adds the prefix internally
-                # store_memory returns None if memory is a duplicate
-                result = await memory_service.store_memory(
-                    encrypted_content=encrypted_content,
-                    embedding=memory.embedding,
-                    user_id=user_id,
-                    org_id=org_id,
-                    sector=memory.sector,
-                    tags=memory.tags,
-                    metadata={
-                        "iv": memory.metadata.get("iv"),
-                        "auth_tag": memory.metadata.get("auth_tag"),
-                        "ephemeral_public_key": memory.metadata.get("ephemeral_public_key"),
-                        "hkdf_salt": memory.metadata.get("hkdf_salt"),
-                    },
-                    salience=memory.salience,
-                )
-
-                if result is not None:
-                    stored_count += 1
-                    logger.debug(
-                        "Stored memory for %s: sector=%s, tags=%s",
-                        memory_user_id,
-                        memory.sector,
-                        memory.tags,
-                    )
-                else:
-                    skipped_count += 1
-                    logger.debug("Skipped duplicate memory for %s", memory_user_id)
-
-            except Exception as e:
-                logger.warning("Failed to store extracted memory (non-fatal): %s", str(e))
-
-        logger.info(
-            "Memories for %s: %d stored, %d skipped (duplicates)",
-            memory_user_id,
-            stored_count,
-            skipped_count,
-        )
+        # No-op - memory extraction returns empty list during migration
+        pass
 
     async def verify_can_send_encrypted(
         self,
