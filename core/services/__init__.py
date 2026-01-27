@@ -19,11 +19,9 @@ from .org_key_service import (
     MembershipNotFoundError,
     NotAdminError,
 )
-from .memory_service import (
-    MemoryService,
-    MemoryServiceError,
-    MemoryNotFoundError,
-)
+
+# Note: MemoryService removed during migration to mem0.
+# Will be re-implemented in Plan 2 with enclave-based mem0.
 
 __all__ = [
     # User Key Service
@@ -38,8 +36,4 @@ __all__ = [
     "OrgKeysNotFoundError",
     "MembershipNotFoundError",
     "NotAdminError",
-    # Memory Service
-    "MemoryService",
-    "MemoryServiceError",
-    "MemoryNotFoundError",
 ]

@@ -2,27 +2,10 @@ import asyncio
 import os
 import sys
 import re
-from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from core.database import engine
 from models import Base
-
-# Add OpenMemory SDK to path (it's not installed as a pip package)
-# Path: backend/init_db.py -> freebird/memory/packages/openmemory-py/src
-memory_path = Path(__file__).parent.parent / "memory" / "packages" / "openmemory-py" / "src"
-if memory_path.exists() and str(memory_path) not in sys.path:
-    sys.path.insert(0, str(memory_path))
-
-# Check if OpenMemory SDK is available and configured for PostgreSQL
-try:
-    from openmemory.core.db import _init_pg_pool, is_pg as openmemory_is_pg
-
-    OPENMEMORY_AVAILABLE = True
-except ImportError as e:
-    print(f"Note: OpenMemory SDK not available ({e})")
-    OPENMEMORY_AVAILABLE = False
-    openmemory_is_pg = False
 
 
 def get_schema_from_env() -> str:
@@ -73,19 +56,8 @@ async def init_models(reset: bool = False):
                 print(f"Creating SQLAlchemy tables in '{schema}' schema...")
                 await conn.run_sync(Base.metadata.create_all)
 
-            # Initialize OpenMemory SDK tables (if available and using PostgreSQL)
-            if OPENMEMORY_AVAILABLE and openmemory_is_pg:
-                print("Initializing OpenMemory SDK tables...")
-                try:
-                    await _init_pg_pool()
-                    print("OpenMemory SDK tables created successfully.")
-                except Exception as e:
-                    print(f"Warning: OpenMemory SDK initialization failed: {e}")
-                    print("Memory features may not work until manually fixed.")
-            elif OPENMEMORY_AVAILABLE:
-                print("OpenMemory SDK is using SQLite, skipping PostgreSQL table creation.")
-            else:
-                print("OpenMemory SDK not available, skipping memory table creation.")
+            # Note: OpenMemory SDK initialization removed during migration to mem0.
+            # Plan 2 will implement memory tables in the enclave's isolated PostgreSQL.
 
             print(f"Database initialization complete for schema '{schema}'.")
             return

@@ -1,16 +1,11 @@
 # =============================================================================
 # Isol8 Backend Dockerfile
 # =============================================================================
-# Multi-stage build with pre-downloaded embedding model for faster cold starts.
-#
 # Build: docker build -t isol8-backend .
 # Run:   docker run -p 8000:8000 --env-file .env isol8-backend
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Stage 1: Base image with dependencies
-# -----------------------------------------------------------------------------
-FROM python:3.12-slim as base
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,45 +13,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies (git + ssh for private repo access)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    git \
-    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies (uses SSH for private repo via BuildKit)
+# Install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=ssh \
-    mkdir -p -m 0600 ~/.ssh && \
-    ssh-keyscan github.com >> ~/.ssh/known_hosts && \
-    git config --global url."git@github.com:".insteadOf "https://github.com/" && \
-    pip install --no-cache-dir -r requirements.txt
-
-# -----------------------------------------------------------------------------
-# Stage 2: Download embedding model
-# -----------------------------------------------------------------------------
-FROM base as model-downloader
-
-# Pre-download the sentence-transformers embedding model
-# This avoids downloading on first request and speeds up cold starts
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
-# -----------------------------------------------------------------------------
-# Stage 3: Production image
-# -----------------------------------------------------------------------------
-FROM base as production
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser
-
-# Copy pre-downloaded model from model-downloader stage
-# Model is cached in the user's home directory by sentence-transformers
-COPY --from=model-downloader /root/.cache/huggingface /home/appuser/.cache/huggingface
-RUN chown -R appuser:appuser /home/appuser/.cache
 
 # Copy application code
 COPY --chown=appuser:appuser . .

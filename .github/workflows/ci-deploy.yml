@@ -67,20 +67,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
-      - name: Setup SSH for private repos
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.MEMORY_DEPLOY_KEY }}
-
       - name: Install dependencies
         run: |
-          # Configure git to use SSH for GitHub (only during pip install)
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov ruff pre-commit
-          # Reset git config after install
-          git config --global --unset url."git@github.com:".insteadOf
 
       - name: Run linting
         run: |
@@ -117,18 +108,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH for memory repo
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.MEMORY_DEPLOY_KEY }}
-
-      - name: Checkout memory repo
-        uses: actions/checkout@v4
-        with:
-          repository: Isol8AI/memory
-          path: memory
-          ssh-key: ${{ secrets.MEMORY_DEPLOY_KEY }}
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -148,7 +127,6 @@ jobs:
         with:
           context: .
           push: true
-          ssh: default
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
