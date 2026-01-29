@@ -787,14 +787,18 @@ class MockEnclave(EnclaveInterface):
         # Each message has 'role' and 'content' (array of content blocks)
         messages = []
         for msg in history:
-            messages.append({
-                "role": msg.role,
-                "content": [{"text": msg.content}],
-            })
-        messages.append({
-            "role": "user",
-            "content": [{"text": user_message}],
-        })
+            messages.append(
+                {
+                    "role": msg.role,
+                    "content": [{"text": msg.content}],
+                }
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": [{"text": user_message}],
+            }
+        )
 
         return system_content, messages
 
@@ -813,14 +817,10 @@ class MockEnclave(EnclaveInterface):
         Returns:
             Tuple of (response_content, input_tokens, output_tokens)
         """
-        system_prompt, messages = self._build_converse_request(
-            user_message, history, memories, facts_context
-        )
+        system_prompt, messages = self._build_converse_request(user_message, history, memories, facts_context)
 
         creds = credentials or self._default_credentials
-        bedrock_client = BedrockClientFactory.create_client(
-            creds, timeout=self._inference_timeout
-        )
+        bedrock_client = BedrockClientFactory.create_client(creds, timeout=self._inference_timeout)
 
         try:
             loop = asyncio.get_event_loop()
@@ -875,9 +875,7 @@ class MockEnclave(EnclaveInterface):
         Yields tuples of (text_chunk, is_thinking).
         """
         # Build system prompt and messages
-        system_prompt, messages = self._build_converse_request(
-            user_message, history, memories, facts_context
-        )
+        system_prompt, messages = self._build_converse_request(user_message, history, memories, facts_context)
 
         # Use provided credentials or default
         creds = credentials or self._default_credentials
@@ -941,10 +939,7 @@ class MockEnclave(EnclaveInterface):
                                 is_thinking = True
                                 buffer = post_think
                             else:
-                                if any(
-                                    buffer.endswith(x)
-                                    for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]
-                                ):
+                                if any(buffer.endswith(x) for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]):
                                     break
                                 else:
                                     yield (buffer, False)
@@ -958,8 +953,7 @@ class MockEnclave(EnclaveInterface):
                                 buffer = post_think
                             else:
                                 if any(
-                                    buffer.endswith(x)
-                                    for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
+                                    buffer.endswith(x) for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
                                 ):
                                     break
                                 else:
@@ -986,6 +980,7 @@ class MockEnclave(EnclaveInterface):
         except Exception as e:
             print(f"[LLM] Bedrock inference error: {str(e)}")
             import traceback
+
             traceback.print_exc()
             yield (f"Error: {str(e)}", False)
 

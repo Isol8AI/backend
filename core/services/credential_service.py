@@ -89,9 +89,7 @@ class CredentialService:
                 logger.info("Using user's custom AWS credentials")
                 return AWSCredentials(
                     access_key_id=user_creds.get("access_key_id"),
-                    secret_access_key=cls.decrypt_secret(
-                        user_creds.get("secret_access_key", "")
-                    ),
+                    secret_access_key=cls.decrypt_secret(user_creds.get("secret_access_key", "")),
                     region=user_creds.get("region", "us-east-1"),
                     is_custom=True,
                 )
@@ -103,9 +101,7 @@ class CredentialService:
                 logger.info("Using org's custom AWS credentials")
                 return AWSCredentials(
                     access_key_id=org_creds.get("access_key_id"),
-                    secret_access_key=cls.decrypt_secret(
-                        org_creds.get("secret_access_key", "")
-                    ),
+                    secret_access_key=cls.decrypt_secret(org_creds.get("secret_access_key", "")),
                     region=org_creds.get("region", "us-east-1"),
                     is_custom=True,
                 )
