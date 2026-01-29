@@ -11,13 +11,14 @@ import json
 import logging
 from typing import Optional
 
+from clerk_backend_api import Clerk
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth import AuthContext, get_current_user
-from core.config import AVAILABLE_MODELS
+from core.config import AVAILABLE_MODELS, settings
 from core.database import get_db, get_session_factory
 from core.services.chat_service import ChatService
 from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
@@ -278,13 +279,12 @@ async def chat_stream_encrypted(
     - error: {message} - Error occurred
     """
     logger.debug(
-        "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d, memory_count=%d, has_facts=%s",
+        "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d, has_facts=%s",
         auth.user_id,
         auth.org_id or "personal",
         request.model,
         request.session_id or "new",
         len(request.encrypted_history) if request.encrypted_history else 0,
-        len(request.encrypted_memories) if request.encrypted_memories else 0,
         bool(request.facts_context),
     )
 
@@ -330,10 +330,21 @@ async def chat_stream_encrypted(
         for h in request.encrypted_history:
             encrypted_history.append(h.to_crypto_payload())
 
-    encrypted_memories = []
-    if request.encrypted_memories:
-        for m in request.encrypted_memories:
-            encrypted_memories.append(m.to_crypto_payload())
+    # Fetch user/org metadata from Clerk for AWS credential resolution
+    user_metadata = None
+    org_metadata = None
+    if settings.CLERK_SECRET_KEY:
+        try:
+            clerk = Clerk(bearer_auth=settings.CLERK_SECRET_KEY)
+            user = clerk.users.get(user_id=auth.user_id)
+            user_metadata = user.private_metadata
+
+            if auth.org_id:
+                org = clerk.organizations.get(organization_id=auth.org_id)
+                org_metadata = org.private_metadata
+        except Exception as e:
+            logger.warning(f"Could not fetch Clerk metadata: {e}")
+            # Continue without custom credentials - will use IAM role
 
     async def generate():
         """Generate SSE stream with encrypted content."""
@@ -352,10 +363,11 @@ async def chat_stream_encrypted(
                     org_id=auth.org_id,
                     encrypted_message=encrypted_msg,
                     encrypted_history=encrypted_history,
-                    encrypted_memories=encrypted_memories,
                     facts_context=request.facts_context,
                     model=request.model,
                     client_transport_public_key=request.client_transport_public_key,
+                    user_metadata=user_metadata,
+                    org_metadata=org_metadata,
                 ):
                     if chunk.error:
                         logger.debug("Enclave error for session_id=%s: %s", session_id, chunk.error)
@@ -377,20 +389,6 @@ async def chat_stream_encrypted(
                         # Send stored message info
                         logger.debug("Messages stored for session_id=%s", session_id)
                         yield f"data: {json.dumps({'type': 'stored', 'model_used': chunk.model_used, 'input_tokens': chunk.input_tokens, 'output_tokens': chunk.output_tokens})}\n\n"
-
-                        # Send extracted facts (encrypted for client-side storage)
-                        if chunk.extracted_facts:
-                            facts_data = []
-                            for fact in chunk.extracted_facts:
-                                api_payload = EncryptedPayload.from_crypto_payload(fact.encrypted_payload)
-                                facts_data.append(
-                                    {
-                                        "fact_id": fact.fact_id,
-                                        "encrypted_payload": api_payload.model_dump(),
-                                    }
-                                )
-                            logger.debug("Sending %d extracted facts for session_id=%s", len(facts_data), session_id)
-                            yield f"data: {json.dumps({'type': 'extracted_facts', 'facts': facts_data})}\n\n"
 
             logger.debug("SSE stream complete for session_id=%s, chunks=%d", session_id, chunk_count)
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

@@ -18,12 +18,13 @@ class TestSettings:
         """Required settings are configured."""
         assert settings.CLERK_ISSUER is not None
         assert settings.DATABASE_URL is not None
-        assert hasattr(settings, "HUGGINGFACE_TOKEN")
+        assert hasattr(settings, "AWS_REGION")
         assert hasattr(settings, "CLERK_AUDIENCE")
 
-    def test_hf_api_url_default(self):
-        """HF_API_URL points to HuggingFace."""
-        assert "huggingface" in settings.HF_API_URL.lower()
+    def test_aws_region_default(self):
+        """AWS_REGION has a default value."""
+        assert settings.AWS_REGION is not None
+        assert len(settings.AWS_REGION) > 0
 
 
 class TestAvailableModels:
@@ -41,7 +42,7 @@ class TestAvailableModels:
             assert model.get("name"), f"Model missing or empty 'name': {model}"
 
     def test_expected_models_available(self):
-        """Expected model families are represented."""
+        """Expected model families are represented (AWS Bedrock models)."""
         model_ids = [m["id"].lower() for m in AVAILABLE_MODELS]
-        assert any("qwen" in mid for mid in model_ids), "Qwen model expected"
         assert any("llama" in mid for mid in model_ids), "Llama model expected"
+        assert any("claude" in mid or "anthropic" in mid for mid in model_ids), "Claude model expected"

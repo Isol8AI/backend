@@ -14,7 +14,7 @@ from core.config import settings
 from core.auth import get_current_user
 from core.database import get_db, close_memory_pool
 from core.enclave import shutdown_enclave
-from routers import users, chat, organizations, context, webhooks, debug_encryption, memories
+from routers import users, chat, organizations, context, webhooks, debug_encryption
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     logger.info("Starting application...")
-
-    # Note: Memory background tasks (decay, reflection) removed during migration to mem0.
-    # Plan 2 will implement memory management in the enclave.
 
     yield
 
@@ -60,9 +57,6 @@ app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(organizations.router, prefix="/api/v1", tags=["organizations"])
 app.include_router(context.router, prefix="/api/v1", tags=["context"])
 app.include_router(webhooks.router, prefix="/api/v1", tags=["webhooks"])
-
-# Memory routes
-app.include_router(memories.router, prefix="/api/v1/memories", tags=["memories"])
 
 # Debug routes - DEVELOPMENT ONLY
 app.include_router(debug_encryption.router, prefix="/api/v1", tags=["debug"])

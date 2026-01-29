@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi.testclient import TestClient
+from httpx import AsyncClient, ASGITransport
 
 
 # =============================================================================
@@ -32,16 +32,17 @@ class TestClerkWebhookEndpoint:
                 mock_service.create_user = AsyncMock()
                 MockService.return_value = mock_service
 
-                client = TestClient(app)
-                response = client.post(
-                    "/api/v1/webhooks/clerk",
-                    json=payload,
-                    headers={
-                        "svix-id": "test",
-                        "svix-timestamp": "123",
-                        "svix-signature": "test",
-                    },
-                )
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/v1/webhooks/clerk",
+                        json=payload,
+                        headers={
+                            "svix-id": "test",
+                            "svix-timestamp": "123",
+                            "svix-signature": "test",
+                        },
+                    )
 
                 assert response.status_code == 200
                 assert response.json()["status"] == "processed"
@@ -65,16 +66,17 @@ class TestClerkWebhookEndpoint:
                 mock_service.delete_user = AsyncMock()
                 MockService.return_value = mock_service
 
-                client = TestClient(app)
-                response = client.post(
-                    "/api/v1/webhooks/clerk",
-                    json=payload,
-                    headers={
-                        "svix-id": "test",
-                        "svix-timestamp": "123",
-                        "svix-signature": "test",
-                    },
-                )
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/v1/webhooks/clerk",
+                        json=payload,
+                        headers={
+                            "svix-id": "test",
+                            "svix-timestamp": "123",
+                            "svix-signature": "test",
+                        },
+                    )
 
                 assert response.status_code == 200
                 assert response.json()["status"] == "processed"
@@ -97,16 +99,17 @@ class TestClerkWebhookEndpoint:
                 mock_service.create_organization = AsyncMock()
                 MockService.return_value = mock_service
 
-                client = TestClient(app)
-                response = client.post(
-                    "/api/v1/webhooks/clerk",
-                    json=payload,
-                    headers={
-                        "svix-id": "test",
-                        "svix-timestamp": "123",
-                        "svix-signature": "test",
-                    },
-                )
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/v1/webhooks/clerk",
+                        json=payload,
+                        headers={
+                            "svix-id": "test",
+                            "svix-timestamp": "123",
+                            "svix-signature": "test",
+                        },
+                    )
 
                 assert response.status_code == 200
                 assert response.json()["status"] == "processed"
@@ -134,16 +137,17 @@ class TestClerkWebhookEndpoint:
                 mock_service.create_membership = AsyncMock()
                 MockService.return_value = mock_service
 
-                client = TestClient(app)
-                response = client.post(
-                    "/api/v1/webhooks/clerk",
-                    json=payload,
-                    headers={
-                        "svix-id": "test",
-                        "svix-timestamp": "123",
-                        "svix-signature": "test",
-                    },
-                )
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/v1/webhooks/clerk",
+                        json=payload,
+                        headers={
+                            "svix-id": "test",
+                            "svix-timestamp": "123",
+                            "svix-signature": "test",
+                        },
+                    )
 
                 assert response.status_code == 200
                 assert response.json()["status"] == "processed"
@@ -170,16 +174,17 @@ class TestClerkWebhookEndpoint:
                 mock_service.delete_membership = AsyncMock()
                 MockService.return_value = mock_service
 
-                client = TestClient(app)
-                response = client.post(
-                    "/api/v1/webhooks/clerk",
-                    json=payload,
-                    headers={
-                        "svix-id": "test",
-                        "svix-timestamp": "123",
-                        "svix-signature": "test",
-                    },
-                )
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/v1/webhooks/clerk",
+                        json=payload,
+                        headers={
+                            "svix-id": "test",
+                            "svix-timestamp": "123",
+                            "svix-signature": "test",
+                        },
+                    )
 
                 assert response.status_code == 200
                 assert response.json()["status"] == "processed"
@@ -201,16 +206,17 @@ class TestClerkWebhookEndpoint:
                 mock_service = MagicMock()
                 MockService.return_value = mock_service
 
-                client = TestClient(app)
-                response = client.post(
-                    "/api/v1/webhooks/clerk",
-                    json=payload,
-                    headers={
-                        "svix-id": "test",
-                        "svix-timestamp": "123",
-                        "svix-signature": "test",
-                    },
-                )
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/v1/webhooks/clerk",
+                        json=payload,
+                        headers={
+                            "svix-id": "test",
+                            "svix-timestamp": "123",
+                            "svix-signature": "test",
+                        },
+                    )
 
                 assert response.status_code == 200
                 assert response.json()["status"] == "ignored"

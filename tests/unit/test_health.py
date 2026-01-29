@@ -11,7 +11,7 @@ would cause ALB to route traffic to unhealthy instances.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 
 class TestHealthEndpoint:
@@ -36,7 +36,8 @@ class TestHealthEndpoint:
         app.dependency_overrides[get_db] = mock_get_db
 
         try:
-            async with AsyncClient(app=app, base_url="http://test") as client:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.get("/health")
 
             assert response.status_code == 200
@@ -65,7 +66,8 @@ class TestHealthEndpoint:
         app.dependency_overrides[get_db] = mock_get_db
 
         try:
-            async with AsyncClient(app=app, base_url="http://test") as client:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.get("/health")
 
             # ALB expects 503 for unhealthy instances

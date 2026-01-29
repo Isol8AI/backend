@@ -20,10 +20,15 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/securechat")
 
-    # HuggingFace Configuration
-    HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN")
-    # Using HuggingFace Inference Providers router (OpenAI-compatible)
-    HF_API_URL: str = os.getenv("HF_API_URL", "https://router.huggingface.co/v1")
+    # Clerk Secret Key (for fetching user/org metadata)
+    CLERK_SECRET_KEY: Optional[str] = os.getenv("CLERK_SECRET_KEY")
+
+    # AWS Bedrock Configuration
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    BEDROCK_ENABLED: bool = os.getenv("BEDROCK_ENABLED", "true").lower() == "true"
+
+    # Credential encryption key (for user/org AWS creds stored in Clerk)
+    CREDENTIAL_ENCRYPTION_KEY: Optional[str] = os.getenv("CREDENTIAL_ENCRYPTION_KEY")
 
     # CORS Configuration (comma-separated origins)
     CORS_ORIGINS: str = "http://localhost:3000"
@@ -38,23 +43,11 @@ class Settings(BaseSettings):
     ENCLAVE_MODE: str = os.getenv("ENCLAVE_MODE", "mock")  # "mock" or "nitro"
     ENCLAVE_INFERENCE_TIMEOUT: float = float(os.getenv("ENCLAVE_INFERENCE_TIMEOUT", "120.0"))
 
-    # Memory extraction model (smaller, faster model for fact extraction)
-    EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "Qwen/Qwen2.5-7B-Instruct")
-
     @field_validator("CLERK_ISSUER")
     @classmethod
     def validate_clerk_issuer(cls, v: str) -> str:
         if "your-clerk-domain" in v:
             raise ValueError("CLERK_ISSUER not configured. Set the CLERK_ISSUER environment variable.")
-        return v
-
-    @field_validator("HUGGINGFACE_TOKEN")
-    @classmethod
-    def validate_hf_token(cls, v: Optional[str]) -> Optional[str]:
-        if not v:
-            import warnings
-
-            warnings.warn("HUGGINGFACE_TOKEN not set. LLM features will not work.", UserWarning)
         return v
 
     class Config:
@@ -65,13 +58,22 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Available models for the frontend selector
-# Models confirmed to work via HuggingFace Inference Providers (serverless)
-# Query available models: curl "https://huggingface.co/api/models?inference_provider=all&pipeline_tag=text-generation"
+# AWS Bedrock inference profiles (required for on-demand invocation)
+# See: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+# Using US inference profiles - change prefix for other regions (eu., apac., etc.)
 AVAILABLE_MODELS = [
-    {"id": "Qwen/Qwen2.5-72B-Instruct", "name": "Qwen 2.5 72B"},
-    {"id": "meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B"},
-    {"id": "google/gemma-2-9b-it", "name": "Gemma 2 9B"},
-    {"id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "name": "DeepSeek R1 32B"},
-    {"id": "Qwen/Qwen2.5-7B-Instruct", "name": "Qwen 2.5 7B"},
-    {"id": "meta-llama/Llama-3.1-8B-Instruct", "name": "Llama 3.1 8B"},
+    # Anthropic Claude (may require use case submission on first use)
+    {"id": "us.anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet"},
+    {"id": "us.anthropic.claude-3-5-haiku-20241022-v1:0", "name": "Claude 3.5 Haiku"},
+    {"id": "us.anthropic.claude-3-opus-20240229-v1:0", "name": "Claude 3 Opus"},
+    # Meta Llama
+    {"id": "us.meta.llama3-3-70b-instruct-v1:0", "name": "Llama 3.3 70B"},
+    {"id": "us.meta.llama3-2-90b-instruct-v1:0", "name": "Llama 3.2 90B"},
+    {"id": "us.meta.llama3-2-11b-instruct-v1:0", "name": "Llama 3.2 11B"},
+    {"id": "us.meta.llama3-1-70b-instruct-v1:0", "name": "Llama 3.1 70B"},
+    {"id": "us.meta.llama3-1-8b-instruct-v1:0", "name": "Llama 3.1 8B"},
+    # Amazon Nova
+    {"id": "us.amazon.nova-pro-v1:0", "name": "Amazon Nova Pro"},
+    {"id": "us.amazon.nova-lite-v1:0", "name": "Amazon Nova Lite"},
+    {"id": "us.amazon.nova-micro-v1:0", "name": "Amazon Nova Micro"},
 ]

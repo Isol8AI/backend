@@ -20,7 +20,6 @@ from core.crypto import EncryptedPayload
 from core.enclave import get_enclave
 from core.enclave.mock_enclave import StreamChunk
 
-# Note: MemoryService removed during migration to mem0
 from models.audit_log import AuditLog
 from models.message import Message, MessageRole
 from models.session import Session
@@ -454,10 +453,11 @@ class ChatService:
         org_id: Optional[str],
         encrypted_message: EncryptedPayload,
         encrypted_history: list[EncryptedPayload],
-        encrypted_memories: list[EncryptedPayload],
         facts_context: Optional[str],
         model: str,
         client_transport_public_key: str,
+        user_metadata: Optional[dict] = None,
+        org_metadata: Optional[dict] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Process an encrypted message through the enclave with streaming.
@@ -475,10 +475,11 @@ class ChatService:
             org_id: Organization context (if any)
             encrypted_message: User's message encrypted to enclave
             encrypted_history: Previous messages re-encrypted to enclave
-            encrypted_memories: Relevant memories re-encrypted to enclave for context
             facts_context: Client-side formatted facts context (already decrypted, plaintext)
             model: LLM model to use
             client_transport_public_key: Client's ephemeral key for response encryption
+            user_metadata: User's Clerk privateMetadata (for AWS credentials)
+            org_metadata: Org's Clerk privateMetadata (for AWS credentials)
 
         Yields:
             StreamChunk objects with encrypted content
@@ -500,12 +501,15 @@ class ChatService:
         async for chunk in enclave.process_message_streaming(
             encrypted_message=encrypted_message,
             encrypted_history=encrypted_history,
-            encrypted_memories=encrypted_memories,
             facts_context=facts_context,
             storage_public_key=storage_key,
             client_public_key=client_key,
             session_id=session_id,
             model=model,
+            user_id=user_id,
+            org_id=org_id,
+            user_metadata=user_metadata,
+            org_metadata=org_metadata,
         ):
             # On final chunk, store the messages and memories
             if chunk.is_final and not chunk.error:
@@ -530,14 +534,6 @@ class ChatService:
 
                     # Update session timestamp
                     await self.update_session_timestamp(session_id)
-
-                # Store extracted memories (if any)
-                if chunk.extracted_memories:
-                    await self._store_extracted_memories(
-                        memories=chunk.extracted_memories,
-                        user_id=user_id,
-                        org_id=org_id,
-                    )
 
             yield chunk
 
@@ -565,21 +561,6 @@ class ChatService:
             )
         )
         return result.scalar_one_or_none()
-
-    async def _store_extracted_memories(
-        self,
-        memories: list,
-        user_id: str,
-        org_id: Optional[str],
-    ) -> None:
-        """
-        Store extracted memories from conversation.
-
-        Note: Disabled during migration to mem0.
-        Plan 2 will handle memory storage entirely within the enclave.
-        """
-        # No-op - memory extraction returns empty list during migration
-        pass
 
     async def verify_can_send_encrypted(
         self,

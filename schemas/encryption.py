@@ -224,9 +224,6 @@ class SendEncryptedMessageRequest(BaseModel):
     encrypted_history: Optional[list[EncryptedPayload]] = Field(
         None, description="Previous messages re-encrypted to enclave for context"
     )
-    encrypted_memories: Optional[list[EncryptedPayload]] = Field(
-        None, description="Relevant memories re-encrypted to enclave for context injection"
-    )
     facts_context: Optional[str] = Field(
         None, description="Client-side formatted facts context string (already decrypted by client)"
     )

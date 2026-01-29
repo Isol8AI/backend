@@ -14,15 +14,16 @@ What the enclave does:
 5. Encrypts response for transport back to client
 """
 
+import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
-import httpx
-
 from core.config import settings
+from core.services.credential_service import AWSCredentials, CredentialService
+from core.services.bedrock_client import BedrockClientFactory
 from core.crypto import (
     KeyPair,
     EncryptedPayload,
@@ -30,7 +31,6 @@ from core.crypto import (
     encrypt_to_public_key,
     decrypt_with_private_key,
 )
-from core.enclave.fact_extraction import FactExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +100,6 @@ class StreamChunk:
     - encrypted_content: Encrypted chunk for client (during streaming)
     - encrypted_thinking: Encrypted thinking process chunk (during streaming)
     - stored_messages: Final encrypted messages for storage (at end)
-    - extracted_memories: Memories extracted from conversation (at end)
-    - extracted_facts: Facts extracted from conversation (at end, encrypted for client)
     - is_final: True for the last chunk
     - error: Error message if something went wrong
     """
@@ -110,8 +108,6 @@ class StreamChunk:
     encrypted_thinking: Optional[EncryptedPayload] = None
     stored_user_message: Optional[EncryptedPayload] = None
     stored_assistant_message: Optional[EncryptedPayload] = None
-    extracted_memories: Optional[List["ExtractedMemory"]] = None  # Forward reference
-    extracted_facts: Optional[List["ExtractedFact"]] = None  # Facts for client-side storage
     model_used: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
@@ -141,41 +137,6 @@ class EnclaveInfo:
             "enclave_public_key": self.enclave_public_key.hex(),
             "attestation_document": (self.attestation_document.hex() if self.attestation_document else None),
         }
-
-
-@dataclass
-class ExtractedMemory:
-    """
-    A memory extracted from conversation and ready for storage.
-
-    This is returned by the enclave's extract_memories method.
-    The content is already encrypted to the storage key.
-    """
-
-    encrypted_content: EncryptedPayload
-    embedding: List[float]
-    sector: str  # episodic, semantic, procedural, emotional, reflective
-    tags: List[str]
-    metadata: Dict  # Contains iv, auth_tag for decryption
-    salience: float = 0.5  # Importance score 0.0-1.0, computed from plaintext
-
-
-@dataclass
-class ExtractedFact:
-    """
-    A temporal fact extracted from conversation.
-
-    Facts are structured knowledge in subject-predicate-object form.
-    The encrypted_payload contains the full fact data, encrypted to the
-    client's transport key so they can decrypt and store locally.
-
-    Attributes:
-        encrypted_payload: Encrypted JSON containing {subject, predicate, object, confidence, type, entities}
-        fact_id: Unique identifier for the fact
-    """
-
-    encrypted_payload: EncryptedPayload
-    fact_id: str
 
 
 # =============================================================================
@@ -323,34 +284,27 @@ class MockEnclave(EnclaveInterface):
     - In production (Nitro), the private key never leaves the enclave
     """
 
-    # Model for memory extraction (configurable via EXTRACTION_MODEL env var)
-    # Uses smaller, faster model for efficient fact extraction
-    EXTRACTION_MODEL = settings.EXTRACTION_MODEL
-
     def __init__(
         self,
-        inference_url: str = "https://router.huggingface.co/v1",
-        inference_token: Optional[str] = None,
+        aws_region: str = "us-east-1",
         inference_timeout: float = 120.0,
     ):
         """
         Initialize the mock enclave.
 
         Args:
-            inference_url: LLM inference API URL
-            inference_token: Bearer token for inference API
+            aws_region: AWS region for Bedrock
             inference_timeout: Timeout for inference requests
         """
         # Generate enclave keypair (in production, this happens inside Nitro)
         self._keypair: KeyPair = generate_x25519_keypair()
 
-        # Inference configuration
-        self._inference_url = inference_url
-        self._inference_token = inference_token
+        # AWS Bedrock configuration
+        self._aws_region = aws_region
         self._inference_timeout = inference_timeout
 
-        # Pattern-based fact extractor (fast, no LLM needed)
-        self._fact_extractor = FactExtractor()
+        # Default credentials (IAM role) - can be overridden per-request
+        self._default_credentials = AWSCredentials(region=aws_region)
 
         logger.info("MockEnclave initialized with public key: %s", self._keypair.public_key.hex()[:16] + "...")
 
@@ -559,12 +513,15 @@ class MockEnclave(EnclaveInterface):
         self,
         encrypted_message: EncryptedPayload,
         encrypted_history: List[EncryptedPayload],
-        encrypted_memories: List[EncryptedPayload],
         facts_context: Optional[str],
         storage_public_key: bytes,
         client_public_key: bytes,
         session_id: str,
         model: str,
+        user_id: str = "",
+        org_id: Optional[str] = None,
+        user_metadata: Optional[dict] = None,
+        org_metadata: Optional[dict] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Process a chat message with encrypted streaming response.
@@ -572,19 +529,9 @@ class MockEnclave(EnclaveInterface):
         This is the main streaming API for routes. Each chunk's content
         is encrypted to the client's public key for secure transport.
 
-        Zero-Trust Memory Flow (Option A):
-        - Client searches memories via /memories/search/encrypted (enclave generates embedding)
-        - Client receives encrypted memories (encrypted to user's key)
-        - Client decrypts with private key (key NEVER leaves client)
-        - Client re-encrypts memories TO enclave's public key
-        - Enclave decrypts using its own private key
-
-        This ensures user's private key never leaves the browser.
-
         Args:
             encrypted_message: User's message encrypted to enclave
             encrypted_history: Previous messages re-encrypted to enclave
-            encrypted_memories: Relevant memories re-encrypted TO enclave by client
             facts_context: Client-side formatted facts context (already decrypted, plaintext)
             storage_public_key: Key for storage encryption (user or org)
             client_public_key: Client's ephemeral key for response encryption
@@ -627,26 +574,9 @@ class MockEnclave(EnclaveInterface):
                     else f"  [{i}] {msg.role}: {msg.content}"
                 )
 
-            # 2b. Decrypt memories (Option A: client searched, decrypted, re-encrypted TO enclave)
-            _debug_print("\n🧠 STEP 2b: Decrypt Memories (Zero-Trust Option A)")
-            _debug_print("-" * 60)
-            _debug_print(f"Memories provided by client: {len(encrypted_memories)}")
-
-            # Client already did the search and re-encrypted memories TO enclave's public key
-            # We just decrypt them using enclave's private key
-            memories = self._decrypt_memories(encrypted_memories)
-
-            if memories:
-                for i, mem in enumerate(memories):
-                    preview = mem[:60] + "..." if len(mem) > 60 else mem
-                    _debug_print(f"  [{i}] {preview}")
-                _debug_print(f"✅ Decrypted {len(memories)} memories from client")
-            else:
-                _debug_print("  No memories provided by client")
-
-            # 2c. Log facts context if provided
+            # 2b. Log facts context if provided
             if facts_context:
-                _debug_print("\n📋 STEP 2c: Session Facts Context")
+                _debug_print("\n📋 STEP 2b: Session Facts Context")
                 _debug_print("-" * 60)
                 preview = facts_context[:200] + "..." if len(facts_context) > 200 else facts_context
                 _debug_print(f"Facts context: {preview}")
@@ -656,7 +586,6 @@ class MockEnclave(EnclaveInterface):
             _debug_print("-" * 60)
             _debug_print(f"Model: {model}")
             _debug_print(f"Messages count: {len(history) + 1}")
-            _debug_print(f"Memories injected: {len(memories)}")
             _debug_print(f"Facts context: {'Yes' if facts_context else 'No'}")
 
             full_response = ""
@@ -666,8 +595,15 @@ class MockEnclave(EnclaveInterface):
             _debug_print("-" * 60)
             _debug_print(f"Client Transport Public Key: {client_public_key.hex()[:32]}...")
 
+            # Resolve credentials for this request
+            credentials = CredentialService.resolve_credentials(
+                user_metadata=user_metadata,
+                org_metadata=org_metadata,
+            )
+            _debug_print(f"Using credentials: {'custom' if credentials.is_custom else 'IAM role'}")
+
             async for chunk, is_thinking in self._call_inference_stream(
-                user_content, history, model, memories, facts_context
+                user_content, history, model, None, facts_context, credentials
             ):
                 chunk_count += 1
 
@@ -732,56 +668,16 @@ class MockEnclave(EnclaveInterface):
             estimated_input_tokens = len(user_content) // 4 + sum(len(m.content) for m in history) // 4
             estimated_output_tokens = len(full_response) // 4
 
-            # 5. Extract memories from conversation (async - runs in background)
-            _debug_print("\n🧠 STEP 6: Extract Memories from Conversation")
-            _debug_print("-" * 60)
-            extracted_memories = []
-            try:
-                extracted_memories = await self.extract_memories(
-                    user_message=user_content,
-                    assistant_response=full_response,
-                    storage_public_key=storage_public_key,
-                )
-                _debug_print(f"Extracted {len(extracted_memories)} memories")
-                for mem in extracted_memories:
-                    _debug_print(f"  - [{mem.sector}]")
-            except Exception as e:
-                logger.warning(f"Memory extraction failed (non-fatal): {e}")
-                _debug_print(f"  Memory extraction failed (non-fatal): {e}")
-
-            # 6. Extract facts from conversation (encrypted to client for local storage)
-            _debug_print("\n📝 STEP 7: Extract Facts from Conversation")
-            _debug_print("-" * 60)
-            extracted_facts = []
-            try:
-                extracted_facts = await self.extract_facts(
-                    user_message=user_content,
-                    assistant_response=full_response,
-                    client_public_key=client_public_key,
-                )
-                _debug_print(f"Extracted {len(extracted_facts)} facts")
-                for fact in extracted_facts:
-                    _debug_print(f"  - fact_id: {fact.fact_id[:8]}...")
-            except Exception as e:
-                logger.warning(f"Fact extraction failed (non-fatal): {e}")
-                _debug_print(f"  Fact extraction failed (non-fatal): {e}")
-
             _debug_print("\n📋 FINAL SUMMARY")
             _debug_print("-" * 60)
-            _debug_print(f"Session facts injected: {'Yes' if facts_context else 'No'}")
-            _debug_print(f"Long-term memories injected: {len(memories)}")
             _debug_print(f"Input tokens (estimated): {estimated_input_tokens}")
             _debug_print(f"Output tokens (estimated): {estimated_output_tokens}")
-            _debug_print(f"New memories extracted: {len(extracted_memories)}")
-            _debug_print(f"New facts extracted: {len(extracted_facts)}")
             _debug_print("=" * 80 + "\n")
 
-            # 7. Final chunk with stored messages, memories, and facts
+            # 6. Final chunk with stored messages
             yield StreamChunk(
                 stored_user_message=stored_user,
                 stored_assistant_message=stored_assistant,
-                extracted_memories=extracted_memories if extracted_memories else None,
-                extracted_facts=extracted_facts if extracted_facts else None,
                 model_used=model,
                 input_tokens=estimated_input_tokens,
                 output_tokens=estimated_output_tokens,
@@ -820,35 +716,6 @@ class MockEnclave(EnclaveInterface):
             )
         return history
 
-    def _decrypt_memories(
-        self,
-        encrypted_memories: List[EncryptedPayload],
-    ) -> List[str]:
-        """
-        Decrypt memories for context injection.
-
-        Memories are re-encrypted to the enclave by the client,
-        so we use the CLIENT_TO_ENCLAVE context for decryption.
-
-        Returns:
-            List of decrypted memory texts
-        """
-        from . import EncryptionContext
-
-        memories = []
-        for payload in encrypted_memories:
-            try:
-                plaintext = decrypt_with_private_key(
-                    self._keypair.private_key,
-                    payload,
-                    EncryptionContext.CLIENT_TO_ENCLAVE.value,
-                )
-                memories.append(plaintext.decode("utf-8"))
-            except Exception as e:
-                logger.warning(f"Failed to decrypt memory (skipping): {e}")
-                continue
-        return memories
-
     def _build_processed_message(
         self,
         user_content: str,
@@ -885,26 +752,30 @@ class MockEnclave(EnclaveInterface):
             output_tokens=output_tokens,
         )
 
-    def _build_messages_for_inference(
+    def _build_converse_request(
         self,
         user_message: str,
         history: List[DecryptedMessage],
         memories: Optional[List[str]] = None,
         facts_context: Optional[str] = None,
-    ) -> List[Dict[str, str]]:
+    ) -> Tuple[str, List[Dict]]:
         """
-        Build OpenAI-compatible messages array for LLM.
+        Build request for AWS Bedrock Converse API.
+
+        The Converse API provides a unified interface for all Bedrock models.
+        It uses a 'system' field separate from messages, and messages contain
+        'content' as an array of content blocks.
 
         Args:
             user_message: The current user message
             history: Previous conversation messages
-            memories: Optional list of relevant memory texts to inject (from long-term storage)
-            facts_context: Optional client-side formatted facts context string (session facts)
+            memories: Deprecated, ignored (kept for API compatibility)
+            facts_context: Deprecated, ignored (kept for API compatibility)
 
         Returns:
-            List of messages in OpenAI format
+            Tuple of (system_prompt, messages) for Converse API
         """
-        # Build system prompt with optional memory and facts context
+        # Build system prompt
         system_content = (
             "You are a helpful AI assistant. Note: Previous assistant "
             "messages may contain '[Response from model-name]' prefixes - "
@@ -913,42 +784,20 @@ class MockEnclave(EnclaveInterface):
             "own responses; just respond naturally."
         )
 
-        # Inject facts context (client-side session facts) if available
-        if facts_context:
-            system_content += f"\n\n{facts_context}"
-
-        # Inject memories (long-term storage) into system prompt if available
-        if memories:
-            memory_context = "\n\n## Long-Term Memory\n"
-            memory_context += "The following facts are from long-term memory:\n"
-            for i, memory in enumerate(memories, 1):
-                memory_context += f"- {memory}\n"
-            memory_context += "\nUse this context naturally in your response when relevant, but don't explicitly mention that you're using memories."
-            system_content += memory_context
-
-        messages = [
-            {
-                "role": "system",
-                "content": system_content,
-            }
-        ]
-
+        # Build messages array in Converse API format
+        # Each message has 'role' and 'content' (array of content blocks)
+        messages = []
         for msg in history:
-            messages.append(
-                {
-                    "role": msg.role,
-                    "content": msg.content,
-                }
-            )
+            messages.append({
+                "role": msg.role,
+                "content": [{"text": msg.content}],
+            })
+        messages.append({
+            "role": "user",
+            "content": [{"text": user_message}],
+        })
 
-        messages.append(
-            {
-                "role": "user",
-                "content": user_message,
-            }
-        )
-
-        return messages
+        return system_content, messages
 
     async def _call_inference(
         self,
@@ -957,47 +806,56 @@ class MockEnclave(EnclaveInterface):
         model: str,
         memories: Optional[List[str]] = None,
         facts_context: Optional[str] = None,
+        credentials: Optional[AWSCredentials] = None,
     ) -> Tuple[str, int, int]:
         """
-        Call LLM inference (non-streaming).
+        Call LLM inference (non-streaming) using AWS Bedrock Converse API.
 
         Returns:
             Tuple of (response_content, input_tokens, output_tokens)
         """
-        messages = self._build_messages_for_inference(user_message, history, memories, facts_context)
+        system_prompt, messages = self._build_converse_request(
+            user_message, history, memories, facts_context
+        )
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self._inference_url}/chat/completions",
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "max_tokens": 1024,
-                    "temperature": 0.7,
-                    "top_p": 0.95,
-                    "stream": False,
-                },
-                headers={
-                    "Authorization": f"Bearer {self._inference_token}",
-                    "Content-Type": "application/json",
-                },
-                timeout=self._inference_timeout,
+        creds = credentials or self._default_credentials
+        bedrock_client = BedrockClientFactory.create_client(
+            creds, timeout=self._inference_timeout
+        )
+
+        try:
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: bedrock_client.converse(
+                    modelId=model,
+                    messages=messages,
+                    system=[{"text": system_prompt}],
+                    inferenceConfig={
+                        "maxTokens": 4096,
+                        "temperature": 0.7,
+                    },
+                ),
             )
 
-            if response.status_code != 200:
-                logger.error(
-                    "Inference error %d: %s",
-                    response.status_code,
-                    response.text,
-                )
-                raise RuntimeError(f"Inference failed: {response.status_code}")
+            # Extract response content
+            output_message = response.get("output", {}).get("message", {})
+            content_blocks = output_message.get("content", [])
+            content = ""
+            for block in content_blocks:
+                if "text" in block:
+                    content += block["text"]
 
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            usage = data.get("usage", {})
-            input_tokens = usage.get("prompt_tokens", 0)
-            output_tokens = usage.get("completion_tokens", 0)
+            # Extract token usage
+            usage = response.get("usage", {})
+            input_tokens = usage.get("inputTokens", 0)
+            output_tokens = usage.get("outputTokens", 0)
+
             return content, input_tokens, output_tokens
+
+        except Exception as e:
+            logger.error(f"Bedrock inference error: {e}")
+            raise RuntimeError(f"Inference failed: {e}")
 
     async def _call_inference_stream(
         self,
@@ -1006,407 +864,131 @@ class MockEnclave(EnclaveInterface):
         model: str,
         memories: Optional[List[str]] = None,
         facts_context: Optional[str] = None,
+        credentials: Optional[AWSCredentials] = None,
     ) -> AsyncGenerator[Tuple[str, bool], None]:
         """
-        Call LLM inference with streaming, handling <think> tags.
+        Call AWS Bedrock LLM inference with streaming using the Converse API.
+
+        The Converse API provides a unified interface that works with ALL
+        Bedrock models (Claude, Llama, Titan, Mistral, etc.) without needing
+        model-specific request formats.
 
         Yields tuples of (text_chunk, is_thinking).
         """
-        messages = self._build_messages_for_inference(user_message, history, memories, facts_context)
+        # Build system prompt and messages
+        system_prompt, messages = self._build_converse_request(
+            user_message, history, memories, facts_context
+        )
 
-        # State for thinking tags
-        is_thinking = False
-        buffer = ""
+        # Use provided credentials or default
+        creds = credentials or self._default_credentials
 
-        print(f"[LLM] Starting inference with model: {model}")
-        print(f"[LLM] API URL: {self._inference_url}/chat/completions")
+        print(f"[LLM] Starting Bedrock Converse stream with model: {model}")
+        print(f"[LLM] Region: {creds.region}")
+        print(f"[LLM] Using custom credentials: {creds.is_custom}")
         print(f"[LLM] Messages count: {len(messages)}")
-        print(f"[LLM] Token present: {bool(self._inference_token)}")
-        print(
-            f"[LLM] Token value (first 10 chars): {str(self._inference_token)[:10] if self._inference_token else 'None'}..."
-        )
 
-        if not self._inference_token:
-            print("[LLM] ERROR: No inference token configured!")
-            yield ("Error: HuggingFace API token is not configured. Please set HUGGINGFACE_TOKEN.", False)
-            return
-
-        async with httpx.AsyncClient() as client:
-            try:
-                async with client.stream(
-                    "POST",
-                    f"{self._inference_url}/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": messages,
-                        "max_tokens": 4096,
-                        "temperature": 0.7,
-                        "top_p": 0.95,
-                        "stream": True,
-                    },
-                    headers={
-                        "Authorization": f"Bearer {self._inference_token}",
-                        "Content-Type": "application/json",
-                    },
-                    timeout=self._inference_timeout,
-                ) as response:
-                    print(f"[LLM] Response status: {response.status_code}")
-                    chunk_count = 0
-                    total_chars = 0
-                    if response.status_code != 200:
-                        error_text = await response.aread()
-                        logger.error(
-                            "[LLM] Stream inference error %d: %s",
-                            response.status_code,
-                            error_text.decode() if isinstance(error_text, bytes) else error_text,
-                        )
-                        yield (f"Error: Inference failed with status {response.status_code}", False)
-                        return
-
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str.strip() == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                                if "choices" in data and len(data["choices"]) > 0:
-                                    delta = data["choices"][0].get("delta", {})
-                                    content = delta.get("content", "")
-
-                                    if not content:
-                                        continue
-
-                                    # Track chunks and characters
-                                    chunk_count += 1
-                                    total_chars += len(content)
-
-                                    # Process thinking tags
-                                    buffer += content
-
-                                    while buffer:
-                                        if not is_thinking:
-                                            # Check for start of think tag
-                                            if "<think>" in buffer:
-                                                pre_think, post_think = buffer.split("<think>", 1)
-                                                if pre_think:
-                                                    yield (pre_think, False)
-                                                is_thinking = True
-                                                buffer = post_think
-                                            else:
-                                                # Optimization: if no partial tag, yield everything
-                                                # Check if buffer ends with partial tag like "<", "<t", etc.
-                                                if any(
-                                                    buffer.endswith(x)
-                                                    for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]
-                                                ):
-                                                    # Possible split tag, keep in buffer
-                                                    break
-                                                else:
-                                                    yield (buffer, False)
-                                                    buffer = ""
-                                        else:
-                                            # Inside think block, check for end tag
-                                            if "</think>" in buffer:
-                                                think_content, post_think = buffer.split("</think>", 1)
-                                                if think_content:
-                                                    yield (think_content, True)
-                                                is_thinking = False
-                                                buffer = post_think
-                                            else:
-                                                # Optimization: if no partial closing tag
-                                                if any(
-                                                    buffer.endswith(x)
-                                                    for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
-                                                ):
-                                                    break
-                                                else:
-                                                    yield (buffer, True)
-                                                    buffer = ""
-
-                            except json.JSONDecodeError:
-                                logger.debug(f"[LLM] Failed to parse JSON: {data_str[:100]}")
-                                continue
-
-                    # Flush remaining buffer
-                    if buffer:
-                        print(f"[LLM] Flushing remaining buffer: {len(buffer)} chars")
-                        yield (buffer, is_thinking)
-
-                    print(f"[LLM] Stream completed: {chunk_count} chunks, {total_chars} total chars")
-
-            except httpx.ReadTimeout:
-                print(f"[LLM] Inference timeout after {self._inference_timeout} seconds")
-                yield ("Error: The model is taking too long to respond.", False)
-            except httpx.ConnectError as e:
-                print(f"[LLM] Connection error: {str(e)}")
-                yield (f"Error: Could not connect to inference API: {str(e)}", False)
-            except Exception as e:
-                print(f"[LLM] Inference error: {str(e)}")
-                import traceback
-
-                traceback.print_exc()
-                yield (f"Error: {str(e)}", False)
-
-    # -------------------------------------------------------------------------
-    # Memory Extraction Methods
-    # -------------------------------------------------------------------------
-
-    def _build_extraction_prompt(
-        self,
-        user_message: str,
-        assistant_response: str,
-    ) -> str:
-        """
-        Build the prompt for memory extraction LLM.
-        """
-        return f"""Extract memorable facts from this conversation as JSON.
-Only extract facts worth remembering long-term (preferences, facts about the user, how-to knowledge, etc.).
-If nothing is worth remembering, return an empty array [].
-
-Categorize each fact as one of:
-- semantic: Facts and knowledge (e.g., "User's favorite color is blue", "User works at Google")
-- episodic: Events and experiences (e.g., "User went to Paris last week")
-- procedural: How-to and preferences (e.g., "User prefers TypeScript over JavaScript")
-- emotional: Feelings and sentiments (e.g., "User is excited about their new project")
-- reflective: Meta-observations (e.g., "User tends to ask detailed follow-up questions")
-
-Rate each fact's importance (salience) from 0.0 to 1.0:
-- 0.9-1.0: Critical personal info (name, job, location, core preferences)
-- 0.7-0.8: Important preferences or facts that affect future interactions
-- 0.5-0.6: Useful context that may be relevant later
-- 0.3-0.4: Minor observations, less likely to be needed
-
-Conversation:
-User: {user_message}
-Assistant: {assistant_response}
-
-Output ONLY a valid JSON array with this exact format (no other text):
-[{{"text": "the memorable fact", "sector": "semantic|episodic|procedural|emotional|reflective", "salience": 0.7}}]
-
-IMPORTANT: Do NOT include tags or any other metadata that could reveal content details.
-The sector and salience provide sufficient categorization.
-
-If nothing memorable, output: []"""
-
-    async def _call_extraction_llm(self, prompt: str) -> List[Dict]:
-        """
-        Call the extraction LLM to parse memories from conversation.
-
-        Returns:
-            List of extracted memories with text, sector, and tags
-        """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self._inference_url}/chat/completions",
-                    json={
-                        "model": self.EXTRACTION_MODEL,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 1024,
-                        "temperature": 0.3,  # Lower temp for structured output
+            # Create Bedrock client
+            bedrock_client = BedrockClientFactory.create_client(
+                creds,
+                timeout=self._inference_timeout,
+            )
+
+            # Call Bedrock Converse API with streaming
+            # Using run_in_executor for async compatibility with sync boto3
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: bedrock_client.converse_stream(
+                    modelId=model,
+                    messages=messages,
+                    system=[{"text": system_prompt}],
+                    inferenceConfig={
+                        "maxTokens": 4096,
+                        "temperature": 0.7,
                     },
-                    headers={
-                        "Authorization": f"Bearer {self._inference_token}",
-                        "Content-Type": "application/json",
-                    },
-                    timeout=60.0,
-                )
+                ),
+            )
 
-                if response.status_code != 200:
-                    logger.error(
-                        "Extraction LLM error %d: %s",
-                        response.status_code,
-                        response.text,
-                    )
-                    return []
+            # State for thinking tags
+            is_thinking = False
+            buffer = ""
+            chunk_count = 0
+            total_chars = 0
 
-                data = response.json()
-                content = data["choices"][0]["message"]["content"].strip()
+            # Process streaming response events
+            for event in response["stream"]:
+                # contentBlockDelta contains the text chunks
+                if "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"].get("delta", {})
+                    content = delta.get("text", "")
 
-                # Parse JSON from response
-                # Handle potential markdown code blocks
-                if content.startswith("```"):
-                    content = content.split("```")[1]
-                    if content.startswith("json"):
-                        content = content[4:]
-                    content = content.strip()
+                    if not content:
+                        continue
 
-                extracted = json.loads(content)
+                    chunk_count += 1
+                    total_chars += len(content)
 
-                if not isinstance(extracted, list):
-                    logger.warning("Extraction LLM returned non-list: %s", content)
-                    return []
+                    # Process thinking tags (for models that use them)
+                    buffer += content
 
-                return extracted
+                    while buffer:
+                        if not is_thinking:
+                            if "<think>" in buffer:
+                                pre_think, post_think = buffer.split("<think>", 1)
+                                if pre_think:
+                                    yield (pre_think, False)
+                                is_thinking = True
+                                buffer = post_think
+                            else:
+                                if any(
+                                    buffer.endswith(x)
+                                    for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]
+                                ):
+                                    break
+                                else:
+                                    yield (buffer, False)
+                                    buffer = ""
+                        else:
+                            if "</think>" in buffer:
+                                think_content, post_think = buffer.split("</think>", 1)
+                                if think_content:
+                                    yield (think_content, True)
+                                is_thinking = False
+                                buffer = post_think
+                            else:
+                                if any(
+                                    buffer.endswith(x)
+                                    for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
+                                ):
+                                    break
+                                else:
+                                    yield (buffer, True)
+                                    buffer = ""
 
-        except json.JSONDecodeError as e:
-            logger.warning("Failed to parse extraction JSON: %s", str(e))
-            return []
+                # messageStop signals end of response
+                elif "messageStop" in event:
+                    stop_reason = event["messageStop"].get("stopReason", "")
+                    print(f"[LLM] Stream stopped: {stop_reason}")
+
+                # metadata contains token usage
+                elif "metadata" in event:
+                    usage = event["metadata"].get("usage", {})
+                    print(f"[LLM] Usage - input: {usage.get('inputTokens', 0)}, output: {usage.get('outputTokens', 0)}")
+
+            # Flush remaining buffer
+            if buffer:
+                print(f"[LLM] Flushing remaining buffer: {len(buffer)} chars")
+                yield (buffer, is_thinking)
+
+            print(f"[LLM] Bedrock stream completed: {chunk_count} chunks, {total_chars} total chars")
+
         except Exception as e:
-            logger.error("Extraction LLM error: %s", str(e))
-            return []
-
-    def encrypt_for_memory_storage(
-        self,
-        plaintext: bytes,
-        storage_public_key: bytes,
-    ) -> EncryptedPayload:
-        """
-        Encrypt memory content for storage.
-
-        Uses MEMORY_STORAGE context for domain separation.
-        """
-        from . import EncryptionContext
-
-        return encrypt_to_public_key(
-            storage_public_key,
-            plaintext,
-            EncryptionContext.MEMORY_STORAGE.value,
-        )
-
-    async def extract_memories(
-        self,
-        user_message: str,
-        assistant_response: str,
-        storage_public_key: bytes,
-    ) -> List[ExtractedMemory]:
-        """
-        Extract memories from a conversation turn.
-
-        Note: Temporarily disabled during migration to mem0.
-        Plan 2 will implement memory extraction and storage via mem0 inside the enclave.
-        """
-        # No-op during migration - mem0 will handle this in Plan 2
-        return []
-
-    def generate_embedding_from_encrypted(
-        self,
-        encrypted_query: EncryptedPayload,
-    ) -> List[float]:
-        """
-        Decrypt a query and generate its embedding.
-
-        Note: Temporarily disabled during migration to mem0.
-        mem0 handles embedding generation internally.
-        """
-        # No-op during migration - mem0 handles embeddings
-        return []
-
-    async def search_and_decrypt_memories(
-        self,
-        query_text: str,
-        user_id: str,
-        org_id: Optional[str],
-        storage_private_key: bytes,
-        limit: int = 5,
-    ) -> List[str]:
-        """
-        Search memories by semantic similarity and decrypt results.
-
-        Note: Temporarily disabled during migration to mem0.
-        Plan 2 will implement this with mem0 inside the enclave.
-
-        Args:
-            query_text: Plaintext query (already decrypted user message)
-            user_id: User ID for memory search
-            org_id: Optional org ID for org context
-            storage_private_key: User's or org's private key for decrypting memories
-            limit: Maximum number of memories to return
-
-        Returns:
-            List of decrypted memory texts (empty during migration)
-        """
-        logger.info("[enclave] Memory search disabled during migration to mem0")
-        return []
-
-    async def extract_facts(
-        self,
-        user_message: str,
-        assistant_response: str,
-        client_public_key: bytes,
-    ) -> List[ExtractedFact]:
-        """
-        Extract temporal facts from a conversation turn.
-
-        Facts are structured knowledge (subject-predicate-object) that can be
-        queried later. They are encrypted to the client's transport key so
-        the client can decrypt and store them in local IndexedDB.
-
-        Uses pattern-based extraction (FactExtractor) for speed instead of LLM.
-
-        Args:
-            user_message: Plaintext user message
-            assistant_response: Plaintext assistant response
-            client_public_key: Client's transport key for encrypting facts
-
-        Returns:
-            List of ExtractedFact objects (encrypted for client)
-        """
-        import uuid
-
-        # Use pattern-based extraction (fast, no LLM needed)
-        extracted = self._fact_extractor.extract(
-            user_message=user_message,
-            assistant_response=assistant_response,
-        )
-
-        if not extracted:
-            logger.debug("No facts extracted from conversation")
-            return []
-
-        logger.info(f"Extracted {len(extracted)} facts via pattern matching")
-
-        facts = []
-        for item in extracted:
-            try:
-                # Skip low confidence facts
-                if item.confidence < 0.5:
-                    continue
-
-                # Generate fact ID
-                fact_id = str(uuid.uuid4())
-
-                # Build fact data from ExtractedFact dataclass
-                fact_data = {
-                    "id": fact_id,
-                    "subject": item.subject,
-                    "predicate": item.predicate,
-                    "object": item.object,
-                    "confidence": item.confidence,
-                    "type": item.type,
-                    "source": item.source,
-                    "entities": item.entities,
-                }
-
-                # Encrypt fact data to client's transport key
-                # Use ENCLAVE_TO_CLIENT context to match frontend decryption
-                from . import EncryptionContext
-
-                fact_json = json.dumps(fact_data).encode("utf-8")
-                encrypted_fact = encrypt_to_public_key(
-                    recipient_public_key=client_public_key,
-                    plaintext=fact_json,
-                    context=EncryptionContext.ENCLAVE_TO_CLIENT.value,
-                )
-
-                facts.append(
-                    ExtractedFact(
-                        encrypted_payload=encrypted_fact,
-                        fact_id=fact_id,
-                    )
-                )
-
-                logger.debug(
-                    f"Extracted fact: {item.subject} {item.predicate} {item.object} (confidence: {item.confidence})"
-                )
-
-            except Exception as e:
-                logger.warning(f"Failed to process extracted fact: {e}")
-                continue
-
-        logger.info(f"Successfully processed {len(facts)} facts")
-        return facts
+            print(f"[LLM] Bedrock inference error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            yield (f"Error: {str(e)}", False)
 
 
 # =============================================================================
@@ -1432,8 +1014,7 @@ def get_enclave() -> MockEnclave:
         from core.config import settings
 
         _enclave_instance = MockEnclave(
-            inference_url=settings.HF_API_URL,
-            inference_token=settings.HUGGINGFACE_TOKEN,
+            aws_region=settings.AWS_REGION,
             inference_timeout=settings.ENCLAVE_INFERENCE_TIMEOUT,
         )
     return _enclave_instance
