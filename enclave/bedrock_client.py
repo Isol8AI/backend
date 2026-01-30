@@ -198,6 +198,33 @@ class BedrockClient:
             raw_response=data,
         )
 
+    def _parse_event_stream_message(self, data: bytes) -> dict:
+        """
+        Parse single AWS event stream message into event dict.
+
+        Format:
+        - Bytes 0-3: total length (big-endian)
+        - Bytes 4-7: headers length (big-endian)
+        - Bytes 8-11: prelude CRC
+        - Bytes 12 to 12+headers_length: headers
+        - Remaining (minus 4 byte CRC): payload
+        """
+        if len(data) < 16:
+            return {}
+
+        headers_length = int.from_bytes(data[4:8], "big")
+        headers_end = 12 + headers_length
+
+        # Extract payload (skip 4-byte message CRC at end)
+        payload = data[headers_end:-4]
+
+        if payload:
+            try:
+                return json.loads(payload.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return {}
+        return {}
+
     def converse_stream(
         self,
         model_id: str,
@@ -206,21 +233,12 @@ class BedrockClient:
         inference_config: Optional[Dict[str, Any]] = None,
     ) -> Generator[Dict[str, Any], None, None]:
         """
-        Call Bedrock Converse API with streaming.
+        Call Bedrock Converse API with real streaming.
 
-        Yields events as they arrive:
-        - {"contentBlockDelta": {"delta": {"text": "chunk"}}}
-        - {"messageStop": {"stopReason": "end_turn"}}
-        - {"metadata": {"usage": {"inputTokens": N, "outputTokens": N}}}
-
-        Args:
-            model_id: Model identifier
-            messages: Conversation messages
-            system: System prompts
-            inference_config: Inference configuration
-
-        Yields:
-            Event dictionaries from the stream
+        Yields event dictionaries:
+        - {"type": "content", "text": "chunk"}
+        - {"type": "stop", "reason": "end_turn"}
+        - {"type": "metadata", "usage": {"inputTokens": N, "outputTokens": N}}
         """
         # Build request body
         body = {"modelId": model_id, "messages": messages}
@@ -240,41 +258,33 @@ class BedrockClient:
             "Accept": "application/vnd.amazon.eventstream",
         }
 
-        # Sign request using botocore (handles all SigV4 complexity)
+        # Sign request
         signed_headers = self._sign_request("POST", url, headers, body_bytes)
 
-        # For streaming, we need a different approach - connect and read events
-        # This is a simplified implementation for M4
-        # Full implementation would parse AWS event stream format
-        response = self.http_client.request("POST", url, signed_headers, body_bytes)
+        # Stream response
+        try:
+            for raw_message in self.http_client.request_stream("POST", url, signed_headers, body_bytes):
+                event = self._parse_event_stream_message(raw_message)
 
-        if response.status != 200:
-            error_msg = f"Bedrock stream error: {response.status}"
-            try:
-                error_body = response.json()
-                error_msg += f" - {error_body.get('message', response.body.decode('utf-8'))}"
-            except Exception:
-                error_msg += f" - {response.body.decode('utf-8')}"
-            raise Exception(error_msg)
+                if not event:
+                    continue
 
-        # Parse event stream response
-        # AWS event stream format is binary, but for M4 testing we'll use non-streaming
-        # and simulate events from the full response
-        full_response = self._parse_converse_response(model_id, response.json())
+                if "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"].get("delta", {})
+                    text = delta.get("text", "")
+                    if text:
+                        yield {"type": "content", "text": text}
 
-        # Simulate streaming events for compatibility
-        yield {"contentBlockStart": {"contentBlockIndex": 0}}
-        yield {"contentBlockDelta": {"delta": {"text": full_response.content}}}
-        yield {"contentBlockStop": {"contentBlockIndex": 0}}
-        yield {"messageStop": {"stopReason": full_response.stop_reason}}
-        yield {
-            "metadata": {
-                "usage": {
-                    "inputTokens": full_response.input_tokens,
-                    "outputTokens": full_response.output_tokens,
-                }
-            }
-        }
+                elif "messageStop" in event:
+                    reason = event["messageStop"].get("stopReason", "end_turn")
+                    yield {"type": "stop", "reason": reason}
+
+                elif "metadata" in event:
+                    usage = event["metadata"].get("usage", {})
+                    yield {"type": "metadata", "usage": usage}
+
+        except Exception as e:
+            yield {"type": "error", "message": str(e)}
 
 
 def build_converse_messages(

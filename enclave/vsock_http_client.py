@@ -27,7 +27,7 @@ import socket
 import ssl
 import json
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Generator, Optional
 from urllib.parse import urlparse
 
 # vsock constants
@@ -176,6 +176,112 @@ class VsockHttpClient:
             headers=headers,
             body=body,
         )
+
+    def _read_exact(self, sock: ssl.SSLSocket, num_bytes: int) -> bytes:
+        """Read exactly num_bytes from socket."""
+        data = b""
+        while len(data) < num_bytes:
+            chunk = sock.recv(num_bytes - len(data))
+            if not chunk:
+                break
+            data += chunk
+        return data
+
+    def request_stream(
+        self,
+        method: str,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[bytes] = None,
+    ) -> Generator[bytes, None, None]:
+        """
+        Make streaming HTTP request. Yields raw AWS event stream messages.
+
+        AWS event stream format per message:
+        - 4 bytes: total byte length (big-endian)
+        - 4 bytes: headers byte length (big-endian)
+        - 4 bytes: prelude CRC
+        - Headers (variable)
+        - Payload (variable)
+        - 4 bytes: message CRC
+        """
+        headers = headers or {}
+
+        # Parse URL
+        parsed = urlparse(url)
+        host = parsed.netloc
+        path = parsed.path or "/"
+        if parsed.query:
+            path += f"?{parsed.query}"
+
+        port = 443 if parsed.scheme == "https" else 80
+        if ":" in host:
+            host, port = host.rsplit(":", 1)
+            port = int(port)
+
+        use_tls = parsed.scheme == "https"
+
+        # Connect through proxy
+        sock = self._create_vsock()
+
+        try:
+            if not self._send_connect(sock, host, port):
+                raise ConnectionError("Proxy refused connection")
+
+            if use_tls:
+                sock = self._wrap_tls(sock, host)
+
+            # Build and send request
+            request = self._build_request(method, path, host, headers, body)
+            sock.sendall(request)
+
+            # Read HTTP response headers
+            header_data = b""
+            while b"\r\n\r\n" not in header_data:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    raise ConnectionError("Connection closed while reading headers")
+                header_data += chunk
+
+            header_part, body_start = header_data.split(b"\r\n\r\n", 1)
+
+            # Check status
+            status_line = header_part.split(b"\r\n")[0].decode("utf-8")
+            if "200" not in status_line:
+                raise Exception(f"HTTP error: {status_line}")
+
+            # Buffer any body data we already received
+            buffer = body_start
+
+            # Stream AWS event stream messages
+            while True:
+                # Need at least 4 bytes for message length
+                while len(buffer) < 4:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        return  # End of stream
+                    buffer += chunk
+
+                # Parse message length (first 4 bytes, big-endian)
+                msg_len = int.from_bytes(buffer[:4], "big")
+
+                if msg_len == 0:
+                    return  # End marker
+
+                # Read full message
+                while len(buffer) < msg_len:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        return
+                    buffer += chunk
+
+                # Yield complete message
+                message = buffer[:msg_len]
+                buffer = buffer[msg_len:]
+                yield message
+
+        finally:
+            sock.close()
 
     def request(
         self,

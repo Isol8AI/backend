@@ -17,6 +17,7 @@ Commands:
 - GET_PUBLIC_KEY: Returns enclave's transport public key
 - SET_CREDENTIALS: Sets AWS credentials for Bedrock API calls
 - CHAT: Send encrypted message with model_id, get LLM response
+- CHAT_STREAM: Send encrypted message with streaming response (newline-delimited JSON)
 - HEALTH: Check enclave and Bedrock connectivity status
 - RUN_TESTS: Execute crypto test vectors
 
@@ -296,10 +297,151 @@ class BedrockServer:
                 "error": str(e),
             }
 
-    def handle_request(self, request: dict) -> dict:
+    def _send_event(self, conn: socket.socket, event: dict) -> None:
+        """Send newline-delimited JSON event."""
+        conn.sendall(json.dumps(event).encode("utf-8") + b"\n")
+
+    def _decrypt_history(self, encrypted_history: list) -> list:
+        """Decrypt conversation history from EncryptedPayload dicts."""
+        history = []
+        for i, payload_dict in enumerate(encrypted_history):
+            is_assistant = i % 2 == 1
+            payload = EncryptedPayload.from_dict(payload_dict)
+            plaintext = decrypt_with_private_key(
+                self.keypair.private_key,
+                payload,
+                "client-to-enclave-transport",
+            )
+            history.append(
+                ConverseTurn(
+                    role="assistant" if is_assistant else "user",
+                    content=plaintext.decode("utf-8"),
+                )
+            )
+        return history
+
+    def handle_chat_stream(self, data: dict, conn: socket.socket) -> None:
+        """
+        Process encrypted chat with streaming response.
+
+        Streams newline-delimited JSON events:
+        - {"encrypted_content": {...}}  - Encrypted chunk for client
+        - {"is_final": true, ...}       - Final event with stored messages
+        - {"error": "...", "is_final": true} - Error event
+        """
+        try:
+            # Check credentials
+            if not self.bedrock.has_credentials():
+                self._send_event(conn, {"error": "No AWS credentials", "is_final": True})
+                return
+
+            # Extract parameters
+            encrypted_message = EncryptedPayload.from_dict(data["encrypted_message"])
+            encrypted_history = data.get("encrypted_history", [])
+            storage_public_key = hex_to_bytes(data["storage_public_key"])
+            client_public_key = hex_to_bytes(data["client_public_key"])
+            model_id = data["model_id"]
+
+            print(f"[Enclave] CHAT_STREAM: model={model_id}", flush=True)
+
+            # Decrypt user message
+            user_plaintext = decrypt_with_private_key(
+                self.keypair.private_key,
+                encrypted_message,
+                "client-to-enclave-transport",
+            )
+            user_content = user_plaintext.decode("utf-8")
+            print(f"[Enclave] User message: {user_content[:50]}...", flush=True)
+
+            # Decrypt history
+            history = self._decrypt_history(encrypted_history)
+            print(f"[Enclave] History: {len(history)} messages", flush=True)
+
+            # Build messages for Bedrock
+            messages = build_converse_messages(history, user_content)
+            system = [{"text": "You are a helpful AI assistant."}]
+            inference_config = {"maxTokens": 4096, "temperature": 0.7}
+
+            # Stream from Bedrock
+            full_response = ""
+            input_tokens = 0
+            output_tokens = 0
+            chunk_count = 0
+
+            print("[Enclave] Starting Bedrock stream...", flush=True)
+
+            for event in self.bedrock.converse_stream(model_id, messages, system, inference_config):
+                if event["type"] == "content":
+                    chunk_text = event["text"]
+                    full_response += chunk_text
+                    chunk_count += 1
+
+                    # Encrypt chunk for transport to client
+                    encrypted_chunk = encrypt_to_public_key(
+                        client_public_key,
+                        chunk_text.encode("utf-8"),
+                        "enclave-to-client-transport",
+                    )
+                    self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
+
+                elif event["type"] == "metadata":
+                    input_tokens = event["usage"].get("inputTokens", 0)
+                    output_tokens = event["usage"].get("outputTokens", 0)
+
+                elif event["type"] == "error":
+                    self._send_event(conn, {"error": event["message"], "is_final": True})
+                    return
+
+            print(f"[Enclave] Stream complete: {chunk_count} chunks, {len(full_response)} chars", flush=True)
+
+            # Encrypt final messages for storage
+            stored_user = encrypt_to_public_key(
+                storage_public_key,
+                user_content.encode("utf-8"),
+                "user-message-storage",
+            )
+            stored_assistant = encrypt_to_public_key(
+                storage_public_key,
+                full_response.encode("utf-8"),
+                "assistant-message-storage",
+            )
+
+            # Send final event
+            self._send_event(
+                conn,
+                {
+                    "is_final": True,
+                    "stored_user_message": stored_user.to_dict(),
+                    "stored_assistant_message": stored_assistant.to_dict(),
+                    "model_used": model_id,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                },
+            )
+
+            print("[Enclave] CHAT_STREAM complete", flush=True)
+
+        except KeyError as e:
+            print(f"[Enclave] CHAT_STREAM missing field: {e}", flush=True)
+            self._send_event(conn, {"error": f"Missing field: {e}", "is_final": True})
+
+        except Exception as e:
+            print(f"[Enclave] CHAT_STREAM error: {e}", flush=True)
+            import traceback
+
+            traceback.print_exc()
+            self._send_event(conn, {"error": str(e), "is_final": True})
+
+    def handle_request(self, request: dict, conn: socket.socket) -> dict:
         """Route request to appropriate handler."""
         command = request.get("command", "").upper()
 
+        # Streaming commands handle their own response
+        if command == "CHAT_STREAM":
+            self.handle_chat_stream(request, conn)
+            return None  # Response already sent
+
+        # Non-streaming commands
         handlers = {
             "GET_PUBLIC_KEY": self.handle_get_public_key,
             "SET_CREDENTIALS": lambda: self.handle_set_credentials(request),
@@ -315,7 +457,7 @@ class BedrockServer:
             return {
                 "status": "error",
                 "error": f"Unknown command: {command}",
-                "available_commands": list(handlers.keys()),
+                "available_commands": list(handlers.keys()) + ["CHAT_STREAM"],
             }
 
 
@@ -333,30 +475,32 @@ def handle_client(server: BedrockServer, conn: socket.socket, addr: tuple):
     print(f"[Enclave] Connection from CID={cid}, port={port}", flush=True)
 
     try:
-        while True:
-            # Receive data (up to 1MB for large payloads)
-            data = conn.recv(1048576)
-            if not data:
-                print("[Enclave] Client disconnected", flush=True)
-                break
+        # Receive data (up to 1MB for large payloads)
+        data = conn.recv(1048576)
+        if not data:
+            print("[Enclave] Client disconnected", flush=True)
+            return
 
-            try:
-                request = json.loads(data.decode("utf-8"))
-                command = request.get("command", "unknown")
-                print(f"[Enclave] Received command: {command}", flush=True)
+        try:
+            request = json.loads(data.decode("utf-8"))
+            command = request.get("command", "unknown")
+            print(f"[Enclave] Received command: {command}", flush=True)
 
-                response = server.handle_request(request)
+            response = server.handle_request(request, conn)
+
+            # Only send response if handler returned one (non-streaming)
+            if response is not None:
                 response["source"] = "nitro-enclave-bedrock"
+                conn.sendall(json.dumps(response).encode("utf-8"))
+                print("[Enclave] Sent response", flush=True)
 
-            except json.JSONDecodeError as e:
-                response = {
-                    "status": "error",
-                    "source": "nitro-enclave-bedrock",
-                    "error": f"Invalid JSON: {e}",
-                }
-
+        except json.JSONDecodeError as e:
+            response = {
+                "status": "error",
+                "source": "nitro-enclave-bedrock",
+                "error": f"Invalid JSON: {e}",
+            }
             conn.sendall(json.dumps(response).encode("utf-8"))
-            print("[Enclave] Sent response", flush=True)
 
     except Exception as e:
         print(f"[Enclave] Error handling client: {e}", flush=True)
