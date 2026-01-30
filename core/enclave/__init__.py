@@ -10,7 +10,7 @@ import logging
 import subprocess
 import json
 from enum import Enum
-from typing import Union
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ from .mock_enclave import (
 )
 
 # Singleton instance
-_enclave_instance: Union[EnclaveInterface, None] = None
+_enclave_instance: Optional[EnclaveInterface] = None
 
 
 def _discover_enclave_cid() -> int:

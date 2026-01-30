@@ -88,6 +88,41 @@ async def get_enclave_info(
     )
 
 
+@router.get("/enclave/health")
+async def get_enclave_health(
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Check enclave health and connectivity.
+
+    Returns enclave status, mode (mock/nitro), and credential status.
+    """
+    from core.enclave import get_enclave
+
+    try:
+        enclave = get_enclave()
+
+        # For NitroEnclaveClient, use health_check method
+        if hasattr(enclave, "health_check"):
+            return enclave.health_check()
+
+        # For MockEnclave, return basic info
+        info = enclave.get_info()
+        return {
+            "status": "healthy",
+            "mode": "mock",
+            "public_key": info.enclave_public_key.hex()[:16] + "...",
+        }
+
+    except Exception as e:
+        logger.error(f"Enclave health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Enclave not available",
+        )
+
+
 # =============================================================================
 # Models
 # =============================================================================

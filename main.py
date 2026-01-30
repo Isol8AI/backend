@@ -13,7 +13,7 @@ from sqlalchemy import text
 from core.config import settings
 from core.auth import get_current_user
 from core.database import get_db, close_memory_pool
-from core.enclave import shutdown_enclave
+from core.enclave import startup_enclave, shutdown_enclave
 from routers import users, chat, organizations, context, webhooks, debug_encryption
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     logger.info("Starting application...")
+    await startup_enclave()
 
     yield
 
