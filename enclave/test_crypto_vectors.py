@@ -17,6 +17,7 @@ Exit codes:
 """
 
 import sys
+from typing import Tuple
 
 from crypto_primitives import (
     derive_key_from_ecdh,
@@ -99,7 +100,7 @@ TEST_VECTORS = {
 }
 
 
-def test_ecdh_derivation() -> tuple[int, int]:
+def test_ecdh_derivation() -> Tuple[int, int]:
     """Test ECDH key derivation against vectors."""
     passed = 0
     failed = 0
@@ -136,7 +137,7 @@ def test_ecdh_derivation() -> tuple[int, int]:
     return passed, failed
 
 
-def test_aes_gcm_decryption() -> tuple[int, int]:
+def test_aes_gcm_decryption() -> Tuple[int, int]:
     """Test AES-GCM decryption against vectors."""
     passed = 0
     failed = 0
@@ -175,7 +176,7 @@ def test_aes_gcm_decryption() -> tuple[int, int]:
     return passed, failed
 
 
-def test_encrypt_decrypt_roundtrip() -> tuple[int, int]:
+def test_encrypt_decrypt_roundtrip() -> Tuple[int, int]:
     """Test encrypt/decrypt round-trip with various contexts."""
     passed = 0
     failed = 0
@@ -228,7 +229,7 @@ def test_encrypt_decrypt_roundtrip() -> tuple[int, int]:
     return passed, failed
 
 
-def test_cross_keypair_ecdh() -> tuple[int, int]:
+def test_cross_keypair_ecdh() -> Tuple[int, int]:
     """Test that ECDH produces same shared secret from both sides."""
     passed = 0
     failed = 0
@@ -265,7 +266,7 @@ def test_cross_keypair_ecdh() -> tuple[int, int]:
     return passed, failed
 
 
-def test_wrong_context_fails() -> tuple[int, int]:
+def test_wrong_context_fails() -> Tuple[int, int]:
     """Test that decryption with wrong context fails."""
     passed = 0
     failed = 0
@@ -297,7 +298,7 @@ def test_wrong_context_fails() -> tuple[int, int]:
     return passed, failed
 
 
-def test_payload_serialization() -> tuple[int, int]:
+def test_payload_serialization() -> Tuple[int, int]:
     """Test that payloads can be serialized/deserialized."""
     passed = 0
     failed = 0
