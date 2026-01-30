@@ -27,15 +27,15 @@ def send_message(cid: int, message: str) -> dict:
     try:
         print(f"[Parent] Connecting to enclave CID={cid}, port={VSOCK_PORT}...")
         sock.connect((cid, VSOCK_PORT))
-        print(f"[Parent] Connected!")
+        print("[Parent] Connected!")
 
         # Send message
         print(f"[Parent] Sending: {message}")
-        sock.sendall(message.encode('utf-8'))
+        sock.sendall(message.encode("utf-8"))
 
         # Receive response
         response_data = sock.recv(4096)
-        response = json.loads(response_data.decode('utf-8'))
+        response = json.loads(response_data.decode("utf-8"))
         print(f"[Parent] Received: {json.dumps(response, indent=2)}")
 
         return response
@@ -67,7 +67,7 @@ def main():
             print("\n[WARNING] Response doesn't appear to be from enclave")
 
     except ConnectionRefusedError:
-        print(f"\n[ERROR] Connection refused. Is the enclave running?")
+        print("\n[ERROR] Connection refused. Is the enclave running?")
         print("Start the enclave with: nitro-cli run-enclave ...")
         sys.exit(1)
     except Exception as e:

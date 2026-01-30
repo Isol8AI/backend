@@ -38,20 +38,16 @@ def handle_client(conn: socket.socket, addr: tuple):
             # Receive data (max 4KB)
             data = conn.recv(4096)
             if not data:
-                print(f"[Enclave] Client disconnected", flush=True)
+                print("[Enclave] Client disconnected", flush=True)
                 break
 
-            message = data.decode('utf-8')
+            message = data.decode("utf-8")
             print(f"[Enclave] Received: {message}", flush=True)
 
             # Echo back with enclave tag
-            response = json.dumps({
-                "status": "success",
-                "source": "nitro-enclave",
-                "echo": message
-            })
-            conn.sendall(response.encode('utf-8'))
-            print(f"[Enclave] Sent response", flush=True)
+            response = json.dumps({"status": "success", "source": "nitro-enclave", "echo": message})
+            conn.sendall(response.encode("utf-8"))
+            print("[Enclave] Sent response", flush=True)
 
     except Exception as e:
         print(f"[Enclave] Error handling client: {e}", flush=True)
@@ -68,7 +64,7 @@ def main():
 
     try:
         listener = create_vsock_listener(VSOCK_PORT)
-        print(f"[Enclave] Server ready, waiting for connections...", flush=True)
+        print("[Enclave] Server ready, waiting for connections...", flush=True)
 
         while True:
             conn, addr = listener.accept()
