@@ -26,7 +26,7 @@ import sys
 import json
 
 # Import IMDS helper for IAM credentials
-from imds_credentials import get_iam_credentials, get_instance_region
+from imds_credentials import get_iam_credentials
 
 # Import crypto for client-side encryption
 from crypto_primitives import (
@@ -104,7 +104,7 @@ def test_set_credentials(cid: int) -> bool:
             return False
 
     except Exception as e:
-        print(f"  Status: FAILED")
+        print("  Status: FAILED")
         print(f"  Error: {e}")
         return False
 
@@ -153,10 +153,10 @@ def test_chat(cid: int, enclave_public_key: str, model_id: str) -> bool:
             "client-to-enclave-transport",
         )
         print(f"  Message: '{message}'")
-        print(f"  Encrypted message ready")
+        print("  Encrypted message ready")
 
         # Send chat request with model_id
-        print(f"  Calling Bedrock via enclave...")
+        print("  Calling Bedrock via enclave...")
         response = send_command(
             cid,
             {
@@ -184,7 +184,7 @@ def test_chat(cid: int, enclave_public_key: str, model_id: str) -> bool:
             return False
 
     except Exception as e:
-        print(f"  Status: FAILED")
+        print("  Status: FAILED")
         print(f"  Error: {e}")
         import traceback
         traceback.print_exc()

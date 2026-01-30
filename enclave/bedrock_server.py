@@ -30,7 +30,7 @@ import socket
 import sys
 import json
 import os
-from typing import Optional, List, Dict, Any
+from typing import List
 
 from crypto_primitives import (
     generate_x25519_keypair,
@@ -178,7 +178,7 @@ class BedrockServer:
                 system = [{"text": "You are a helpful AI assistant."}]
 
             # Call Bedrock Converse API
-            print(f"[Enclave] Calling Bedrock Converse API...", flush=True)
+            print("[Enclave] Calling Bedrock Converse API...", flush=True)
             bedrock_response: BedrockResponse = self.bedrock.converse(
                 model_id=model_id,
                 messages=messages,
