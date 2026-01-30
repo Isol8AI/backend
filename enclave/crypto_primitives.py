@@ -22,7 +22,7 @@ Context strings (must match frontend):
 import os
 import json
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
@@ -157,7 +157,7 @@ def derive_key_from_ecdh(
     public_key: bytes,
     context: str,
     salt: Optional[bytes] = None,
-) -> tuple[bytes, bytes]:
+) -> Tuple[bytes, bytes]:
     """
     Derive a symmetric key from X25519 ECDH shared secret using HKDF-SHA512.
 
@@ -214,7 +214,7 @@ def encrypt_aes_gcm(
     key: bytes,
     plaintext: bytes,
     associated_data: Optional[bytes] = None,
-) -> tuple[bytes, bytes, bytes]:
+) -> Tuple[bytes, bytes, bytes]:
     """
     Encrypt data using AES-256-GCM.
 
