@@ -89,6 +89,27 @@ class EncryptedPayload:
         if len(self.hkdf_salt) != 32:
             raise ValueError("HKDF salt must be 32 bytes")
 
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict with hex encoding."""
+        return {
+            "ephemeral_public_key": self.ephemeral_public_key.hex(),
+            "iv": self.iv.hex(),
+            "ciphertext": self.ciphertext.hex(),
+            "auth_tag": self.auth_tag.hex(),
+            "hkdf_salt": self.hkdf_salt.hex(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "EncryptedPayload":
+        """Create from dict with hex-encoded values."""
+        return cls(
+            ephemeral_public_key=bytes.fromhex(data["ephemeral_public_key"]),
+            iv=bytes.fromhex(data["iv"]),
+            ciphertext=bytes.fromhex(data["ciphertext"]),
+            auth_tag=bytes.fromhex(data["auth_tag"]),
+            hkdf_salt=bytes.fromhex(data["hkdf_salt"]),
+        )
+
 
 # =============================================================================
 # Key Generation
