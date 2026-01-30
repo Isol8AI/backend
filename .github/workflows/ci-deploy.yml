@@ -291,12 +291,14 @@ jobs:
           echo "Building enclave EIF on $INSTANCE_ID..."
 
           # Download source, build Docker image, build EIF
+          # Set NITRO_CLI_ARTIFACTS explicitly (required for nitro-cli to find artifacts path)
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --timeout-seconds 600 \
             --parameters 'commands=[
               "set -e",
+              "export NITRO_CLI_ARTIFACTS=/var/lib/nitro_enclaves",
               "ENCLAVE_DIR=/home/ec2-user/enclave",
               "mkdir -p $ENCLAVE_DIR",
               "aws s3 sync s3://'"${{ env.ENCLAVE_BUCKET }}"'/dev/source/ $ENCLAVE_DIR/ --region '"${{ env.AWS_REGION }}"'",
