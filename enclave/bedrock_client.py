@@ -28,6 +28,7 @@ import hmac
 import datetime
 from typing import Dict, Optional, List, Any, Generator
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from vsock_http_client import VsockHttpClient
 
@@ -232,8 +233,9 @@ class BedrockClient:
 
         body_bytes = json.dumps(body).encode("utf-8")
 
-        # Converse API endpoint
-        path = "/model/{}/converse".format(model_id.replace("/", "%2F"))
+        # Converse API endpoint - URL encode model ID (including : as %3A)
+        encoded_model_id = quote(model_id, safe="")
+        path = f"/model/{encoded_model_id}/converse"
 
         headers = {
             "Content-Type": "application/json",
@@ -315,8 +317,9 @@ class BedrockClient:
 
         body_bytes = json.dumps(body).encode("utf-8")
 
-        # Streaming endpoint
-        path = "/model/{}/converse-stream".format(model_id.replace("/", "%2F"))
+        # Streaming endpoint - URL encode model ID (including : as %3A)
+        encoded_model_id = quote(model_id, safe="")
+        path = f"/model/{encoded_model_id}/converse-stream"
 
         headers = {
             "Content-Type": "application/json",
