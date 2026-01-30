@@ -252,7 +252,7 @@ jobs:
                 "docker stop isol8 || true",
                 "docker rm isol8 || true",
                 "docker run -d --name isol8 --env-file /home/ec2-user/.env -e CORS_ORIGINS=${{ env.CORS_ORIGINS }} -p 8000:8000 --restart unless-stopped '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"'",
-                "mkdir -p /home/ec2-user/enclave && aws s3 cp s3://'"${{ env.ENCLAVE_BUCKET }}"'/dev/enclave.eif /home/ec2-user/enclave/enclave.eif --region '"${{ env.AWS_REGION }}"' || echo 'No EIF in S3 yet'"
+                "mkdir -p /home/ec2-user/enclave && aws s3 cp s3://'"${{ env.ENCLAVE_BUCKET }}"'/dev/enclave.eif /home/ec2-user/enclave/enclave.eif --region '"${{ env.AWS_REGION }}"' || echo No-EIF-in-S3-yet"
               ]' \
               --query 'Command.CommandId' \
               --output text)
