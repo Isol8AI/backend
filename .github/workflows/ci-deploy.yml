@@ -315,15 +315,20 @@ jobs:
           aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
 
           # Get the result
-          RESULT=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query '[Status, StandardOutputContent, StandardErrorContent]' --output text)
-          echo "$RESULT"
+          STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text)
+          echo "SSM command status: $STATUS"
+
+          # Show output for debugging
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'StandardOutputContent' --output text
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'StandardErrorContent' --output text || true
 
           # Check if successful
-          STATUS=$(echo "$RESULT" | head -1)
           if [ "$STATUS" != "Success" ]; then
-            echo "Enclave build failed!"
+            echo "Enclave build failed with status: $STATUS"
             exit 1
           fi
+
+          echo "Enclave EIF built successfully!"
 
       - name: Health check
         run: |
