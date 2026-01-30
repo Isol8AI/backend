@@ -6,10 +6,13 @@
 # Use Amazon Linux 2 - matches the EC2 host, good Nitro compatibility
 FROM amazonlinux:2
 
-# Install Python 3.8 (available in amazon-linux-extras)
+# Install Python 3.8 and shadow-utils (for useradd)
 RUN amazon-linux-extras install python3.8 -y && \
+    yum install -y shadow-utils && \
     ln -sf /usr/bin/python3.8 /usr/bin/python3 && \
-    python3 -m pip install --upgrade pip
+    python3 -m pip install --upgrade pip && \
+    yum clean all && \
+    rm -rf /var/cache/yum
 
 # Create non-root user for security
 RUN useradd -r -s /bin/false enclave
