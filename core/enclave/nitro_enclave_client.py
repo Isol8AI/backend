@@ -302,7 +302,7 @@ class NitroEnclaveClient(EnclaveInterface):
             logger.error("Enclave timeout during streaming")
             yield StreamChunk(error="Request timed out", is_final=True)
 
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected error in enclave streaming")
             yield StreamChunk(error="Internal error", is_final=True)
 
