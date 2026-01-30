@@ -16,19 +16,19 @@ Key security properties:
 Credential flow for M4:
 1. Parent retrieves temporary credentials from EC2 IMDS (IAM role)
 2. Parent sends credentials to enclave via SET_CREDENTIALS command
-3. Enclave uses credentials with SigV4 for Bedrock API calls
+3. Enclave uses botocore for SigV4 signing, VsockHttpClient for HTTP
 
 For M6, we'll use KMS attestation to securely retrieve credentials
 directly inside the enclave.
 """
 
 import json
-import hashlib
-import hmac
-import datetime
 from typing import Dict, Optional, List, Any, Generator
 from dataclasses import dataclass
-from urllib.parse import quote
+
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+from botocore.credentials import Credentials
 
 from vsock_http_client import VsockHttpClient
 
@@ -51,101 +51,6 @@ class BedrockResponse:
     output_tokens: int
     stop_reason: str
     raw_response: dict
-
-
-class SigV4Signer:
-    """AWS Signature Version 4 signer."""
-
-    def __init__(
-        self,
-        access_key_id: str,
-        secret_access_key: str,
-        region: str,
-        service: str,
-        session_token: Optional[str] = None,
-    ):
-        self.access_key_id = access_key_id
-        self.secret_access_key = secret_access_key
-        self.region = region
-        self.service = service
-        self.session_token = session_token
-
-    def _sign(self, key: bytes, msg: str) -> bytes:
-        """HMAC-SHA256 signing."""
-        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
-
-    def _get_signature_key(self, date_stamp: str) -> bytes:
-        """Derive signing key."""
-        k_date = self._sign(f"AWS4{self.secret_access_key}".encode("utf-8"), date_stamp)
-        k_region = self._sign(k_date, self.region)
-        k_service = self._sign(k_region, self.service)
-        k_signing = self._sign(k_service, "aws4_request")
-        return k_signing
-
-    def sign_request(
-        self,
-        method: str,
-        host: str,
-        path: str,
-        headers: Dict[str, str],
-        body: bytes,
-    ) -> Dict[str, str]:
-        """Sign an AWS API request. Returns headers dict with Authorization added."""
-        t = datetime.datetime.utcnow()
-        amz_date = t.strftime("%Y%m%dT%H%M%SZ")
-        date_stamp = t.strftime("%Y%m%d")
-
-        signed_headers_dict = dict(headers)
-        signed_headers_dict["host"] = host
-        signed_headers_dict["x-amz-date"] = amz_date
-
-        if self.session_token:
-            signed_headers_dict["x-amz-security-token"] = self.session_token
-
-        payload_hash = hashlib.sha256(body).hexdigest()
-        signed_headers_dict["x-amz-content-sha256"] = payload_hash
-
-        sorted_headers = sorted(signed_headers_dict.keys())
-        canonical_headers = ""
-        for key in sorted_headers:
-            canonical_headers += f"{key.lower()}:{signed_headers_dict[key].strip()}\n"
-        signed_headers = ";".join(key.lower() for key in sorted_headers)
-
-        canonical_request = "\n".join(
-            [
-                method,
-                path,
-                "",  # empty query string
-                canonical_headers,
-                signed_headers,
-                payload_hash,
-            ]
-        )
-
-        algorithm = "AWS4-HMAC-SHA256"
-        credential_scope = f"{date_stamp}/{self.region}/{self.service}/aws4_request"
-        string_to_sign = "\n".join(
-            [
-                algorithm,
-                amz_date,
-                credential_scope,
-                hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
-            ]
-        )
-
-        signing_key = self._get_signature_key(date_stamp)
-        signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
-
-        authorization_header = (
-            f"{algorithm} "
-            f"Credential={self.access_key_id}/{credential_scope}, "
-            f"SignedHeaders={signed_headers}, "
-            f"Signature={signature}"
-        )
-
-        result_headers = dict(signed_headers_dict)
-        result_headers["Authorization"] = authorization_header
-        return result_headers
 
 
 class BedrockClient:
@@ -190,17 +95,28 @@ class BedrockClient:
         """Check if credentials are set."""
         return bool(self._access_key_id and self._secret_access_key and self._session_token)
 
-    def _create_signer(self) -> SigV4Signer:
-        """Create SigV4 signer with current credentials."""
+    def _get_credentials(self) -> Credentials:
+        """Get botocore Credentials object."""
         if not self.has_credentials():
             raise ValueError("AWS credentials not set.")
-        return SigV4Signer(
-            access_key_id=self._access_key_id,
-            secret_access_key=self._secret_access_key,
-            region=self.region,
-            service="bedrock",
-            session_token=self._session_token,
+        return Credentials(
+            access_key=self._access_key_id,
+            secret_key=self._secret_access_key,
+            token=self._session_token,
         )
+
+    def _sign_request(
+        self,
+        method: str,
+        url: str,
+        headers: Dict[str, str],
+        body: bytes,
+    ) -> Dict[str, str]:
+        """Sign request using botocore SigV4Auth. Returns signed headers."""
+        credentials = self._get_credentials()
+        request = AWSRequest(method=method, url=url, data=body, headers=headers)
+        SigV4Auth(credentials, "bedrock", self.region).add_auth(request)
+        return dict(request.headers)
 
     def converse(
         self,
@@ -233,21 +149,19 @@ class BedrockClient:
 
         body_bytes = json.dumps(body).encode("utf-8")
 
-        # Converse API endpoint - URL encode model ID (including : as %3A)
-        encoded_model_id = quote(model_id, safe="")
-        path = f"/model/{encoded_model_id}/converse"
+        # Converse API endpoint
+        path = f"/model/{model_id}/converse"
+        url = f"https://{self.host}{path}"
 
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
 
-        # Sign request
-        signer = self._create_signer()
-        signed_headers = signer.sign_request("POST", self.host, path, headers, body_bytes)
+        # Sign request using botocore (handles all SigV4 complexity)
+        signed_headers = self._sign_request("POST", url, headers, body_bytes)
 
-        # Make request
-        url = f"https://{self.host}{path}"
+        # Make request via vsock
         response = self.http_client.request("POST", url, signed_headers, body_bytes)
 
         if response.status != 200:
@@ -317,21 +231,17 @@ class BedrockClient:
 
         body_bytes = json.dumps(body).encode("utf-8")
 
-        # Streaming endpoint - URL encode model ID (including : as %3A)
-        encoded_model_id = quote(model_id, safe="")
-        path = f"/model/{encoded_model_id}/converse-stream"
+        # Streaming endpoint
+        path = f"/model/{model_id}/converse-stream"
+        url = f"https://{self.host}{path}"
 
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/vnd.amazon.eventstream",
         }
 
-        # Sign request
-        signer = self._create_signer()
-        signed_headers = signer.sign_request("POST", self.host, path, headers, body_bytes)
-
-        # Make streaming request
-        url = f"https://{self.host}{path}"
+        # Sign request using botocore (handles all SigV4 complexity)
+        signed_headers = self._sign_request("POST", url, headers, body_bytes)
 
         # For streaming, we need a different approach - connect and read events
         # This is a simplified implementation for M4
