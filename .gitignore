@@ -75,6 +75,12 @@ Thumbs.db
 *.sqlite3
 
 # ========================
+# Nitro Enclave
+# ========================
+# EIF files are large binaries - build them on EC2, don't commit
+*.eif
+
+# ========================
 # Misc
 # ========================
 .ruff_cache/

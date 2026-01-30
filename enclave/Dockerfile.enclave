@@ -1,0 +1,25 @@
+# Dockerfile.enclave
+#
+# Minimal Nitro Enclave image for M1: Hello Enclave
+# Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file hello.eif
+
+# Use Amazon Linux 2 - matches the EC2 host, good Nitro compatibility
+FROM amazonlinux:2
+
+# Install Python 3.8 (available in amazon-linux-extras)
+RUN amazon-linux-extras install python3.8 -y && \
+    ln -sf /usr/bin/python3.8 /usr/bin/python3 && \
+    python3 -m pip install --upgrade pip
+
+# Create non-root user for security
+RUN useradd -r -s /bin/false enclave
+
+# Copy our application
+WORKDIR /app
+COPY hello_enclave.py .
+
+# Run as non-root
+USER enclave
+
+# Entrypoint - what runs when enclave starts
+ENTRYPOINT ["python3", "/app/hello_enclave.py"]
