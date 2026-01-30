@@ -1,7 +1,7 @@
 # Dockerfile.enclave
 #
-# Minimal Nitro Enclave image for M1: Hello Enclave
-# Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file hello.eif
+# Nitro Enclave image with vsock echo server (M2)
+# Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file enclave.eif
 
 # Use Amazon Linux 2 - matches the EC2 host, good Nitro compatibility
 FROM amazonlinux:2
@@ -17,12 +17,13 @@ RUN amazon-linux-extras install python3.8 -y && \
 # Create non-root user for security
 RUN useradd -r -s /bin/false enclave
 
-# Copy our application
+# Copy our application files
 WORKDIR /app
 COPY hello_enclave.py .
+COPY echo_server.py .
 
 # Run as non-root
 USER enclave
 
-# Entrypoint - what runs when enclave starts
-ENTRYPOINT ["python3", "/app/hello_enclave.py"]
+# Entrypoint - run the echo server (vsock communication)
+ENTRYPOINT ["python3", "/app/echo_server.py"]
