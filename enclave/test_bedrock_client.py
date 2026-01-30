@@ -187,6 +187,7 @@ def test_chat(cid: int, enclave_public_key: str, model_id: str) -> bool:
         print("  Status: FAILED")
         print(f"  Error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

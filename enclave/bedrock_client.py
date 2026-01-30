@@ -35,6 +35,7 @@ from vsock_http_client import VsockHttpClient
 @dataclass
 class ConverseTurn:
     """A single turn in a conversation."""
+
     role: str  # "user" or "assistant"
     content: str
 
@@ -42,6 +43,7 @@ class ConverseTurn:
 @dataclass
 class BedrockResponse:
     """Response from Bedrock Converse API."""
+
     content: str
     model_id: str
     input_tokens: int
@@ -69,11 +71,11 @@ class SigV4Signer:
 
     def _sign(self, key: bytes, msg: str) -> bytes:
         """HMAC-SHA256 signing."""
-        return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
     def _get_signature_key(self, date_stamp: str) -> bytes:
         """Derive signing key."""
-        k_date = self._sign(f"AWS4{self.secret_access_key}".encode('utf-8'), date_stamp)
+        k_date = self._sign(f"AWS4{self.secret_access_key}".encode("utf-8"), date_stamp)
         k_region = self._sign(k_date, self.region)
         k_service = self._sign(k_region, self.service)
         k_signing = self._sign(k_service, "aws4_request")
@@ -89,18 +91,18 @@ class SigV4Signer:
     ) -> Dict[str, str]:
         """Sign an AWS API request. Returns headers dict with Authorization added."""
         t = datetime.datetime.utcnow()
-        amz_date = t.strftime('%Y%m%dT%H%M%SZ')
-        date_stamp = t.strftime('%Y%m%d')
+        amz_date = t.strftime("%Y%m%dT%H%M%SZ")
+        date_stamp = t.strftime("%Y%m%d")
 
         signed_headers_dict = dict(headers)
-        signed_headers_dict['host'] = host
-        signed_headers_dict['x-amz-date'] = amz_date
+        signed_headers_dict["host"] = host
+        signed_headers_dict["x-amz-date"] = amz_date
 
         if self.session_token:
-            signed_headers_dict['x-amz-security-token'] = self.session_token
+            signed_headers_dict["x-amz-security-token"] = self.session_token
 
         payload_hash = hashlib.sha256(body).hexdigest()
-        signed_headers_dict['x-amz-content-sha256'] = payload_hash
+        signed_headers_dict["x-amz-content-sha256"] = payload_hash
 
         sorted_headers = sorted(signed_headers_dict.keys())
         canonical_headers = ""
@@ -108,20 +110,30 @@ class SigV4Signer:
             canonical_headers += f"{key.lower()}:{signed_headers_dict[key].strip()}\n"
         signed_headers = ";".join(key.lower() for key in sorted_headers)
 
-        canonical_request = "\n".join([
-            method, path, "",  # empty query string
-            canonical_headers, signed_headers, payload_hash,
-        ])
+        canonical_request = "\n".join(
+            [
+                method,
+                path,
+                "",  # empty query string
+                canonical_headers,
+                signed_headers,
+                payload_hash,
+            ]
+        )
 
         algorithm = "AWS4-HMAC-SHA256"
         credential_scope = f"{date_stamp}/{self.region}/{self.service}/aws4_request"
-        string_to_sign = "\n".join([
-            algorithm, amz_date, credential_scope,
-            hashlib.sha256(canonical_request.encode('utf-8')).hexdigest(),
-        ])
+        string_to_sign = "\n".join(
+            [
+                algorithm,
+                amz_date,
+                credential_scope,
+                hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
+            ]
+        )
 
         signing_key = self._get_signature_key(date_stamp)
-        signature = hmac.new(signing_key, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+        signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
 
         authorization_header = (
             f"{algorithm} "
@@ -131,7 +143,7 @@ class SigV4Signer:
         )
 
         result_headers = dict(signed_headers_dict)
-        result_headers['Authorization'] = authorization_header
+        result_headers["Authorization"] = authorization_header
         return result_headers
 
 
@@ -218,7 +230,7 @@ class BedrockClient:
         if inference_config:
             body["inferenceConfig"] = inference_config
 
-        body_bytes = json.dumps(body).encode('utf-8')
+        body_bytes = json.dumps(body).encode("utf-8")
 
         # Converse API endpoint
         path = "/model/{}/converse".format(model_id.replace("/", "%2F"))
@@ -301,7 +313,7 @@ class BedrockClient:
         if inference_config:
             body["inferenceConfig"] = inference_config
 
-        body_bytes = json.dumps(body).encode('utf-8')
+        body_bytes = json.dumps(body).encode("utf-8")
 
         # Streaming endpoint
         path = "/model/{}/converse-stream".format(model_id.replace("/", "%2F"))
@@ -368,14 +380,18 @@ def build_converse_messages(
     """
     messages = []
     for turn in history:
-        messages.append({
-            "role": turn.role,
-            "content": [{"text": turn.content}],
-        })
-    messages.append({
-        "role": "user",
-        "content": [{"text": current_message}],
-    })
+        messages.append(
+            {
+                "role": turn.role,
+                "content": [{"text": turn.content}],
+            }
+        )
+    messages.append(
+        {
+            "role": "user",
+            "content": [{"text": current_message}],
+        }
+    )
     return messages
 
 

@@ -49,9 +49,9 @@ def parse_connect_request(data: bytes) -> tuple:
     Returns (host, port) or (None, None) if invalid.
     """
     try:
-        text = data.decode('utf-8')
+        text = data.decode("utf-8")
         # Match: CONNECT host:port HTTP/1.x
-        match = re.match(r'CONNECT\s+([^:]+):(\d+)\s+HTTP/1\.\d', text)
+        match = re.match(r"CONNECT\s+([^:]+):(\d+)\s+HTTP/1\.\d", text)
         if match:
             return match.group(1), int(match.group(2))
     except Exception:
@@ -185,11 +185,7 @@ def main():
         while True:
             conn, addr = listener.accept()
             # Handle each connection in a thread
-            thread = threading.Thread(
-                target=handle_enclave_connection,
-                args=(conn, addr),
-                daemon=True
-            )
+            thread = threading.Thread(target=handle_enclave_connection, args=(conn, addr), daemon=True)
             thread.start()
     except KeyboardInterrupt:
         print("\n[vsock-proxy] Shutting down...", flush=True)

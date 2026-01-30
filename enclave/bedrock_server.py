@@ -186,7 +186,10 @@ class BedrockServer:
                 inference_config={"maxTokens": 4096, "temperature": 0.7},
             )
             print(f"[Enclave] Response: {len(bedrock_response.content)} chars", flush=True)
-            print(f"[Enclave] Tokens: in={bedrock_response.input_tokens}, out={bedrock_response.output_tokens}", flush=True)
+            print(
+                f"[Enclave] Tokens: in={bedrock_response.input_tokens}, out={bedrock_response.output_tokens}",
+                flush=True,
+            )
 
             # Re-encrypt response for storage (to user's key)
             response_payload = encrypt_to_public_key(
@@ -218,6 +221,7 @@ class BedrockServer:
         except Exception as e:
             print(f"[Enclave] CHAT error: {e}", flush=True)
             import traceback
+
             traceback.print_exc()
             return {
                 "status": "error",
@@ -242,10 +246,12 @@ class BedrockServer:
                     hex_to_bytes(vector["salt_hex"]),
                 )
                 passed = bytes_to_hex(derived_key) == vector["expected_key_hex"]
-                results["ecdh_tests"].append({
-                    "description": vector["description"],
-                    "passed": passed,
-                })
+                results["ecdh_tests"].append(
+                    {
+                        "description": vector["description"],
+                        "passed": passed,
+                    }
+                )
 
             for vector in test_crypto_vectors.TEST_VECTORS["aes_gcm"]:
                 aad = hex_to_bytes(vector["aad_hex"]) if "aad_hex" in vector else None
@@ -257,10 +263,12 @@ class BedrockServer:
                     aad,
                 )
                 passed = bytes_to_hex(plaintext) == vector["plaintext_hex"]
-                results["aes_gcm_tests"].append({
-                    "description": vector["description"],
-                    "passed": passed,
-                })
+                results["aes_gcm_tests"].append(
+                    {
+                        "description": vector["description"],
+                        "passed": passed,
+                    }
+                )
 
             ecdh_passed = sum(1 for t in results["ecdh_tests"] if t["passed"])
             aes_passed = sum(1 for t in results["aes_gcm_tests"] if t["passed"])
@@ -276,8 +284,9 @@ class BedrockServer:
                     "aes_gcm_total": len(results["aes_gcm_tests"]),
                     "total_passed": ecdh_passed + aes_passed,
                     "total_tests": len(results["ecdh_tests"]) + len(results["aes_gcm_tests"]),
-                    "all_passed": (ecdh_passed == len(results["ecdh_tests"]) and
-                                   aes_passed == len(results["aes_gcm_tests"])),
+                    "all_passed": (
+                        ecdh_passed == len(results["ecdh_tests"]) and aes_passed == len(results["aes_gcm_tests"])
+                    ),
                 },
             }
         except Exception as e:

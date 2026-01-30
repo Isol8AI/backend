@@ -39,6 +39,7 @@ VSOCK_PROXY_PORT = 8443
 @dataclass
 class HttpResponse:
     """HTTP response container."""
+
     status: int
     status_text: str
     headers: Dict[str, str]
@@ -46,7 +47,7 @@ class HttpResponse:
 
     def json(self) -> dict:
         """Parse body as JSON."""
-        return json.loads(self.body.decode('utf-8'))
+        return json.loads(self.body.decode("utf-8"))
 
 
 class VsockHttpClient:
@@ -79,7 +80,7 @@ class VsockHttpClient:
         Returns True if proxy accepts the connection.
         """
         connect_request = f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}\r\n\r\n"
-        sock.sendall(connect_request.encode('utf-8'))
+        sock.sendall(connect_request.encode("utf-8"))
 
         # Read response (should be "HTTP/1.1 200 Connection Established")
         response = b""
@@ -90,7 +91,7 @@ class VsockHttpClient:
             response += chunk
 
         # Check for 200 status
-        status_line = response.split(b"\r\n")[0].decode('utf-8')
+        status_line = response.split(b"\r\n")[0].decode("utf-8")
         return "200" in status_line
 
     def _wrap_tls(self, sock: socket.socket, host: str) -> ssl.SSLSocket:
@@ -125,7 +126,7 @@ class VsockHttpClient:
         lines.append("")  # Empty line before body
         lines.append("")
 
-        request = "\r\n".join(lines).encode('utf-8')
+        request = "\r\n".join(lines).encode("utf-8")
         if body:
             request = request + body
 
@@ -145,7 +146,7 @@ class VsockHttpClient:
         header_part, body_start = header_data.split(b"\r\n\r\n", 1)
 
         # Parse status line and headers
-        lines = header_part.decode('utf-8').split("\r\n")
+        lines = header_part.decode("utf-8").split("\r\n")
         status_line = lines[0]
         # Parse: "HTTP/1.1 200 OK"
         parts = status_line.split(" ", 2)
