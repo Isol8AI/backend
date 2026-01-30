@@ -26,7 +26,6 @@ Proxy establishes TCP connection and tunnels bytes bidirectionally.
 import socket
 import select
 import threading
-import sys
 import re
 
 # vsock constants
@@ -151,14 +150,14 @@ def handle_enclave_connection(conn: socket.socket, addr: tuple):
         print(f"[vsock-proxy] Tunnel closed for {host}:{target_port}", flush=True)
 
     except socket.timeout:
-        print(f"[vsock-proxy] Connection timeout", flush=True)
+        print("[vsock-proxy] Connection timeout", flush=True)
     except ConnectionRefusedError:
         error_response = b"HTTP/1.1 502 Bad Gateway\r\n\r\nConnection refused"
         try:
             conn.sendall(error_response)
         except Exception:
             pass
-        print(f"[vsock-proxy] Connection refused to target", flush=True)
+        print("[vsock-proxy] Connection refused to target", flush=True)
     except Exception as e:
         print(f"[vsock-proxy] Error: {e}", flush=True)
     finally:
