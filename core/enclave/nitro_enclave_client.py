@@ -28,11 +28,13 @@ AF_VSOCK = 40
 
 class EnclaveConnectionError(Exception):
     """Raised when cannot connect to enclave."""
+
     pass
 
 
 class EnclaveTimeoutError(Exception):
     """Raised when enclave request times out."""
+
     pass
 
 
@@ -180,8 +182,7 @@ class NitroEnclaveClient(EnclaveInterface):
     def decrypt_transport_message(self, payload: EncryptedPayload) -> bytes:
         """Not implemented - decryption happens inside enclave during CHAT_STREAM."""
         raise NotImplementedError(
-            "NitroEnclaveClient does not expose decrypt_transport_message. "
-            "Use process_message_streaming instead."
+            "NitroEnclaveClient does not expose decrypt_transport_message. Use process_message_streaming instead."
         )
 
     def encrypt_for_storage(
@@ -192,8 +193,7 @@ class NitroEnclaveClient(EnclaveInterface):
     ) -> EncryptedPayload:
         """Not implemented - encryption happens inside enclave during CHAT_STREAM."""
         raise NotImplementedError(
-            "NitroEnclaveClient does not expose encrypt_for_storage. "
-            "Use process_message_streaming instead."
+            "NitroEnclaveClient does not expose encrypt_for_storage. Use process_message_streaming instead."
         )
 
     def encrypt_for_transport(
@@ -203,8 +203,7 @@ class NitroEnclaveClient(EnclaveInterface):
     ) -> EncryptedPayload:
         """Not implemented - encryption happens inside enclave during CHAT_STREAM."""
         raise NotImplementedError(
-            "NitroEnclaveClient does not expose encrypt_for_transport. "
-            "Use process_message_streaming instead."
+            "NitroEnclaveClient does not expose encrypt_for_transport. Use process_message_streaming instead."
         )
 
     async def process_message(
@@ -217,8 +216,7 @@ class NitroEnclaveClient(EnclaveInterface):
     ):
         """Not implemented - use process_message_streaming instead."""
         raise NotImplementedError(
-            "NitroEnclaveClient does not support non-streaming. "
-            "Use process_message_streaming instead."
+            "NitroEnclaveClient does not support non-streaming. Use process_message_streaming instead."
         )
 
     async def process_message_stream(
@@ -231,8 +229,7 @@ class NitroEnclaveClient(EnclaveInterface):
     ):
         """Not implemented - use process_message_streaming instead."""
         raise NotImplementedError(
-            "NitroEnclaveClient does not support process_message_stream. "
-            "Use process_message_streaming instead."
+            "NitroEnclaveClient does not support process_message_stream. Use process_message_streaming instead."
         )
 
     async def process_message_streaming(
@@ -280,9 +277,7 @@ class NitroEnclaveClient(EnclaveInterface):
                     return
 
                 if event.get("encrypted_content"):
-                    yield StreamChunk(
-                        encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"])
-                    )
+                    yield StreamChunk(encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"]))
 
                 if event.get("is_final"):
                     yield StreamChunk(
@@ -350,10 +345,13 @@ class NitroEnclaveClient(EnclaveInterface):
         logger.info("Pushing credentials to enclave...")
         creds = self._get_iam_credentials()
 
-        response = self._send_command({
-            "command": "SET_CREDENTIALS",
-            "credentials": creds,
-        }, timeout=10.0)
+        response = self._send_command(
+            {
+                "command": "SET_CREDENTIALS",
+                "credentials": creds,
+            },
+            timeout=10.0,
+        )
 
         if response.get("status") != "success":
             raise RuntimeError(f"Failed to set enclave credentials: {response}")
