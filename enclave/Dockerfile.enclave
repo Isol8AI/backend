@@ -1,18 +1,21 @@
 # Dockerfile.enclave
 #
-# Nitro Enclave image with vsock echo server (M2)
+# Nitro Enclave image with crypto server (M3)
 # Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file enclave.eif
 
 # Use Amazon Linux 2 - matches the EC2 host, good Nitro compatibility
 FROM amazonlinux:2
 
-# Install Python 3.8 and shadow-utils (for useradd)
+# Install Python 3.8, shadow-utils (for useradd), and build dependencies for cryptography
 RUN amazon-linux-extras install python3.8 -y && \
-    yum install -y shadow-utils && \
+    yum install -y shadow-utils gcc python38-devel libffi-devel openssl-devel && \
     ln -sf /usr/bin/python3.8 /usr/bin/python3 && \
     python3 -m pip install --upgrade pip && \
     yum clean all && \
     rm -rf /var/cache/yum
+
+# Install cryptography library for X25519, AES-GCM, HKDF
+RUN python3 -m pip install --no-cache-dir cryptography==44.0.0
 
 # Create non-root user for security
 RUN useradd -r -s /bin/false enclave
@@ -21,9 +24,13 @@ RUN useradd -r -s /bin/false enclave
 WORKDIR /app
 COPY hello_enclave.py .
 COPY echo_server.py .
+COPY crypto_primitives.py .
+COPY crypto_server.py .
+COPY test_crypto_vectors.py .
+COPY test_crypto_client.py .
 
 # Run as non-root
 USER enclave
 
-# Entrypoint - run the echo server (vsock communication)
-ENTRYPOINT ["python3", "/app/echo_server.py"]
+# Entrypoint - run the crypto server (M3)
+ENTRYPOINT ["python3", "/app/crypto_server.py"]
