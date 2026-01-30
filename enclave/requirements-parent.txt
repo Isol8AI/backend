@@ -1,0 +1,3 @@
+# Requirements for parent-side enclave scripts (installed on EC2 host)
+# These run OUTSIDE the enclave but need crypto for test client
+cryptography==44.0.0

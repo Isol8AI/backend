@@ -1,6 +1,6 @@
 # Dockerfile.enclave
 #
-# Nitro Enclave image with crypto server (M3)
+# Nitro Enclave image with Bedrock inference (M4)
 # Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file enclave.eif
 
 # Use Amazon Linux 2 - matches the EC2 host, good Nitro compatibility
@@ -22,6 +22,8 @@ RUN useradd -r -s /bin/false enclave
 
 # Copy our application files
 WORKDIR /app
+
+# M1-M3 files (crypto foundation)
 COPY hello_enclave.py .
 COPY echo_server.py .
 COPY crypto_primitives.py .
@@ -29,8 +31,17 @@ COPY crypto_server.py .
 COPY test_crypto_vectors.py .
 COPY test_crypto_client.py .
 
+# M4 files (Bedrock integration)
+COPY vsock_http_client.py .
+COPY bedrock_client.py .
+COPY bedrock_server.py .
+
 # Run as non-root
 USER enclave
 
-# Entrypoint - run the crypto server (M3)
-ENTRYPOINT ["python3", "/app/crypto_server.py"]
+# Environment
+ENV AWS_REGION=us-east-1
+
+# Entrypoint - run the Bedrock server (M4)
+# For M3 testing, change to: ENTRYPOINT ["python3", "/app/crypto_server.py"]
+ENTRYPOINT ["python3", "/app/bedrock_server.py"]
