@@ -67,10 +67,10 @@ class VsockHttpClient:
         self.proxy_cid = proxy_cid
         self.proxy_port = proxy_port
 
-    def _create_vsock(self) -> socket.socket:
+    def _create_vsock(self, timeout: float = 120.0) -> socket.socket:
         """Create a vsock connection to the proxy."""
         sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
-        sock.settimeout(30.0)
+        sock.settimeout(timeout)
         sock.connect((self.proxy_cid, self.proxy_port))
         return sock
 
@@ -193,6 +193,7 @@ class VsockHttpClient:
         url: str,
         headers: Optional[Dict[str, str]] = None,
         body: Optional[bytes] = None,
+        timeout: float = 300.0,
     ) -> Generator[bytes, None, None]:
         """
         Make streaming HTTP request. Yields raw AWS event stream messages.
@@ -204,6 +205,9 @@ class VsockHttpClient:
         - Headers (variable)
         - Payload (variable)
         - 4 bytes: message CRC
+
+        Args:
+            timeout: Total timeout for streaming (default 5 minutes for long responses)
         """
         headers = headers or {}
 
@@ -221,8 +225,8 @@ class VsockHttpClient:
 
         use_tls = parsed.scheme == "https"
 
-        # Connect through proxy
-        sock = self._create_vsock()
+        # Connect through proxy with longer timeout for streaming
+        sock = self._create_vsock(timeout=timeout)
 
         try:
             if not self._send_connect(sock, host, port):
@@ -245,10 +249,35 @@ class VsockHttpClient:
 
             header_part, body_start = header_data.split(b"\r\n\r\n", 1)
 
+            # Parse headers to get content-length for error responses
+            lines = header_part.decode("utf-8").split("\r\n")
+            status_line = lines[0]
+
             # Check status
-            status_line = header_part.split(b"\r\n")[0].decode("utf-8")
             if "200" not in status_line:
-                raise Exception(f"HTTP error: {status_line}")
+                # Try to read error body for better debugging
+                error_headers = {}
+                for line in lines[1:]:
+                    if ": " in line:
+                        key, value = line.split(": ", 1)
+                        error_headers[key.lower()] = value
+
+                # Read error body if content-length is available
+                error_body = body_start
+                content_length = int(error_headers.get("content-length", 0))
+                while len(error_body) < content_length:
+                    chunk = sock.recv(min(content_length - len(error_body), 65536))
+                    if not chunk:
+                        break
+                    error_body += chunk
+
+                error_msg = f"HTTP error: {status_line}"
+                if error_body:
+                    try:
+                        error_msg += f" - {error_body.decode('utf-8')}"
+                    except Exception:
+                        error_msg += f" - {error_body[:500]}"
+                raise Exception(error_msg)
 
             # Buffer any body data we already received
             buffer = body_start

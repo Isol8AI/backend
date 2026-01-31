@@ -140,8 +140,8 @@ class BedrockClient:
         Returns:
             BedrockResponse with unified response format
         """
-        # Build request body
-        body = {"modelId": model_id, "messages": messages}
+        # Build request body (modelId is in URL path, NOT in body)
+        body = {"messages": messages}
         if system:
             body["system"] = system
         if inference_config:
@@ -240,8 +240,8 @@ class BedrockClient:
         - {"type": "stop", "reason": "end_turn"}
         - {"type": "metadata", "usage": {"inputTokens": N, "outputTokens": N}}
         """
-        # Build request body
-        body = {"modelId": model_id, "messages": messages}
+        # Build request body (modelId is in URL path, NOT in body)
+        body = {"messages": messages}
         if system:
             body["system"] = system
         if inference_config:
