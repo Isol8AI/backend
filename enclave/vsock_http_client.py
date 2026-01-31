@@ -226,18 +226,25 @@ class VsockHttpClient:
         use_tls = parsed.scheme == "https"
 
         # Connect through proxy with longer timeout for streaming
+        print(f"[vsock] Creating connection to proxy (timeout={timeout})", flush=True)
         sock = self._create_vsock(timeout=timeout)
 
         try:
+            print(f"[vsock] Sending CONNECT to {host}:{port}", flush=True)
             if not self._send_connect(sock, host, port):
                 raise ConnectionError("Proxy refused connection")
+            print("[vsock] CONNECT successful", flush=True)
 
             if use_tls:
+                print("[vsock] Starting TLS handshake...", flush=True)
                 sock = self._wrap_tls(sock, host)
+                print("[vsock] TLS handshake complete", flush=True)
 
             # Build and send request
             request = self._build_request(method, path, host, headers, body)
+            print(f"[vsock] Sending HTTP request ({len(request)} bytes)", flush=True)
             sock.sendall(request)
+            print("[vsock] Request sent, waiting for response headers...", flush=True)
 
             # Read HTTP response headers
             header_data = b""
@@ -246,6 +253,7 @@ class VsockHttpClient:
                 if not chunk:
                     raise ConnectionError("Connection closed while reading headers")
                 header_data += chunk
+            print(f"[vsock] Received headers ({len(header_data)} bytes)", flush=True)
 
             header_part, body_start = header_data.split(b"\r\n\r\n", 1)
 
