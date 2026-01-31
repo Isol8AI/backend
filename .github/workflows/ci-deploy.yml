@@ -338,29 +338,19 @@ jobs:
 
       - name: Health check
         run: |
-          # Use ALB DNS name for health check
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names isol8-dev-alb \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$ALB_DNS" ]; then
-            API_URL="https://$ALB_DNS"
-          else
-            # Fallback to API Gateway
-            API_URL=$(aws apigatewayv2 get-apis --query "Items[?Name=='isol8-dev-api'].ApiEndpoint" --output text)
-          fi
+          # Use the public API URL for health check
+          API_URL="https://api-dev.isol8.co"
 
           echo "Checking health at $API_URL/health"
 
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" --max-time 5 || echo "000")
+          for i in {1..15}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" --max-time 10 || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed!"
               exit 0
             fi
-            echo "Attempt $i: Status $STATUS, retrying in 5s..."
-            sleep 5
+            echo "Attempt $i: Status $STATUS, retrying in 10s..."
+            sleep 10
           done
 
           echo "Health check failed"
