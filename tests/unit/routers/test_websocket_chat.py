@@ -11,7 +11,7 @@ Services are mocked to isolate route logic.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
