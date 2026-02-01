@@ -287,7 +287,7 @@ class NitroEnclaveClient(EnclaveInterface):
         # Start the sync generator in a thread pool
         loop = asyncio.get_event_loop()
         executor = ThreadPoolExecutor(max_workers=1)
-        future = loop.run_in_executor(executor, stream_in_thread)
+        loop.run_in_executor(executor, stream_in_thread)  # Fire and forget
 
         try:
             while True:
