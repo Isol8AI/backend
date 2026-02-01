@@ -260,19 +260,24 @@ class VsockHttpClient:
             # Parse headers to get content-length for error responses
             lines = header_part.decode("utf-8").split("\r\n")
             status_line = lines[0]
+            print(f"[vsock] Status: {status_line}", flush=True)
+            print(f"[vsock] All headers: {lines[1:]}", flush=True)
+            print(f"[vsock] Body start bytes: {len(body_start)}", flush=True)
+            if body_start:
+                print(f"[vsock] First 50 body bytes: {body_start[:50]}", flush=True)
+
+            # Parse response headers
+            response_headers = {}
+            for line in lines[1:]:
+                if ": " in line:
+                    key, value = line.split(": ", 1)
+                    response_headers[key.lower()] = value
 
             # Check status
             if "200" not in status_line:
-                # Try to read error body for better debugging
-                error_headers = {}
-                for line in lines[1:]:
-                    if ": " in line:
-                        key, value = line.split(": ", 1)
-                        error_headers[key.lower()] = value
-
                 # Read error body if content-length is available
                 error_body = body_start
-                content_length = int(error_headers.get("content-length", 0))
+                content_length = int(response_headers.get("content-length", 0))
                 while len(error_body) < content_length:
                     chunk = sock.recv(min(content_length - len(error_body), 65536))
                     if not chunk:
@@ -287,35 +292,105 @@ class VsockHttpClient:
                         error_msg += f" - {error_body[:500]}"
                 raise Exception(error_msg)
 
+            # Check if response is chunked
+            is_chunked = response_headers.get("transfer-encoding", "").lower() == "chunked"
+            print(f"[vsock] Transfer-Encoding chunked: {is_chunked}", flush=True)
+
             # Buffer any body data we already received
             buffer = body_start
+            print(f"[vsock] Starting event stream parsing, initial buffer: {len(buffer)} bytes", flush=True)
 
-            # Stream AWS event stream messages
-            while True:
-                # Need at least 4 bytes for message length
-                while len(buffer) < 4:
-                    chunk = sock.recv(65536)
-                    if not chunk:
-                        return  # End of stream
-                    buffer += chunk
+            if is_chunked:
+                # Handle chunked transfer encoding
+                # Each chunk: <hex-size>\r\n<data>\r\n
+                # AWS event stream messages are inside the chunk data
+                event_buffer = b""
+                msg_count = 0
 
-                # Parse message length (first 4 bytes, big-endian)
-                msg_len = int.from_bytes(buffer[:4], "big")
+                while True:
+                    # Read until we have a complete chunk size line
+                    while b"\r\n" not in buffer:
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            print("[vsock] No more data, end of stream", flush=True)
+                            return
+                        buffer += chunk
 
-                if msg_len == 0:
-                    return  # End marker
+                    # Parse chunk size (hex)
+                    size_line, buffer = buffer.split(b"\r\n", 1)
+                    chunk_size = int(size_line.decode("utf-8").strip(), 16)
+                    print(f"[vsock] Chunk size: {chunk_size}", flush=True)
 
-                # Read full message
-                while len(buffer) < msg_len:
-                    chunk = sock.recv(65536)
-                    if not chunk:
+                    if chunk_size == 0:
+                        print("[vsock] Final chunk (size 0), end of stream", flush=True)
                         return
-                    buffer += chunk
 
-                # Yield complete message
-                message = buffer[:msg_len]
-                buffer = buffer[msg_len:]
-                yield message
+                    # Read chunk data + trailing \r\n
+                    while len(buffer) < chunk_size + 2:
+                        data = sock.recv(65536)
+                        if not data:
+                            print("[vsock] Connection closed while reading chunk", flush=True)
+                            return
+                        buffer += data
+
+                    # Extract chunk data (excluding trailing \r\n)
+                    chunk_data = buffer[:chunk_size]
+                    buffer = buffer[chunk_size + 2:]  # Skip \r\n after chunk
+
+                    # Add chunk data to event buffer and parse AWS event stream messages
+                    event_buffer += chunk_data
+
+                    # Parse complete AWS event stream messages from event_buffer
+                    while len(event_buffer) >= 4:
+                        msg_len = int.from_bytes(event_buffer[:4], "big")
+                        if msg_len == 0 or msg_len > 1000000:  # Sanity check
+                            print(f"[vsock] Invalid message length: {msg_len}", flush=True)
+                            break
+                        if len(event_buffer) < msg_len:
+                            break  # Need more data
+
+                        message = event_buffer[:msg_len]
+                        event_buffer = event_buffer[msg_len:]
+                        msg_count += 1
+                        print(f"[vsock] Yielding message #{msg_count} ({msg_len} bytes)", flush=True)
+                        yield message
+            else:
+                # Non-chunked: read AWS event stream messages directly
+                msg_count = 0
+                while True:
+                    # Need at least 4 bytes for message length
+                    while len(buffer) < 4:
+                        print(f"[vsock] Reading more data (buffer has {len(buffer)} bytes, need 4)", flush=True)
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            print("[vsock] No more data, end of stream", flush=True)
+                            return
+                        print(f"[vsock] Received {len(chunk)} bytes", flush=True)
+                        buffer += chunk
+
+                    # Parse message length (first 4 bytes, big-endian)
+                    msg_len = int.from_bytes(buffer[:4], "big")
+                    print(f"[vsock] Message length: {msg_len}", flush=True)
+
+                    if msg_len == 0:
+                        print("[vsock] Zero-length message, end of stream", flush=True)
+                        return
+
+                    # Read full message
+                    while len(buffer) < msg_len:
+                        print(f"[vsock] Reading more (have {len(buffer)}, need {msg_len})", flush=True)
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            print("[vsock] Connection closed while reading message", flush=True)
+                            return
+                        buffer += chunk
+
+                    # Yield complete message
+                    message = buffer[:msg_len]
+                    buffer = buffer[msg_len:]
+                    msg_count += 1
+                    print(f"[vsock] Yielding message #{msg_count} ({msg_len} bytes)", flush=True)
+                    yield message
 
         finally:
             sock.close()

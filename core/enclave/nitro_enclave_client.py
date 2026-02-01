@@ -8,7 +8,9 @@ real Nitro Enclave via vsock. It's used when ENCLAVE_MODE=nitro.
 import asyncio
 import json
 import logging
+import queue
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import AsyncGenerator, List, Optional
 
@@ -269,12 +271,54 @@ class NitroEnclaveClient(EnclaveInterface):
 
         logger.debug(f"Sending CHAT_STREAM command for session {session_id}")
 
+        # Use a thread-safe queue to pass events from sync generator to async generator
+        # This prevents blocking the event loop during socket reads
+        event_queue: queue.Queue = queue.Queue()
+
+        def stream_in_thread():
+            """Run sync generator in thread, put events in queue."""
+            try:
+                for event in self._send_command_stream(command):
+                    event_queue.put(("event", event))
+                event_queue.put(("done", None))
+            except Exception as e:
+                event_queue.put(("error", e))
+
+        # Start the sync generator in a thread pool
+        loop = asyncio.get_event_loop()
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = loop.run_in_executor(executor, stream_in_thread)
+
         try:
-            for event in self._send_command_stream(command):
+            while True:
+                # Non-blocking check with small sleep to yield control to event loop
+                try:
+                    item_type, item = event_queue.get_nowait()
+                except queue.Empty:
+                    # Yield control to event loop, then check again
+                    await asyncio.sleep(0.01)
+                    continue
+
+                if item_type == "done":
+                    break
+
+                if item_type == "error":
+                    if isinstance(item, EnclaveConnectionError):
+                        logger.error(f"Enclave connection error: {item}")
+                        yield StreamChunk(error="Service temporarily unavailable", is_final=True)
+                    elif isinstance(item, EnclaveTimeoutError):
+                        logger.error("Enclave timeout during streaming")
+                        yield StreamChunk(error="Request timed out", is_final=True)
+                    else:
+                        logger.exception(f"Unexpected error in enclave streaming: {item}")
+                        yield StreamChunk(error="Internal error", is_final=True)
+                    break
+
+                event = item
                 if event.get("error"):
                     logger.error(f"Enclave error: {event['error']}")
                     yield StreamChunk(error=event["error"], is_final=True)
-                    return
+                    break
 
                 if event.get("encrypted_content"):
                     yield StreamChunk(encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"]))
@@ -288,18 +332,13 @@ class NitroEnclaveClient(EnclaveInterface):
                         output_tokens=event.get("output_tokens", 0),
                         is_final=True,
                     )
-
-        except EnclaveConnectionError as e:
-            logger.error(f"Enclave connection error: {e}")
-            yield StreamChunk(error="Service temporarily unavailable", is_final=True)
-
-        except EnclaveTimeoutError:
-            logger.error("Enclave timeout during streaming")
-            yield StreamChunk(error="Request timed out", is_final=True)
+                    break
 
         except Exception:
             logger.exception("Unexpected error in enclave streaming")
             yield StreamChunk(error="Internal error", is_final=True)
+        finally:
+            executor.shutdown(wait=False)
 
     # =========================================================================
     # Credential Management

@@ -210,19 +210,28 @@ class BedrockClient:
         - Remaining (minus 4 byte CRC): payload
         """
         if len(data) < 16:
+            print(f"[Bedrock] Event too short: {len(data)} bytes", flush=True)
             return {}
 
+        total_length = int.from_bytes(data[0:4], "big")
         headers_length = int.from_bytes(data[4:8], "big")
         headers_end = 12 + headers_length
+
+        print(f"[Bedrock] Parse: total={total_length}, headers_len={headers_length}, headers_end={headers_end}, data_len={len(data)}", flush=True)
 
         # Extract payload (skip 4-byte message CRC at end)
         payload = data[headers_end:-4]
 
         if payload:
             try:
-                return json.loads(payload.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError):
+                decoded = payload.decode("utf-8")
+                print(f"[Bedrock] Payload ({len(payload)} bytes): {decoded[:100]}...", flush=True)
+                return json.loads(decoded)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                print(f"[Bedrock] Payload parse error: {e}", flush=True)
+                print(f"[Bedrock] Raw payload: {payload[:100]}", flush=True)
                 return {}
+        print("[Bedrock] Empty payload", flush=True)
         return {}
 
     def converse_stream(
@@ -263,25 +272,29 @@ class BedrockClient:
 
         # Stream response
         try:
+            msg_num = 0
             for raw_message in self.http_client.request_stream("POST", url, signed_headers, body_bytes):
+                msg_num += 1
                 event = self._parse_event_stream_message(raw_message)
+                print(f"[Bedrock] Message #{msg_num}: event keys = {list(event.keys()) if event else 'empty'}", flush=True)
 
                 if not event:
                     continue
 
-                if "contentBlockDelta" in event:
-                    delta = event["contentBlockDelta"].get("delta", {})
-                    text = delta.get("text", "")
+                # Check for content delta (streaming text chunks)
+                if "delta" in event:
+                    text = event["delta"].get("text", "")
                     if text:
                         yield {"type": "content", "text": text}
 
-                elif "messageStop" in event:
-                    reason = event["messageStop"].get("stopReason", "end_turn")
+                # Check for stop reason
+                elif "stopReason" in event:
+                    reason = event.get("stopReason", "end_turn")
                     yield {"type": "stop", "reason": reason}
 
-                elif "metadata" in event:
-                    usage = event["metadata"].get("usage", {})
-                    yield {"type": "metadata", "usage": usage}
+                # Check for usage/metrics
+                elif "usage" in event:
+                    yield {"type": "metadata", "usage": event["usage"]}
 
         except Exception as e:
             yield {"type": "error", "message": str(e)}
