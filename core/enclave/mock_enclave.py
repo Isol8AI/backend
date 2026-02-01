@@ -933,6 +933,7 @@ class MockEnclave(EnclaveInterface):
 
             # Start the background thread to read from the stream
             import concurrent.futures
+
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             stream_future = executor.submit(read_stream_sync)
 
@@ -993,7 +994,8 @@ class MockEnclave(EnclaveInterface):
                                     buffer = post_think
                                 else:
                                     if any(
-                                        buffer.endswith(x) for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
+                                        buffer.endswith(x)
+                                        for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
                                     ):
                                         break
                                     else:
@@ -1008,7 +1010,9 @@ class MockEnclave(EnclaveInterface):
                     # metadata contains token usage
                     elif "metadata" in event:
                         usage = event["metadata"].get("usage", {})
-                        print(f"[LLM] Usage - input: {usage.get('inputTokens', 0)}, output: {usage.get('outputTokens', 0)}")
+                        print(
+                            f"[LLM] Usage - input: {usage.get('inputTokens', 0)}, output: {usage.get('outputTokens', 0)}"
+                        )
 
             finally:
                 # Ensure the background thread completes
