@@ -246,9 +246,7 @@ class TestDefaultTableName:
             with patch("core.services.connection_service.boto3"):
                 service = ConnectionService()
                 assert service.table_name == "my-custom-table"
-                mock_env.assert_called_with(
-                    "WS_CONNECTIONS_TABLE", "isol8-websocket-connections"
-                )
+                mock_env.assert_called_with("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
 
     def test_uses_default_if_env_not_set(self):
         """Uses default table name if env var is not set."""

@@ -61,9 +61,7 @@ class TestConnectEndpoint:
     @pytest.mark.asyncio
     async def test_connect_stores_connection(self, test_app, mock_connection_service):
         """Connect should store connection in DynamoDB."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/connect",
                 headers={
@@ -82,9 +80,7 @@ class TestConnectEndpoint:
     @pytest.mark.asyncio
     async def test_connect_stores_connection_with_org_id(self, test_app, mock_connection_service):
         """Connect should store org_id when provided."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/connect",
                 headers={
@@ -104,9 +100,7 @@ class TestConnectEndpoint:
     @pytest.mark.asyncio
     async def test_connect_without_connection_id_fails(self, test_app, mock_connection_service):
         """Connect without x-connection-id header should return 400."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/connect",
                 headers={
@@ -121,9 +115,7 @@ class TestConnectEndpoint:
     @pytest.mark.asyncio
     async def test_connect_without_user_id_fails(self, test_app, mock_connection_service):
         """Connect without x-user-id header should return 401."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/connect",
                 headers={
@@ -142,9 +134,7 @@ class TestDisconnectEndpoint:
     @pytest.mark.asyncio
     async def test_disconnect_deletes_connection(self, test_app, mock_connection_service):
         """Disconnect should delete connection from DynamoDB."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/disconnect",
                 headers={
@@ -158,9 +148,7 @@ class TestDisconnectEndpoint:
     @pytest.mark.asyncio
     async def test_disconnect_without_connection_id_returns_200(self, test_app, mock_connection_service):
         """Disconnect without connection-id should still return 200 (best effort)."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/disconnect",
                 headers={},
@@ -177,9 +165,7 @@ class TestDisconnectEndpoint:
 
         mock_connection_service.delete_connection.side_effect = ConnectionServiceError("DynamoDB error")
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/disconnect",
                 headers={
@@ -195,18 +181,14 @@ class TestMessageEndpoint:
     """Tests for POST /ws/message endpoint."""
 
     @pytest.mark.asyncio
-    async def test_message_looks_up_connection(
-        self, test_app, mock_connection_service, mock_management_api
-    ):
+    async def test_message_looks_up_connection(self, test_app, mock_connection_service, mock_management_api):
         """Message should look up connection to get user context."""
         mock_connection_service.get_connection.return_value = {
             "user_id": "test-user-456",
             "org_id": None,
         }
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={
@@ -219,18 +201,14 @@ class TestMessageEndpoint:
         mock_connection_service.get_connection.assert_called_once_with("test-conn-123")
 
     @pytest.mark.asyncio
-    async def test_message_handles_ping(
-        self, test_app, mock_connection_service, mock_management_api
-    ):
+    async def test_message_handles_ping(self, test_app, mock_connection_service, mock_management_api):
         """Ping message should respond with pong via Management API."""
         mock_connection_service.get_connection.return_value = {
             "user_id": "test-user-456",
             "org_id": None,
         }
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={
@@ -246,15 +224,11 @@ class TestMessageEndpoint:
         )
 
     @pytest.mark.asyncio
-    async def test_message_rejects_unknown_connection(
-        self, test_app, mock_connection_service, mock_management_api
-    ):
+    async def test_message_rejects_unknown_connection(self, test_app, mock_connection_service, mock_management_api):
         """Message with unknown connection should return 401."""
         mock_connection_service.get_connection.return_value = None
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={
@@ -268,13 +242,9 @@ class TestMessageEndpoint:
         mock_management_api.send_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_message_without_connection_id_fails(
-        self, test_app, mock_connection_service, mock_management_api
-    ):
+    async def test_message_without_connection_id_fails(self, test_app, mock_connection_service, mock_management_api):
         """Message without x-connection-id should return 400."""
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={},
@@ -285,18 +255,14 @@ class TestMessageEndpoint:
         assert "connection-id" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_message_handles_pong_silently(
-        self, test_app, mock_connection_service, mock_management_api
-    ):
+    async def test_message_handles_pong_silently(self, test_app, mock_connection_service, mock_management_api):
         """Pong messages should be acknowledged silently (no response sent)."""
         mock_connection_service.get_connection.return_value = {
             "user_id": "test-user-456",
             "org_id": None,
         }
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={
@@ -329,18 +295,14 @@ class TestChatMessageProcessing:
         }
 
     @pytest.mark.asyncio
-    async def test_chat_message_validates_format(
-        self, test_app, mock_connection_service, mock_management_api
-    ):
+    async def test_chat_message_validates_format(self, test_app, mock_connection_service, mock_management_api):
         """Invalid chat message format should send error via Management API."""
         mock_connection_service.get_connection.return_value = {
             "user_id": "test-user-456",
             "org_id": None,
         }
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={
@@ -369,9 +331,7 @@ class TestChatMessageProcessing:
         }
         valid_chat_message["model"] = "invalid-model"
 
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={
@@ -401,9 +361,7 @@ class TestChatMessageProcessing:
 
         # We can't easily test background task internals, but we can verify
         # the message was accepted for processing
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
             response = await client.post(
                 "/ws/message",
                 headers={

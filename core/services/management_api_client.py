@@ -163,6 +163,5 @@ class ManagementApiClient:
                 e.response.get("Error", {}).get("Message", str(e)),
             )
             raise ManagementApiClientError(
-                f"Failed to close connection {connection_id}: "
-                f"{e.response.get('Error', {}).get('Message', str(e))}"
+                f"Failed to close connection {connection_id}: {e.response.get('Error', {}).get('Message', str(e))}"
             ) from e

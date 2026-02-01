@@ -51,9 +51,7 @@ class ConnectionService:
             table_name: DynamoDB table name. If not provided, uses
                        WS_CONNECTIONS_TABLE env var (default: "isol8-websocket-connections")
         """
-        self.table_name = table_name or os.environ.get(
-            "WS_CONNECTIONS_TABLE", "isol8-websocket-connections"
-        )
+        self.table_name = table_name or os.environ.get("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
         self._client = boto3.client("dynamodb")
 
     def store_connection(

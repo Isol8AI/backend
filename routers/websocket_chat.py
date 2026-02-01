@@ -233,10 +233,7 @@ def _validate_and_process_chat(
             session_id=body.get("session_id"),
             model=body.get("model", ""),
             encrypted_message=EncryptedPayload(**body["encrypted_message"]),
-            encrypted_history=[
-                EncryptedPayload(**h) for h in body.get("encrypted_history", [])
-            ]
-            or None,
+            encrypted_history=[EncryptedPayload(**h) for h in body.get("encrypted_history", [])] or None,
             facts_context=body.get("facts_context"),
             client_transport_public_key=body["client_transport_public_key"],
         )

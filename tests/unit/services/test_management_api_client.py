@@ -28,9 +28,7 @@ def management_api_client(mock_apigw_client):
     """Create a ManagementApiClient with mocked boto3 client."""
     with patch("core.services.management_api_client.boto3") as mock_boto3:
         mock_boto3.client.return_value = mock_apigw_client
-        client = ManagementApiClient(
-            endpoint_url="https://abc123.execute-api.us-east-1.amazonaws.com/prod"
-        )
+        client = ManagementApiClient(endpoint_url="https://abc123.execute-api.us-east-1.amazonaws.com/prod")
         return client, mock_apigw_client, mock_boto3
 
 
@@ -42,9 +40,7 @@ def management_api_client(mock_apigw_client):
 class TestInitialization:
     """Tests for ManagementApiClient initialization."""
 
-    def test_creates_apigatewaymanagementapi_client_with_endpoint_url(
-        self, management_api_client
-    ):
+    def test_creates_apigatewaymanagementapi_client_with_endpoint_url(self, management_api_client):
         """Creates boto3 client with correct service and endpoint_url."""
         client, mock_apigw, mock_boto3 = management_api_client
 
@@ -55,27 +51,18 @@ class TestInitialization:
 
     def test_uses_environment_variable_for_endpoint(self):
         """Uses WS_MANAGEMENT_API_URL env var for default endpoint."""
-        with patch(
-            "core.services.management_api_client.os.environ.get"
-        ) as mock_env:
+        with patch("core.services.management_api_client.os.environ.get") as mock_env:
             mock_env.return_value = "https://xyz789.execute-api.us-west-2.amazonaws.com/dev"
             with patch("core.services.management_api_client.boto3"):
                 client = ManagementApiClient()
-                assert (
-                    client.endpoint_url
-                    == "https://xyz789.execute-api.us-west-2.amazonaws.com/dev"
-                )
+                assert client.endpoint_url == "https://xyz789.execute-api.us-west-2.amazonaws.com/dev"
                 mock_env.assert_called_with("WS_MANAGEMENT_API_URL")
 
     def test_raises_error_when_no_endpoint_provided(self):
         """Raises error when no endpoint URL is provided and env var not set."""
-        with patch(
-            "core.services.management_api_client.os.environ.get"
-        ) as mock_env:
+        with patch("core.services.management_api_client.os.environ.get") as mock_env:
             mock_env.return_value = None
-            with pytest.raises(
-                ManagementApiClientError, match="WS_MANAGEMENT_API_URL"
-            ):
+            with pytest.raises(ManagementApiClientError, match="WS_MANAGEMENT_API_URL"):
                 ManagementApiClient()
 
 
@@ -158,9 +145,7 @@ class TestSendMessage:
             "PostToConnection",
         )
 
-        with pytest.raises(
-            ManagementApiClientError, match="Failed to send message"
-        ):
+        with pytest.raises(ManagementApiClientError, match="Failed to send message"):
             client.send_message("conn_abc123", {"hello": "world"})
 
     def test_handles_unicode_content(self, management_api_client):
@@ -192,9 +177,7 @@ class TestCloseConnection:
 
         client.close_connection("conn_abc123")
 
-        mock_apigw.delete_connection.assert_called_once_with(
-            ConnectionId="conn_abc123"
-        )
+        mock_apigw.delete_connection.assert_called_once_with(ConnectionId="conn_abc123")
 
     def test_handles_gone_exception_silently(self, management_api_client):
         """Does not raise error when connection is already gone."""
@@ -225,9 +208,7 @@ class TestCloseConnection:
             "DeleteConnection",
         )
 
-        with pytest.raises(
-            ManagementApiClientError, match="Failed to close connection"
-        ):
+        with pytest.raises(ManagementApiClientError, match="Failed to close connection"):
             client.close_connection("conn_abc123")
 
 
