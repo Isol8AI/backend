@@ -14,7 +14,7 @@ from core.config import settings
 from core.auth import get_current_user
 from core.database import get_db, close_memory_pool
 from core.enclave import startup_enclave, shutdown_enclave
-from routers import users, chat, organizations, context, webhooks, debug_encryption
+from routers import users, chat, organizations, context, webhooks, debug_encryption, websocket_chat
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,9 @@ app.include_router(webhooks.router, prefix="/api/v1", tags=["webhooks"])
 
 # Debug routes - DEVELOPMENT ONLY
 app.include_router(debug_encryption.router, prefix="/api/v1", tags=["debug"])
+
+# WebSocket routes
+app.include_router(websocket_chat.router, prefix="/api/v1")
 
 
 @app.get("/")
