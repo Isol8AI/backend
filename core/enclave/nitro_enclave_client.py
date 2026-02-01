@@ -10,6 +10,7 @@ import json
 import logging
 import queue
 import socket
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import AsyncGenerator, List, Optional
@@ -278,10 +279,15 @@ class NitroEnclaveClient(EnclaveInterface):
         def stream_in_thread():
             """Run sync generator in thread, put events in queue."""
             try:
+                event_num = 0
                 for event in self._send_command_stream(command):
+                    event_num += 1
+                    print(f"[Parent] Thread: received event #{event_num} at {time.time():.3f}", flush=True)
                     event_queue.put(("event", event))
                 event_queue.put(("done", None))
+                print(f"[Parent] Thread: done, total events={event_num}", flush=True)
             except Exception as e:
+                print(f"[Parent] Thread: error {e}", flush=True)
                 event_queue.put(("error", e))
 
         # Start the sync generator in a thread pool
@@ -321,9 +327,11 @@ class NitroEnclaveClient(EnclaveInterface):
                     break
 
                 if event.get("encrypted_content"):
+                    print(f"[Parent] Async: yielding encrypted_content at {time.time():.3f}", flush=True)
                     yield StreamChunk(encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"]))
 
                 if event.get("is_final"):
+                    print(f"[Parent] Async: yielding is_final at {time.time():.3f}", flush=True)
                     yield StreamChunk(
                         stored_user_message=EncryptedPayload.from_dict(event["stored_user_message"]),
                         stored_assistant_message=EncryptedPayload.from_dict(event["stored_assistant_message"]),
