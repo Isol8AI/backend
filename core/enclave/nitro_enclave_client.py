@@ -8,7 +8,6 @@ real Nitro Enclave via vsock. It's used when ENCLAVE_MODE=nitro.
 import asyncio
 import json
 import logging
-import queue
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -272,38 +271,33 @@ class NitroEnclaveClient(EnclaveInterface):
 
         logger.debug(f"Sending CHAT_STREAM command for session {session_id}")
 
-        # Use a thread-safe queue to pass events from sync generator to async generator
-        # This prevents blocking the event loop during socket reads
-        event_queue: queue.Queue = queue.Queue()
+        # Use asyncio.Queue for proper async waiting (no polling/sleeping)
+        event_queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
 
         def stream_in_thread():
-            """Run sync generator in thread, put events in queue."""
+            """Run sync generator in thread, put events in async queue."""
             try:
                 event_num = 0
                 for event in self._send_command_stream(command):
                     event_num += 1
                     print(f"[Parent] Thread: received event #{event_num} at {time.time():.3f}", flush=True)
-                    event_queue.put(("event", event))
-                event_queue.put(("done", None))
+                    # Thread-safe way to put into asyncio.Queue
+                    loop.call_soon_threadsafe(event_queue.put_nowait, ("event", event))
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("done", None))
                 print(f"[Parent] Thread: done, total events={event_num}", flush=True)
             except Exception as e:
                 print(f"[Parent] Thread: error {e}", flush=True)
-                event_queue.put(("error", e))
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("error", e))
 
         # Start the sync generator in a thread pool
-        loop = asyncio.get_event_loop()
         executor = ThreadPoolExecutor(max_workers=1)
         loop.run_in_executor(executor, stream_in_thread)  # Fire and forget
 
         try:
             while True:
-                # Non-blocking check with small sleep to yield control to event loop
-                try:
-                    item_type, item = event_queue.get_nowait()
-                except queue.Empty:
-                    # Yield control to event loop, then check again
-                    await asyncio.sleep(0.01)
-                    continue
+                # Properly await the async queue - no polling, no sleeping
+                item_type, item = await event_queue.get()
 
                 if item_type == "done":
                     break
