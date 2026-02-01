@@ -35,12 +35,6 @@ class ConnectionServiceError(Exception):
     pass
 
 
-class ConnectionNotFoundError(ConnectionServiceError):
-    """Connection not found in DynamoDB."""
-
-    pass
-
-
 class ConnectionService:
     """
     Service for managing WebSocket connection state in DynamoDB.

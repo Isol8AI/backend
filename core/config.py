@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Credential refresh interval (seconds) - creds expire after 1 hour
     ENCLAVE_CREDENTIAL_REFRESH_SECONDS: int = int(os.getenv("ENCLAVE_CREDENTIAL_REFRESH_SECONDS", "2700"))  # 45 minutes
 
+    # WebSocket Configuration (API Gateway Management API)
+    WS_CONNECTIONS_TABLE: str = os.getenv("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
+    WS_MANAGEMENT_API_URL: str = os.getenv("WS_MANAGEMENT_API_URL", "")  # Set by Terraform
+
     @field_validator("CLERK_ISSUER")
     @classmethod
     def validate_clerk_issuer(cls, v: str) -> str:

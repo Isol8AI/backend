@@ -22,7 +22,10 @@ from .org_key_service import (
 from .connection_service import (
     ConnectionService,
     ConnectionServiceError,
-    ConnectionNotFoundError,
+)
+from .management_api_client import (
+    ManagementApiClient,
+    ManagementApiClientError,
 )
 
 # Note: MemoryService removed during migration to mem0.
@@ -44,5 +47,7 @@ __all__ = [
     # Connection Service (WebSocket state)
     "ConnectionService",
     "ConnectionServiceError",
-    "ConnectionNotFoundError",
+    # Management API Client (WebSocket push)
+    "ManagementApiClient",
+    "ManagementApiClientError",
 ]

@@ -8,7 +8,6 @@ from botocore.exceptions import ClientError
 from core.services.connection_service import (
     ConnectionService,
     ConnectionServiceError,
-    ConnectionNotFoundError,
 )
 
 
