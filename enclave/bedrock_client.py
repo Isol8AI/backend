@@ -23,6 +23,7 @@ directly inside the enclave.
 """
 
 import json
+import time
 from typing import Dict, Optional, List, Any, Generator
 from dataclasses import dataclass
 
@@ -276,11 +277,14 @@ class BedrockClient:
         # Stream response
         try:
             msg_num = 0
+            stream_start = time.time()
             for raw_message in self.http_client.request_stream("POST", url, signed_headers, body_bytes):
                 msg_num += 1
+                recv_time = time.time()
                 event = self._parse_event_stream_message(raw_message)
                 print(
-                    f"[Bedrock] Message #{msg_num}: event keys = {list(event.keys()) if event else 'empty'}", flush=True
+                    f"[Bedrock] Message #{msg_num} at {recv_time:.3f} (+{recv_time - stream_start:.3f}s): keys = {list(event.keys()) if event else 'empty'}",
+                    flush=True,
                 )
 
                 if not event:
@@ -290,6 +294,7 @@ class BedrockClient:
                 if "delta" in event:
                     text = event["delta"].get("text", "")
                     if text:
+                        print(f"[Bedrock] Yielding content chunk at {time.time():.3f}", flush=True)
                         yield {"type": "content", "text": text}
 
                 # Check for stop reason

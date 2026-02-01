@@ -31,6 +31,7 @@ import socket
 import sys
 import json
 import os
+import time
 from typing import List
 
 from crypto_primitives import (
@@ -369,12 +370,19 @@ class BedrockServer:
             chunk_count = 0
 
             print("[Enclave] Starting Bedrock stream...", flush=True)
+            stream_start = time.time()
 
             for event in self.bedrock.converse_stream(model_id, messages, system, inference_config):
+                event_time = time.time()
                 if event["type"] == "content":
                     chunk_text = event["text"]
                     full_response += chunk_text
                     chunk_count += 1
+
+                    print(
+                        f"[Enclave] Chunk #{chunk_count} received at {event_time:.3f} (+{event_time - stream_start:.3f}s)",
+                        flush=True,
+                    )
 
                     # Encrypt chunk for transport to client
                     encrypted_chunk = encrypt_to_public_key(
@@ -383,10 +391,16 @@ class BedrockServer:
                         "enclave-to-client-transport",
                     )
                     self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
+                    send_time = time.time()
+                    print(
+                        f"[Enclave] Chunk #{chunk_count} sent at {send_time:.3f} (encrypt+send took {send_time - event_time:.3f}s)",
+                        flush=True,
+                    )
 
                 elif event["type"] == "metadata":
                     input_tokens = event["usage"].get("inputTokens", 0)
                     output_tokens = event["usage"].get("outputTokens", 0)
+                    print(f"[Enclave] Metadata received at {event_time:.3f}", flush=True)
 
                 elif event["type"] == "error":
                     self._send_event(conn, {"error": event["message"], "is_final": True})
