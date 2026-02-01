@@ -893,7 +893,6 @@ class MockEnclave(EnclaveInterface):
             )
 
             # Call Bedrock Converse API with streaming
-            # Using run_in_executor for async compatibility with sync boto3
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
@@ -908,67 +907,113 @@ class MockEnclave(EnclaveInterface):
                 ),
             )
 
+            # Use an async queue to bridge between the sync stream iteration
+            # and the async generator. This allows proper streaming without
+            # blocking the event loop.
+            queue: asyncio.Queue = asyncio.Queue()
+
+            # Sentinel value to signal end of stream
+            _STREAM_END = object()
+            _STREAM_ERROR = object()
+
+            def read_stream_sync():
+                """
+                Read from the sync stream in a background thread.
+                Puts each event into the async queue.
+                """
+                try:
+                    for event in response["stream"]:
+                        # Put the event in the queue (thread-safe with asyncio)
+                        loop.call_soon_threadsafe(queue.put_nowait, event)
+                    # Signal end of stream
+                    loop.call_soon_threadsafe(queue.put_nowait, _STREAM_END)
+                except Exception as e:
+                    # Signal error
+                    loop.call_soon_threadsafe(queue.put_nowait, (_STREAM_ERROR, e))
+
+            # Start the background thread to read from the stream
+            import concurrent.futures
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            stream_future = executor.submit(read_stream_sync)
+
             # State for thinking tags
             is_thinking = False
             buffer = ""
             chunk_count = 0
             total_chars = 0
 
-            # Process streaming response events
-            for event in response["stream"]:
-                # contentBlockDelta contains the text chunks
-                if "contentBlockDelta" in event:
-                    delta = event["contentBlockDelta"].get("delta", {})
-                    content = delta.get("text", "")
+            # Process events from the queue asynchronously
+            try:
+                while True:
+                    # Await the next event from the queue (non-blocking for event loop)
+                    event = await queue.get()
 
-                    if not content:
-                        continue
+                    # Check for end of stream
+                    if event is _STREAM_END:
+                        break
 
-                    chunk_count += 1
-                    total_chars += len(content)
+                    # Check for error
+                    if isinstance(event, tuple) and len(event) == 2 and event[0] is _STREAM_ERROR:
+                        raise event[1]
 
-                    # Process thinking tags (for models that use them)
-                    buffer += content
+                    # contentBlockDelta contains the text chunks
+                    if "contentBlockDelta" in event:
+                        delta = event["contentBlockDelta"].get("delta", {})
+                        content = delta.get("text", "")
 
-                    while buffer:
-                        if not is_thinking:
-                            if "<think>" in buffer:
-                                pre_think, post_think = buffer.split("<think>", 1)
-                                if pre_think:
-                                    yield (pre_think, False)
-                                is_thinking = True
-                                buffer = post_think
-                            else:
-                                if any(buffer.endswith(x) for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]):
-                                    break
+                        if not content:
+                            continue
+
+                        chunk_count += 1
+                        total_chars += len(content)
+
+                        # Process thinking tags (for models that use them)
+                        buffer += content
+
+                        while buffer:
+                            if not is_thinking:
+                                if "<think>" in buffer:
+                                    pre_think, post_think = buffer.split("<think>", 1)
+                                    if pre_think:
+                                        yield (pre_think, False)
+                                    is_thinking = True
+                                    buffer = post_think
                                 else:
-                                    yield (buffer, False)
-                                    buffer = ""
-                        else:
-                            if "</think>" in buffer:
-                                think_content, post_think = buffer.split("</think>", 1)
-                                if think_content:
-                                    yield (think_content, True)
-                                is_thinking = False
-                                buffer = post_think
+                                    if any(buffer.endswith(x) for x in ["<", "<t", "<th", "<thi", "<thin", "<think"]):
+                                        break
+                                    else:
+                                        yield (buffer, False)
+                                        buffer = ""
                             else:
-                                if any(
-                                    buffer.endswith(x) for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
-                                ):
-                                    break
+                                if "</think>" in buffer:
+                                    think_content, post_think = buffer.split("</think>", 1)
+                                    if think_content:
+                                        yield (think_content, True)
+                                    is_thinking = False
+                                    buffer = post_think
                                 else:
-                                    yield (buffer, True)
-                                    buffer = ""
+                                    if any(
+                                        buffer.endswith(x) for x in ["<", "</", "</t", "</th", "</thi", "</thin", "</think"]
+                                    ):
+                                        break
+                                    else:
+                                        yield (buffer, True)
+                                        buffer = ""
 
-                # messageStop signals end of response
-                elif "messageStop" in event:
-                    stop_reason = event["messageStop"].get("stopReason", "")
-                    print(f"[LLM] Stream stopped: {stop_reason}")
+                    # messageStop signals end of response
+                    elif "messageStop" in event:
+                        stop_reason = event["messageStop"].get("stopReason", "")
+                        print(f"[LLM] Stream stopped: {stop_reason}")
 
-                # metadata contains token usage
-                elif "metadata" in event:
-                    usage = event["metadata"].get("usage", {})
-                    print(f"[LLM] Usage - input: {usage.get('inputTokens', 0)}, output: {usage.get('outputTokens', 0)}")
+                    # metadata contains token usage
+                    elif "metadata" in event:
+                        usage = event["metadata"].get("usage", {})
+                        print(f"[LLM] Usage - input: {usage.get('inputTokens', 0)}, output: {usage.get('outputTokens', 0)}")
+
+            finally:
+                # Ensure the background thread completes
+                stream_future.result(timeout=5.0)
+                executor.shutdown(wait=False)
 
             # Flush remaining buffer
             if buffer:
