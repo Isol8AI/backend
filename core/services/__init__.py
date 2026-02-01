@@ -19,6 +19,11 @@ from .org_key_service import (
     MembershipNotFoundError,
     NotAdminError,
 )
+from .connection_service import (
+    ConnectionService,
+    ConnectionServiceError,
+    ConnectionNotFoundError,
+)
 
 # Note: MemoryService removed during migration to mem0.
 # Will be re-implemented in Plan 2 with enclave-based mem0.
@@ -36,4 +41,8 @@ __all__ = [
     "OrgKeysNotFoundError",
     "MembershipNotFoundError",
     "NotAdminError",
+    # Connection Service (WebSocket state)
+    "ConnectionService",
+    "ConnectionServiceError",
+    "ConnectionNotFoundError",
 ]
