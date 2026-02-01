@@ -335,7 +335,7 @@ class VsockHttpClient:
 
                     # Extract chunk data (excluding trailing \r\n)
                     chunk_data = buffer[:chunk_size]
-                    buffer = buffer[chunk_size + 2:]  # Skip \r\n after chunk
+                    buffer = buffer[chunk_size + 2 :]  # Skip \r\n after chunk
 
                     # Add chunk data to event buffer and parse AWS event stream messages
                     event_buffer += chunk_data

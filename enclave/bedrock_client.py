@@ -217,7 +217,10 @@ class BedrockClient:
         headers_length = int.from_bytes(data[4:8], "big")
         headers_end = 12 + headers_length
 
-        print(f"[Bedrock] Parse: total={total_length}, headers_len={headers_length}, headers_end={headers_end}, data_len={len(data)}", flush=True)
+        print(
+            f"[Bedrock] Parse: total={total_length}, headers_len={headers_length}, headers_end={headers_end}, data_len={len(data)}",
+            flush=True,
+        )
 
         # Extract payload (skip 4-byte message CRC at end)
         payload = data[headers_end:-4]
@@ -276,7 +279,9 @@ class BedrockClient:
             for raw_message in self.http_client.request_stream("POST", url, signed_headers, body_bytes):
                 msg_num += 1
                 event = self._parse_event_stream_message(raw_message)
-                print(f"[Bedrock] Message #{msg_num}: event keys = {list(event.keys()) if event else 'empty'}", flush=True)
+                print(
+                    f"[Bedrock] Message #{msg_num}: event keys = {list(event.keys()) if event else 'empty'}", flush=True
+                )
 
                 if not event:
                     continue
