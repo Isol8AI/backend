@@ -19,7 +19,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from clerk_backend_api import Clerk
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Response
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -63,12 +63,12 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return db_get_session_factory()
 
 
-@router.post("/connect")
+@router.post("/connect", status_code=200)
 async def ws_connect(
     x_connection_id: Optional[str] = Header(None, alias="x-connection-id"),
     x_user_id: Optional[str] = Header(None, alias="x-user-id"),
     x_org_id: Optional[str] = Header(None, alias="x-org-id"),
-) -> Dict[str, str]:
+) -> Response:
     """
     Handle WebSocket $connect event from API Gateway.
 
@@ -81,9 +81,12 @@ async def ws_connect(
     - x-org-id: Organization ID from Clerk JWT (optional)
 
     Returns:
-        200: Connection stored successfully
+        200: Connection stored successfully (empty body to avoid forwarding)
         400: Missing connection-id header
         401: Missing user-id header (unauthorized)
+
+    Note: Returns empty body because API Gateway may forward HTTP response body
+    as WebSocket message when route responses are configured.
     """
     if not x_connection_id:
         raise HTTPException(status_code=400, detail="Missing x-connection-id header")
@@ -105,13 +108,14 @@ async def ws_connect(
         org_id=x_org_id,
     )
 
-    return {"status": "connected"}
+    # Return empty body - actual communication happens via Management API
+    return Response(status_code=200)
 
 
-@router.post("/disconnect")
+@router.post("/disconnect", status_code=200)
 async def ws_disconnect(
     x_connection_id: Optional[str] = Header(None, alias="x-connection-id"),
-) -> Dict[str, str]:
+) -> Response:
     """
     Handle WebSocket $disconnect event from API Gateway.
 
@@ -123,11 +127,11 @@ async def ws_disconnect(
     - x-connection-id: API Gateway connection ID (optional for best-effort)
 
     Returns:
-        200: Always (best-effort cleanup)
+        200: Always (best-effort cleanup, empty body)
     """
     if not x_connection_id:
         logger.debug("Disconnect without connection_id, ignoring")
-        return {"status": "disconnected"}
+        return Response(status_code=200)
 
     logger.info("WebSocket disconnect: connection_id=%s", x_connection_id)
 
@@ -140,15 +144,16 @@ async def ws_disconnect(
     except Exception as e:
         logger.exception("Unexpected error deleting connection %s: %s", x_connection_id, e)
 
-    return {"status": "disconnected"}
+    # Return empty body - actual communication happens via Management API
+    return Response(status_code=200)
 
 
-@router.post("/message")
+@router.post("/message", status_code=200)
 async def ws_message(
     body: Dict[str, Any],
     background_tasks: BackgroundTasks,
     x_connection_id: Optional[str] = Header(None, alias="x-connection-id"),
-) -> Dict[str, str]:
+) -> Response:
     """
     Handle WebSocket $default (message) event from API Gateway.
 
@@ -164,12 +169,12 @@ async def ws_message(
     Body: JSON message from client
 
     Returns:
-        200: Message received and being processed
+        200: Message received and being processed (empty body)
         400: Missing connection-id header
         401: Unknown connection (not in DynamoDB)
 
-    Note: Chat processing errors are sent via Management API, not HTTP response.
-    This allows returning 200 quickly while processing continues in background.
+    Note: All responses (pong, errors, chat) are sent via Management API,
+    not HTTP response. Returns empty body to avoid forwarding to WebSocket.
     """
     if not x_connection_id:
         raise HTTPException(status_code=400, detail="Missing x-connection-id header")
@@ -188,14 +193,14 @@ async def ws_message(
     msg_type = body.get("type")
 
     if msg_type == "ping":
-        # Respond with pong
+        # Respond with pong via Management API
         management_api = get_management_api_client()
         management_api.send_message(x_connection_id, {"type": "pong"})
-        return {"status": "pong_sent"}
+        return Response(status_code=200)
 
     if msg_type == "pong":
         # Client acknowledged our ping - no action needed
-        return {"status": "pong_received"}
+        return Response(status_code=200)
 
     # Assume it's a chat message - validate and process
     try:
@@ -211,7 +216,8 @@ async def ws_message(
         management_api = get_management_api_client()
         management_api.send_message(x_connection_id, {"type": "error", "message": str(e)})
 
-    return {"status": "processing"}
+    # Return empty body - actual response comes via Management API
+    return Response(status_code=200)
 
 
 def _validate_and_process_chat(
