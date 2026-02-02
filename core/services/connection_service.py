@@ -43,16 +43,19 @@ class ConnectionService:
     enabling the backend to know which user a WebSocket connection belongs to.
     """
 
-    def __init__(self, table_name: Optional[str] = None):
+    def __init__(self, table_name: Optional[str] = None, region_name: Optional[str] = None):
         """
         Initialize the connection service.
 
         Args:
             table_name: DynamoDB table name. If not provided, uses
                        WS_CONNECTIONS_TABLE env var (default: "isol8-websocket-connections")
+            region_name: AWS region. If not provided, uses AWS_REGION env var.
         """
         self.table_name = table_name or os.environ.get("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
-        self._client = boto3.client("dynamodb")
+        # Explicitly set region to avoid NoRegionError in containerized environments
+        region = region_name or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        self._client = boto3.client("dynamodb", region_name=region)
 
     def store_connection(
         self,

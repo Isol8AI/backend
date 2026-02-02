@@ -46,7 +46,7 @@ class ManagementApiClient:
     and manage their connections.
     """
 
-    def __init__(self, endpoint_url: Optional[str] = None):
+    def __init__(self, endpoint_url: Optional[str] = None, region_name: Optional[str] = None):
         """
         Initialize the management API client.
 
@@ -54,6 +54,7 @@ class ManagementApiClient:
             endpoint_url: Management API endpoint URL. If not provided, uses
                          WS_MANAGEMENT_API_URL environment variable.
                          Format: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}
+            region_name: AWS region. If not provided, uses AWS_REGION env var.
 
         Raises:
             ManagementApiClientError: If no endpoint URL is provided and
@@ -67,9 +68,12 @@ class ManagementApiClient:
                 "variable or pass endpoint_url parameter."
             )
 
+        # Explicitly set region to avoid NoRegionError in containerized environments
+        region = region_name or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
         self._client = boto3.client(
             "apigatewaymanagementapi",
             endpoint_url=self.endpoint_url,
+            region_name=region,
         )
 
     def send_message(self, connection_id: str, payload: Dict[str, Any]) -> bool:
