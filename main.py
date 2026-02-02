@@ -62,8 +62,8 @@ app.include_router(webhooks.router, prefix="/api/v1", tags=["webhooks"])
 # Debug routes - DEVELOPMENT ONLY
 app.include_router(debug_encryption.router, prefix="/api/v1", tags=["debug"])
 
-# WebSocket routes
-app.include_router(websocket_chat.router, prefix="/api/v1")
+# WebSocket routes (API Gateway WebSocket -> HTTP POST)
+app.include_router(websocket_chat.router, prefix="/api/v1/ws")
 
 
 @app.get("/")
