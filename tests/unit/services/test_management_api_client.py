@@ -41,27 +41,30 @@ class TestInitialization:
     """Tests for ManagementApiClient initialization."""
 
     def test_creates_apigatewaymanagementapi_client_with_endpoint_url(self, management_api_client):
-        """Creates boto3 client with correct service and endpoint_url."""
+        """Creates boto3 client with correct service, endpoint_url, and region."""
         client, mock_apigw, mock_boto3 = management_api_client
 
         mock_boto3.client.assert_called_once_with(
             "apigatewaymanagementapi",
             endpoint_url="https://abc123.execute-api.us-east-1.amazonaws.com/prod",
+            region_name="us-east-1",  # Defaults to us-east-1 when env vars not set
         )
 
     def test_uses_environment_variable_for_endpoint(self):
         """Uses WS_MANAGEMENT_API_URL env var for default endpoint."""
-        with patch("core.services.management_api_client.os.environ.get") as mock_env:
-            mock_env.return_value = "https://xyz789.execute-api.us-west-2.amazonaws.com/dev"
+        with patch("core.services.management_api_client.os.environ") as mock_env:
+            mock_env.get.side_effect = lambda key, *args: {
+                "WS_MANAGEMENT_API_URL": "https://xyz789.execute-api.us-west-2.amazonaws.com/dev",
+                "AWS_REGION": "us-west-2",
+            }.get(key, args[0] if args else None)
             with patch("core.services.management_api_client.boto3"):
                 client = ManagementApiClient()
                 assert client.endpoint_url == "https://xyz789.execute-api.us-west-2.amazonaws.com/dev"
-                mock_env.assert_called_with("WS_MANAGEMENT_API_URL")
 
     def test_raises_error_when_no_endpoint_provided(self):
         """Raises error when no endpoint URL is provided and env var not set."""
-        with patch("core.services.management_api_client.os.environ.get") as mock_env:
-            mock_env.return_value = None
+        with patch("core.services.management_api_client.os.environ") as mock_env:
+            mock_env.get.return_value = None
             with pytest.raises(ManagementApiClientError, match="WS_MANAGEMENT_API_URL"):
                 ManagementApiClient()
 

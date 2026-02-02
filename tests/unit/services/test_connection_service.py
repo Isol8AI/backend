@@ -241,17 +241,21 @@ class TestDefaultTableName:
 
     def test_uses_environment_variable(self):
         """Uses WS_CONNECTIONS_TABLE env var for default table name."""
-        with patch("core.services.connection_service.os.environ.get") as mock_env:
-            mock_env.return_value = "my-custom-table"
+        with patch("core.services.connection_service.os.environ") as mock_env:
+            mock_env.get.side_effect = lambda key, *args: {
+                "WS_CONNECTIONS_TABLE": "my-custom-table",
+                "AWS_REGION": "us-east-1",
+            }.get(key, args[0] if args else None)
             with patch("core.services.connection_service.boto3"):
                 service = ConnectionService()
                 assert service.table_name == "my-custom-table"
-                mock_env.assert_called_with("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
 
     def test_uses_default_if_env_not_set(self):
         """Uses default table name if env var is not set."""
-        with patch("core.services.connection_service.os.environ.get") as mock_env:
-            mock_env.return_value = "isol8-websocket-connections"
+        with patch("core.services.connection_service.os.environ") as mock_env:
+            mock_env.get.side_effect = lambda key, *args: {
+                "AWS_REGION": "us-east-1",
+            }.get(key, args[0] if args else None)
             with patch("core.services.connection_service.boto3"):
                 service = ConnectionService()
                 assert service.table_name == "isol8-websocket-connections"
