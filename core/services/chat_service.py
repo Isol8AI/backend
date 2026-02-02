@@ -123,6 +123,52 @@ class ChatService:
         logger.info("Created session %s for user %s (org: %s)", session.id, user_id, org_id)
         return session
 
+    async def create_session_deferred(
+        self,
+        user_id: str,
+        name: str = "New Chat",
+        org_id: Optional[str] = None,
+    ) -> Session:
+        """
+        Create a new chat session WITHOUT committing.
+
+        The session is added to the session but not committed.
+        Call db.commit() after messages are stored to persist atomically.
+
+        Args:
+            user_id: User creating the session
+            name: Display name for the session
+            org_id: Organization ID (None for personal session)
+
+        Returns:
+            Created Session object (not yet committed)
+
+        Raises:
+            ValueError: If org_id provided but user not a member
+        """
+        # Verify user exists
+        user = await self._get_user(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
+        # If org session, verify membership
+        if org_id:
+            membership = await self._get_membership(user_id, org_id)
+            if not membership:
+                raise ValueError(f"User {user_id} is not a member of org {org_id}")
+
+        session = Session(
+            id=str(uuid4()),
+            user_id=user_id,
+            org_id=org_id,
+            name=name,
+        )
+        self.db.add(session)
+        # NOTE: No commit here - caller must commit after storing messages
+
+        logger.info("Created deferred session %s for user %s (org: %s)", session.id, user_id, org_id)
+        return session
+
     async def get_session(
         self,
         session_id: str,
@@ -327,6 +373,7 @@ class ChatService:
         model_used: Optional[str] = None,
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
+        commit: bool = True,
     ) -> Message:
         """
         Store an encrypted message.
@@ -341,6 +388,7 @@ class ChatService:
             model_used: Model ID (for assistant messages)
             input_tokens: Token usage (for billing)
             output_tokens: Token usage (for billing)
+            commit: Whether to commit after adding (default True for backward compat)
 
         Returns:
             Created Message object
@@ -368,8 +416,9 @@ class ChatService:
         )
 
         self.db.add(message)
-        await self.db.commit()
-        await self.db.refresh(message)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(message)
 
         logger.debug(
             "Stored encrypted %s message %s in session %s",
@@ -378,6 +427,24 @@ class ChatService:
             session_id,
         )
         return message
+
+    async def commit_session_with_messages(self) -> None:
+        """
+        Commit the current transaction (session + messages together).
+
+        Call this after create_session_deferred and store_encrypted_message(commit=False)
+        to persist everything atomically.
+        """
+        await self.db.commit()
+        logger.debug("Committed session with messages atomically")
+
+    async def update_session_timestamp_deferred(self, session_id: str) -> None:
+        """Update session's updated_at timestamp without committing."""
+        result = await self.db.execute(select(Session).where(Session.id == session_id))
+        session = result.scalar_one_or_none()
+        if session:
+            session.updated_at = datetime.utcnow()
+            # NOTE: No commit - will be committed with messages
 
     # =========================================================================
     # Key Resolution
@@ -458,6 +525,7 @@ class ChatService:
         client_transport_public_key: str,
         user_metadata: Optional[dict] = None,
         org_metadata: Optional[dict] = None,
+        is_new_session: bool = False,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Process an encrypted message through the enclave with streaming.
@@ -467,7 +535,7 @@ class ChatService:
         2. Uses client's ephemeral transport key for response encryption
         3. Forwards encrypted message to enclave
         4. Yields encrypted response chunks
-        5. Stores final encrypted messages
+        5. Stores final encrypted messages (atomically with session if new)
 
         Args:
             session_id: Target session
@@ -480,6 +548,7 @@ class ChatService:
             client_transport_public_key: Client's ephemeral key for response encryption
             user_metadata: User's Clerk privateMetadata (for AWS credentials)
             org_metadata: Org's Clerk privateMetadata (for AWS credentials)
+            is_new_session: If True, session is uncommitted and will be committed with messages
 
         Yields:
             StreamChunk objects with encrypted content
@@ -514,15 +583,16 @@ class ChatService:
             # On final chunk, store the messages and memories
             if chunk.is_final and not chunk.error:
                 if chunk.stored_user_message and chunk.stored_assistant_message:
-                    # Store user message
+                    # Store user message (don't commit yet if new session)
                     await self.store_encrypted_message(
                         session_id=session_id,
                         role=MessageRole.USER,
                         encrypted_payload=chunk.stored_user_message,
                         model_used=model,
+                        commit=False,
                     )
 
-                    # Store assistant message
+                    # Store assistant message (don't commit yet)
                     await self.store_encrypted_message(
                         session_id=session_id,
                         role=MessageRole.ASSISTANT,
@@ -530,10 +600,14 @@ class ChatService:
                         model_used=chunk.model_used,
                         input_tokens=chunk.input_tokens,
                         output_tokens=chunk.output_tokens,
+                        commit=False,
                     )
 
-                    # Update session timestamp
-                    await self.update_session_timestamp(session_id)
+                    # Update session timestamp (added to transaction)
+                    await self.update_session_timestamp_deferred(session_id)
+
+                    # Commit everything atomically (session if new + messages)
+                    await self.commit_session_with_messages()
 
             yield chunk
 

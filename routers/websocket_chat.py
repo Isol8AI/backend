@@ -302,6 +302,7 @@ async def _process_chat_message_background(
                 return
 
             session_id = request.session_id
+            is_new_session = False
             if session_id:
                 session = await service.get_session(
                     session_id=session_id,
@@ -315,13 +316,14 @@ async def _process_chat_message_background(
                     )
                     return
             else:
-                # Create new session
-                session = await service.create_session(
+                # Create new session (deferred - not committed yet)
+                session = await service.create_session_deferred(
                     user_id=user_id,
                     name="New Chat",
                     org_id=org_id,
                 )
                 session_id = session.id
+                is_new_session = True
 
         # Send session ID first
         management_api.send_message(connection_id, {"type": "session", "session_id": session_id})
@@ -367,6 +369,7 @@ async def _process_chat_message_background(
                 client_transport_public_key=request.client_transport_public_key,
                 user_metadata=user_metadata,
                 org_metadata=org_metadata,
+                is_new_session=is_new_session,
             ):
                 if chunk.error:
                     logger.debug("Enclave error for session_id=%s: %s", session_id, chunk.error)

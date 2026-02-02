@@ -340,6 +340,7 @@ async def chat_stream_encrypted(
 
         # Get or create session
         session_id = request.session_id
+        is_new_session = False
         if session_id:
             session = await service.get_session(
                 session_id=session_id,
@@ -349,13 +350,14 @@ async def chat_stream_encrypted(
             if not session:
                 raise HTTPException(status_code=404, detail="Session not found or access denied")
         else:
-            # Create new session
-            session = await service.create_session(
+            # Create new session (deferred - not committed yet)
+            session = await service.create_session_deferred(
                 user_id=auth.user_id,
                 name="New Chat",
                 org_id=auth.org_id,
             )
             session_id = session.id
+            is_new_session = True
 
     # Convert hex-encoded API payloads to bytes-based crypto payloads
     encrypted_msg = request.encrypted_message.to_crypto_payload()
@@ -403,6 +405,7 @@ async def chat_stream_encrypted(
                     client_transport_public_key=request.client_transport_public_key,
                     user_metadata=user_metadata,
                     org_metadata=org_metadata,
+                    is_new_session=is_new_session,
                 ):
                     if chunk.error:
                         logger.debug("Enclave error for session_id=%s: %s", session_id, chunk.error)
