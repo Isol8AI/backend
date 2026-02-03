@@ -1,6 +1,9 @@
 # Ruff configuration for Isol8 backend
 line-length = 120
 
+# Exclude git submodules (external code)
+exclude = ["agent/"]
+
 [lint]
 # Ignore line length for now
 ignore = ["E501"]

@@ -254,9 +254,12 @@ class AgentRunner:
         cmd = [
             self.openclaw_path,
             "agent",
-            "--message", message,
-            "--agent", agent_name,
-            "--model", model,
+            "--message",
+            message,
+            "--agent",
+            agent_name,
+            "--model",
+            model,
             "--non-interactive",
         ]
 

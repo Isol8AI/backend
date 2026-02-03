@@ -2,7 +2,6 @@
 
 import io
 import tarfile
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -180,6 +179,7 @@ class TestAgentRunner:
     def test_run_openclaw_cli_timeout(self, mock_run, runner, tmp_path):
         """Test handling CLI timeout."""
         import subprocess
+
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="openclaw", timeout=120)
 
         result = runner.run_agent(

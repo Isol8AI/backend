@@ -22,7 +22,7 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import async_session_factory
@@ -36,16 +36,10 @@ logger = logging.getLogger(__name__)
 async def find_empty_sessions(db: AsyncSession) -> list[Session]:
     """Find all sessions that have no messages."""
     # Subquery to get session IDs that have at least one message
-    sessions_with_messages = (
-        select(Message.session_id)
-        .distinct()
-        .scalar_subquery()
-    )
+    sessions_with_messages = select(Message.session_id).distinct().scalar_subquery()
 
     # Find sessions NOT in that list
-    query = select(Session).where(
-        Session.id.not_in(sessions_with_messages)
-    ).order_by(Session.created_at.asc())
+    query = select(Session).where(Session.id.not_in(sessions_with_messages)).order_by(Session.created_at.asc())
 
     result = await db.execute(query)
     return list(result.scalars().all())
