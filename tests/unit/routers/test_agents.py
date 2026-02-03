@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from core.crypto import generate_x25519_keypair, encrypt_to_public_key
+from core.crypto import generate_x25519_keypair
 
 
 class TestAgentEndpoints:

@@ -3,7 +3,6 @@
 import pytest
 
 from core.services.agent_service import AgentService
-from models.agent_state import AgentState
 
 
 class TestAgentService:

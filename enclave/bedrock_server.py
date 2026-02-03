@@ -33,12 +33,12 @@ import json
 import os
 import time
 import io
+import subprocess
 import tarfile
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from crypto_primitives import (
     generate_x25519_keypair,
@@ -349,7 +349,7 @@ class BedrockServer:
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
             else:
                 self._create_fresh_agent(tmpfs_path, agent_name, model)
-                print(f"[Enclave] Created fresh agent directory", flush=True)
+                print("[Enclave] Created fresh agent directory", flush=True)
 
             # Decrypt user message
             encrypted_message = EncryptedPayload.from_dict(data["encrypted_message"])
