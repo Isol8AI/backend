@@ -151,9 +151,7 @@ class AgentService:
             List of AgentState objects
         """
         result = await self.db.execute(
-            select(AgentState)
-            .where(AgentState.user_id == user_id)
-            .order_by(AgentState.created_at.desc())
+            select(AgentState).where(AgentState.user_id == user_id).order_by(AgentState.created_at.desc())
         )
         return list(result.scalars().all())
 

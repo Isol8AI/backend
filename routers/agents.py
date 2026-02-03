@@ -298,13 +298,15 @@ async def send_agent_message(
 
 def _serialize_encrypted_payload(payload: CryptoEncryptedPayload) -> bytes:
     """Serialize encrypted payload to bytes for storage."""
-    return json.dumps({
-        "ephemeral_public_key": payload.ephemeral_public_key.hex(),
-        "iv": payload.iv.hex(),
-        "ciphertext": payload.ciphertext.hex(),
-        "auth_tag": payload.auth_tag.hex(),
-        "hkdf_salt": payload.hkdf_salt.hex() if payload.hkdf_salt else None,
-    }).encode()
+    return json.dumps(
+        {
+            "ephemeral_public_key": payload.ephemeral_public_key.hex(),
+            "iv": payload.iv.hex(),
+            "ciphertext": payload.ciphertext.hex(),
+            "auth_tag": payload.auth_tag.hex(),
+            "hkdf_salt": payload.hkdf_salt.hex() if payload.hkdf_salt else None,
+        }
+    ).encode()
 
 
 def _deserialize_encrypted_payload(data: bytes) -> CryptoEncryptedPayload:

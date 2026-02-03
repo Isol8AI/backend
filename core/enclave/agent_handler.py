@@ -89,10 +89,7 @@ class AgentHandler:
             )
 
         try:
-            logger.info(
-                f"Processing agent message for user {request.user_id}, "
-                f"agent {request.agent_name}"
-            )
+            logger.info(f"Processing agent message for user {request.user_id}, agent {request.agent_name}")
 
             # Delegate to enclave's run_agent method
             # The enclave handles decryption, agent execution, and re-encryption

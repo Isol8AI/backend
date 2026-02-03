@@ -1260,9 +1260,12 @@ You are {agent_name}, a personal AI companion.
         cmd = [
             "openclaw",
             "agent",
-            "--message", message,
-            "--agent", agent_name,
-            "--model", model,
+            "--message",
+            message,
+            "--agent",
+            agent_name,
+            "--model",
+            model,
             "--non-interactive",
         ]
 

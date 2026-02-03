@@ -408,6 +408,7 @@ class BedrockServer:
         except Exception as e:
             print(f"[Enclave] RUN_AGENT error: {e}", flush=True)
             import traceback
+
             traceback.print_exc()
             return {
                 "status": "error",
@@ -486,9 +487,7 @@ You are {agent_name}, a personal AI companion.
         # Create sessions directory
         (agent_subdir / "sessions").mkdir(exist_ok=True)
 
-    def _run_openclaw(
-        self, agent_dir: Path, message: str, agent_name: str, model: str, timeout: int = 120
-    ) -> dict:
+    def _run_openclaw(self, agent_dir: Path, message: str, agent_name: str, model: str, timeout: int = 120) -> dict:
         """Run the OpenClaw CLI with a message."""
         env = os.environ.copy()
         env["OPENCLAW_STATE_DIR"] = str(agent_dir)
@@ -498,9 +497,12 @@ You are {agent_name}, a personal AI companion.
         cmd = [
             "openclaw",
             "agent",
-            "--message", message,
-            "--agent", agent_name,
-            "--model", model,
+            "--message",
+            message,
+            "--agent",
+            agent_name,
+            "--model",
+            model,
             "--non-interactive",
         ]
 

@@ -17,27 +17,27 @@ class TestAgentHandler:
         enclave = MagicMock()
         keypair = generate_x25519_keypair()
         enclave._keypair = keypair
-        enclave.get_info.return_value = MagicMock(
-            enclave_public_key=keypair.public_key
-        )
+        enclave.get_info.return_value = MagicMock(enclave_public_key=keypair.public_key)
         # Mock run_agent to return a successful response
-        enclave.run_agent = AsyncMock(return_value=AgentRunResponse(
-            success=True,
-            encrypted_response=EncryptedPayload(
-                ephemeral_public_key=b"x" * 32,
-                iv=b"y" * 16,
-                ciphertext=b"encrypted_response",
-                auth_tag=b"z" * 16,
-                hkdf_salt=b"s" * 32,
-            ),
-            encrypted_state=EncryptedPayload(
-                ephemeral_public_key=b"a" * 32,
-                iv=b"b" * 16,
-                ciphertext=b"encrypted_state",
-                auth_tag=b"c" * 16,
-                hkdf_salt=b"d" * 32,
-            ),
-        ))
+        enclave.run_agent = AsyncMock(
+            return_value=AgentRunResponse(
+                success=True,
+                encrypted_response=EncryptedPayload(
+                    ephemeral_public_key=b"x" * 32,
+                    iv=b"y" * 16,
+                    ciphertext=b"encrypted_response",
+                    auth_tag=b"z" * 16,
+                    hkdf_salt=b"s" * 32,
+                ),
+                encrypted_state=EncryptedPayload(
+                    ephemeral_public_key=b"a" * 32,
+                    iv=b"b" * 16,
+                    ciphertext=b"encrypted_state",
+                    auth_tag=b"c" * 16,
+                    hkdf_salt=b"d" * 32,
+                ),
+            )
+        )
         return enclave
 
     @pytest.fixture
@@ -62,9 +62,7 @@ class TestAgentHandler:
         )
 
     @pytest.mark.asyncio
-    async def test_process_message_new_user(
-        self, handler, mock_enclave, sample_encrypted_message, user_keypair
-    ):
+    async def test_process_message_new_user(self, handler, mock_enclave, sample_encrypted_message, user_keypair):
         """Test processing message for a new user (no existing state)."""
         request = AgentMessageRequest(
             user_id="user_123",
@@ -91,9 +89,7 @@ class TestAgentHandler:
         )
 
     @pytest.mark.asyncio
-    async def test_process_message_existing_user(
-        self, handler, mock_enclave, sample_encrypted_message, user_keypair
-    ):
+    async def test_process_message_existing_user(self, handler, mock_enclave, sample_encrypted_message, user_keypair):
         """Test processing message for user with existing state."""
         existing_state = EncryptedPayload(
             ephemeral_public_key=b"e" * 32,
@@ -126,14 +122,14 @@ class TestAgentHandler:
         )
 
     @pytest.mark.asyncio
-    async def test_process_message_enclave_error(
-        self, handler, mock_enclave, sample_encrypted_message, user_keypair
-    ):
+    async def test_process_message_enclave_error(self, handler, mock_enclave, sample_encrypted_message, user_keypair):
         """Test handling enclave errors gracefully."""
-        mock_enclave.run_agent = AsyncMock(return_value=AgentRunResponse(
-            success=False,
-            error="Model not available",
-        ))
+        mock_enclave.run_agent = AsyncMock(
+            return_value=AgentRunResponse(
+                success=False,
+                error="Model not available",
+            )
+        )
 
         request = AgentMessageRequest(
             user_id="user_123",
@@ -150,9 +146,7 @@ class TestAgentHandler:
         assert "Model not available" in response.error
 
     @pytest.mark.asyncio
-    async def test_process_message_exception(
-        self, handler, mock_enclave, sample_encrypted_message, user_keypair
-    ):
+    async def test_process_message_exception(self, handler, mock_enclave, sample_encrypted_message, user_keypair):
         """Test that exceptions are handled gracefully."""
         mock_enclave.run_agent = AsyncMock(side_effect=Exception("Unexpected error"))
 
@@ -171,9 +165,7 @@ class TestAgentHandler:
         assert "Unexpected error" in response.error
 
     @pytest.mark.asyncio
-    async def test_process_message_no_enclave(
-        self, sample_encrypted_message, user_keypair
-    ):
+    async def test_process_message_no_enclave(self, sample_encrypted_message, user_keypair):
         """Test error when enclave is not configured."""
         handler = AgentHandler(enclave=None)
 

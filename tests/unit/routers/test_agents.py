@@ -24,9 +24,7 @@ class TestAgentEndpoints:
         # Setup mock enclave
         mock_enclave = MagicMock()
         keypair = generate_x25519_keypair()
-        mock_enclave.get_info.return_value = MagicMock(
-            enclave_public_key=keypair.public_key
-        )
+        mock_enclave.get_info.return_value = MagicMock(enclave_public_key=keypair.public_key)
         mock_enclave.encrypt_for_storage.return_value = MagicMock(
             ephemeral_public_key=b"x" * 32,
             iv=b"y" * 16,
@@ -55,9 +53,7 @@ class TestAgentEndpoints:
         # Setup mock enclave
         mock_enclave = MagicMock()
         keypair = generate_x25519_keypair()
-        mock_enclave.get_info.return_value = MagicMock(
-            enclave_public_key=keypair.public_key
-        )
+        mock_enclave.get_info.return_value = MagicMock(enclave_public_key=keypair.public_key)
         mock_enclave.encrypt_for_storage.return_value = MagicMock(
             ephemeral_public_key=b"x" * 32,
             iv=b"y" * 16,
@@ -87,9 +83,7 @@ class TestAgentEndpoints:
         # Setup mock enclave
         mock_enclave = MagicMock()
         keypair = generate_x25519_keypair()
-        mock_enclave.get_info.return_value = MagicMock(
-            enclave_public_key=keypair.public_key
-        )
+        mock_enclave.get_info.return_value = MagicMock(enclave_public_key=keypair.public_key)
         mock_enclave.encrypt_for_storage.return_value = MagicMock(
             ephemeral_public_key=b"x" * 32,
             iv=b"y" * 16,
@@ -124,9 +118,7 @@ class TestAgentEndpoints:
         # Setup mock enclave
         mock_enclave = MagicMock()
         keypair = generate_x25519_keypair()
-        mock_enclave.get_info.return_value = MagicMock(
-            enclave_public_key=keypair.public_key
-        )
+        mock_enclave.get_info.return_value = MagicMock(enclave_public_key=keypair.public_key)
         mock_enclave.encrypt_for_storage.return_value = MagicMock(
             ephemeral_public_key=b"x" * 32,
             iv=b"y" * 16,
@@ -157,9 +149,7 @@ class TestAgentEndpoints:
         # Setup mock enclave
         mock_enclave = MagicMock()
         keypair = generate_x25519_keypair()
-        mock_enclave.get_info.return_value = MagicMock(
-            enclave_public_key=keypair.public_key
-        )
+        mock_enclave.get_info.return_value = MagicMock(enclave_public_key=keypair.public_key)
         mock_enclave.encrypt_for_storage.return_value = MagicMock(
             ephemeral_public_key=b"x" * 32,
             iv=b"y" * 16,
