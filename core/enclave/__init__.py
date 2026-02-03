@@ -165,6 +165,10 @@ async def shutdown_enclave() -> None:
     _enclave_instance = None
 
 
+# Import agent handling classes
+from .agent_runner import AgentRunner, AgentConfig, AgentRunResult
+from .agent_handler import AgentHandler, AgentMessageRequest, AgentMessageResponse
+
 __all__ = [
     "EncryptionContext",
     "MockEnclave",
@@ -177,4 +181,11 @@ __all__ = [
     "reset_enclave",
     "startup_enclave",
     "shutdown_enclave",
+    # Agent handling
+    "AgentRunner",
+    "AgentConfig",
+    "AgentRunResult",
+    "AgentHandler",
+    "AgentMessageRequest",
+    "AgentMessageResponse",
 ]

@@ -246,8 +246,11 @@ class AgentRunner:
             AgentRunResult with success status and response
         """
         # Build environment
+        # OPENCLAW_STATE_DIR is the canonical env var for OpenClaw's state directory
+        # This tells OpenClaw to use agent_dir as ~/.openclaw/
         env = os.environ.copy()
-        env["OPENCLAW_HOME"] = str(agent_dir)
+        env["OPENCLAW_STATE_DIR"] = str(agent_dir)
+        env["OPENCLAW_HOME"] = str(agent_dir)  # Legacy/fallback
         env["HOME"] = str(agent_dir)  # Some tools use HOME
 
         # Build command

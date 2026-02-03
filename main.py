@@ -14,7 +14,7 @@ from core.config import settings
 from core.auth import get_current_user
 from core.database import get_db, close_memory_pool
 from core.enclave import startup_enclave, shutdown_enclave
-from routers import users, chat, organizations, context, webhooks, debug_encryption, websocket_chat
+from routers import users, chat, organizations, context, webhooks, debug_encryption, websocket_chat, agents
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,9 @@ app.include_router(debug_encryption.router, prefix="/api/v1", tags=["debug"])
 
 # WebSocket routes (API Gateway WebSocket -> HTTP POST)
 app.include_router(websocket_chat.router, prefix="/api/v1/ws")
+
+# Agent routes (OpenClaw integration)
+app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
 
 
 @app.get("/")
