@@ -164,14 +164,11 @@ jobs:
 
       - name: Install Nitro CLI
         run: |
-          # Install nitro-cli from Amazon Linux Extras repository
-          # The build-enclave command works on any Linux with Docker
-          sudo amazon-linux-extras install aws-nitro-enclaves-cli -y 2>/dev/null || {
-            # Fallback: download and install directly for Ubuntu
-            echo "Installing nitro-cli for Ubuntu..."
-            wget -q https://github.com/aws/aws-nitro-enclaves-cli/releases/latest/download/aws-nitro-enclaves-cli-1.2.0-1.x86_64.rpm -O /tmp/nitro-cli.rpm || true
-            # If RPM install fails, we'll build on EC2 instead
-          }
+          # nitro-cli requires Nitro Enclaves kernel driver which is only available
+          # on Nitro-enabled EC2 instances. GitHub Actions runners don't have this.
+          # EIF will be built on EC2 instance during deployment.
+          echo "nitro-cli requires Nitro-enabled EC2 instance - skipping installation"
+          echo "EIF will be built on EC2 during instance startup"
 
       - name: Build enclave Docker image
         run: |
@@ -259,9 +256,11 @@ jobs:
           echo "  - ENCLAVE_MODE=nitro (if EIF exists)"
 
           # Start instance refresh - this replaces instances one at a time
+          # InstanceWarmup: 900s (15 min) to allow time for EIF build on EC2
+          # EIF build takes ~10 min on m5.xlarge due to Nitro CLI requirements
           REFRESH_ID=$(aws autoscaling start-instance-refresh \
             --auto-scaling-group-name $ASG_NAME \
-            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 300}' \
+            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 900}' \
             --query 'InstanceRefreshId' \
             --output text)
 
