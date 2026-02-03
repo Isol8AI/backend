@@ -202,8 +202,11 @@ jobs:
         if: steps.build-eif.outputs.eif_built != 'true'
         run: |
           # If we can't build EIF in CI, upload the source files for EC2 to build
-          aws s3 sync enclave/ "s3://${{ env.ENCLAVE_BUCKET }}/dev/source/" --exclude "*.eif"
-          echo "Enclave source uploaded for EC2 build"
+          # Upload enclave directory
+          aws s3 sync enclave/ "s3://${{ env.ENCLAVE_BUCKET }}/dev/source/enclave/" --exclude "*.eif"
+          # Upload agent submodule (required by Dockerfile.enclave)
+          aws s3 sync agent/ "s3://${{ env.ENCLAVE_BUCKET }}/dev/source/agent/"
+          echo "Enclave source + agent submodule uploaded for EC2 build"
 
   # ===========================================================================
   # Deploy to Dev (automatic via ASG Instance Refresh)
