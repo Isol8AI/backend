@@ -61,6 +61,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -108,6 +110,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -149,6 +153,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -169,7 +175,8 @@ jobs:
 
       - name: Build enclave Docker image
         run: |
-          docker build -t isol8-enclave:latest -f enclave/Dockerfile.enclave enclave/
+          # Build context is repo root so we can access agent/ submodule
+          docker build -t isol8-enclave:latest -f enclave/Dockerfile.enclave .
 
       - name: Build EIF (or skip if nitro-cli unavailable)
         id: build-eif

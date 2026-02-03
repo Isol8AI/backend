@@ -1,0 +1,3 @@
+[submodule "agent"]
+	path = agent
+	url = https://github.com/Isol8AI/agent.git

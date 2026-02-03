@@ -1,48 +1,94 @@
 # Dockerfile.enclave
 #
-# Nitro Enclave image with Bedrock inference (M4)
+# Nitro Enclave image with Bedrock inference + OpenClaw agent runtime
 # Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file enclave.eif
+#
+# Requires: git submodule update --init (agent/ must be populated)
 
-# Use Amazon Linux 2 - matches the EC2 host, good Nitro compatibility
-FROM amazonlinux:2
+# Use Amazon Linux 2023 for better Node.js support
+FROM amazonlinux:2023
 
-# Install Python 3.8, shadow-utils (for useradd), and build dependencies for cryptography
-RUN amazon-linux-extras install python3.8 -y && \
-    yum install -y shadow-utils gcc python38-devel libffi-devel openssl-devel && \
-    ln -sf /usr/bin/python3.8 /usr/bin/python3 && \
-    python3 -m pip install --upgrade pip && \
-    yum clean all && \
-    rm -rf /var/cache/yum
+# Install system dependencies
+RUN dnf install -y \
+    python3.11 \
+    python3.11-pip \
+    python3.11-devel \
+    gcc \
+    libffi-devel \
+    openssl-devel \
+    shadow-utils \
+    tar \
+    gzip \
+    && dnf clean all
 
-# Install cryptography library for X25519, AES-GCM, HKDF
-# Install botocore for AWS SigV4 signing (NOT boto3 - we use our own vsock HTTP client)
-RUN python3 -m pip install --no-cache-dir cryptography==44.0.0 botocore==1.35.0
+# Set Python 3.11 as default
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip3 && \
+    python3 -m pip install --upgrade pip
 
-# Create non-root user for security
+# Install Python dependencies for enclave crypto and AWS
+RUN python3 -m pip install --no-cache-dir \
+    cryptography==44.0.0 \
+    botocore==1.35.0
+
+# Install Node.js 22 (required for OpenClaw)
+RUN curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && \
+    dnf install -y nodejs && \
+    dnf clean all
+
+# Install pnpm globally
+RUN npm install -g pnpm
+
+# Create enclave user for security
 RUN useradd -r -s /bin/false enclave
 
-# Copy our application files
+# =============================================================================
+# OpenClaw Agent Installation (from git submodule)
+# =============================================================================
+WORKDIR /opt/openclaw
+
+# Copy agent from git submodule (version pinned in .gitmodules)
+COPY agent/ .
+
+# Install dependencies and build
+RUN pnpm install --frozen-lockfile && \
+    pnpm build
+
+# Link globally so 'openclaw' CLI is available
+RUN npm link
+
+# Verify installation
+RUN openclaw --version || echo "OpenClaw CLI installed"
+
+# =============================================================================
+# Enclave Application
+# =============================================================================
 WORKDIR /app
 
 # M1-M3 files (crypto foundation)
-COPY hello_enclave.py .
-COPY echo_server.py .
-COPY crypto_primitives.py .
-COPY crypto_server.py .
-COPY test_crypto_vectors.py .
-COPY test_crypto_client.py .
+# Note: Build context is repo root, so paths are relative to that
+COPY enclave/hello_enclave.py .
+COPY enclave/echo_server.py .
+COPY enclave/crypto_primitives.py .
+COPY enclave/crypto_server.py .
+COPY enclave/test_crypto_vectors.py .
+COPY enclave/test_crypto_client.py .
 
 # M4 files (Bedrock integration)
-COPY vsock_http_client.py .
-COPY bedrock_client.py .
-COPY bedrock_server.py .
+COPY enclave/vsock_http_client.py .
+COPY enclave/bedrock_client.py .
+COPY enclave/bedrock_server.py .
+
+# Set ownership
+RUN chown -R enclave:enclave /app /opt/openclaw
 
 # Run as non-root
 USER enclave
 
 # Environment
 ENV AWS_REGION=us-east-1
+ENV OPENCLAW_HOME=/tmp/openclaw
+ENV PATH="/opt/openclaw/node_modules/.bin:$PATH"
 
-# Entrypoint - run the Bedrock server (M4)
-# For M3 testing, change to: ENTRYPOINT ["python3", "/app/crypto_server.py"]
+# Entrypoint - run the Bedrock server
 ENTRYPOINT ["python3", "/app/bedrock_server.py"]
