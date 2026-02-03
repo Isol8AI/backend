@@ -20,6 +20,7 @@ from .mock_enclave import (
     EnclaveInterface,
     EnclaveInfo,
     StreamChunk,
+    AgentRunResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -473,3 +474,96 @@ class NitroEnclaveClient(EnclaveInterface):
                 "enclave_cid": self._cid,
                 "error": str(e),
             }
+
+    # =========================================================================
+    # Agent Execution
+    # =========================================================================
+
+    async def run_agent(
+        self,
+        encrypted_message: EncryptedPayload,
+        encrypted_state: Optional[EncryptedPayload],
+        user_public_key: bytes,
+        agent_name: str,
+        model: str,
+    ) -> AgentRunResponse:
+        """
+        Run an OpenClaw agent inside the Nitro Enclave.
+
+        This sends the RUN_AGENT command to the real enclave via vsock.
+        The enclave handles:
+        1. Decrypting the message and state
+        2. Unpacking state to tmpfs
+        3. Running OpenClaw CLI
+        4. Re-encrypting the response and updated state
+
+        Args:
+            encrypted_message: User's message encrypted to enclave
+            encrypted_state: Existing agent state tarball (None for new agent)
+            user_public_key: User's public key for response encryption
+            agent_name: Name of the agent to run
+            model: LLM model to use
+
+        Returns:
+            AgentRunResponse with encrypted response and state
+        """
+        # Check if credentials need refresh
+        if self._credentials_expiring_soon():
+            logger.info("Credentials expiring soon, refreshing...")
+            await self._push_credentials_async()
+
+        command = {
+            "command": "RUN_AGENT",
+            "encrypted_message": encrypted_message.to_dict(),
+            "encrypted_state": encrypted_state.to_dict() if encrypted_state else None,
+            "user_public_key": user_public_key.hex(),
+            "agent_name": agent_name,
+            "model": model,
+        }
+
+        logger.info(f"Sending RUN_AGENT command for agent {agent_name}")
+
+        try:
+            # Run in thread pool since vsock is blocking
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self._send_command(command, timeout=settings.ENCLAVE_INFERENCE_TIMEOUT),
+            )
+
+            if response.get("status") != "success":
+                error_msg = response.get("error", "Unknown enclave error")
+                logger.error(f"Enclave RUN_AGENT failed: {error_msg}")
+                return AgentRunResponse(
+                    success=False,
+                    error=error_msg,
+                )
+
+            # Parse encrypted payloads from response
+            encrypted_response = None
+            if response.get("encrypted_response"):
+                encrypted_response = EncryptedPayload.from_dict(response["encrypted_response"])
+
+            encrypted_state_result = None
+            if response.get("encrypted_state"):
+                encrypted_state_result = EncryptedPayload.from_dict(response["encrypted_state"])
+
+            return AgentRunResponse(
+                success=True,
+                encrypted_response=encrypted_response,
+                encrypted_state=encrypted_state_result,
+            )
+
+        except EnclaveConnectionError as e:
+            logger.error(f"Enclave connection error: {e}")
+            return AgentRunResponse(
+                success=False,
+                error="Service temporarily unavailable",
+            )
+
+        except EnclaveTimeoutError:
+            logger.error("Enclave timeout during agent execution")
+            return AgentRunResponse(
+                success=False,
+                error="Request timed out",
+            )

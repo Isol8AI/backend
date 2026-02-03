@@ -1,58 +1,49 @@
 """Tests for AgentHandler enclave integration."""
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from pathlib import Path
+from unittest.mock import MagicMock, AsyncMock
 
 from core.crypto import EncryptedPayload, generate_x25519_keypair
 from core.enclave.agent_handler import AgentHandler, AgentMessageRequest, AgentMessageResponse
+from core.enclave.mock_enclave import AgentRunResponse
 
 
 class TestAgentHandler:
     """Test AgentHandler enclave integration."""
 
     @pytest.fixture
-    def mock_runner(self):
-        """Create mock AgentRunner."""
-        runner = MagicMock()
-        runner.get_user_tmpfs_path.return_value = Path("/tmp/openclaw/user_123")
-        runner.run_agent.return_value = MagicMock(
-            success=True,
-            response="Hello! I'm Luna, your AI companion.",
-        )
-        runner.pack_directory.return_value = b"packed_tarball_data"
-        return runner
-
-    @pytest.fixture
     def mock_enclave(self):
-        """Create mock enclave for crypto operations."""
+        """Create mock enclave that implements run_agent."""
         enclave = MagicMock()
         keypair = generate_x25519_keypair()
         enclave._keypair = keypair
         enclave.get_info.return_value = MagicMock(
             enclave_public_key=keypair.public_key
         )
-        enclave.decrypt_transport_message.return_value = b"Hello!"
-        enclave.encrypt_for_transport.return_value = EncryptedPayload(
-            ephemeral_public_key=b"x" * 32,
-            iv=b"y" * 16,
-            ciphertext=b"encrypted_response",
-            auth_tag=b"z" * 16,
-            hkdf_salt=b"s" * 32,
-        )
-        enclave.encrypt_for_storage.return_value = EncryptedPayload(
-            ephemeral_public_key=b"a" * 32,
-            iv=b"b" * 16,
-            ciphertext=b"encrypted_for_storage",
-            auth_tag=b"c" * 16,
-            hkdf_salt=b"d" * 32,
-        )
+        # Mock run_agent to return a successful response
+        enclave.run_agent = AsyncMock(return_value=AgentRunResponse(
+            success=True,
+            encrypted_response=EncryptedPayload(
+                ephemeral_public_key=b"x" * 32,
+                iv=b"y" * 16,
+                ciphertext=b"encrypted_response",
+                auth_tag=b"z" * 16,
+                hkdf_salt=b"s" * 32,
+            ),
+            encrypted_state=EncryptedPayload(
+                ephemeral_public_key=b"a" * 32,
+                iv=b"b" * 16,
+                ciphertext=b"encrypted_state",
+                auth_tag=b"c" * 16,
+                hkdf_salt=b"d" * 32,
+            ),
+        ))
         return enclave
 
     @pytest.fixture
-    def handler(self, mock_runner, mock_enclave):
-        """Create handler with mocked dependencies."""
-        return AgentHandler(runner=mock_runner, enclave=mock_enclave)
+    def handler(self, mock_enclave):
+        """Create handler with mocked enclave."""
+        return AgentHandler(enclave=mock_enclave)
 
     @pytest.fixture
     def user_keypair(self):
@@ -60,18 +51,19 @@ class TestAgentHandler:
         return generate_x25519_keypair()
 
     @pytest.fixture
-    def sample_encrypted_message(self, mock_enclave):
+    def sample_encrypted_message(self):
         """Create a sample encrypted message."""
-        from core.crypto import encrypt_to_public_key
-        return encrypt_to_public_key(
-            mock_enclave._keypair.public_key,
-            b"Hello!",
-            "client-to-enclave-transport",
+        return EncryptedPayload(
+            ephemeral_public_key=b"m" * 32,
+            iv=b"n" * 16,
+            ciphertext=b"Hello!",
+            auth_tag=b"o" * 16,
+            hkdf_salt=b"p" * 32,
         )
 
     @pytest.mark.asyncio
     async def test_process_message_new_user(
-        self, handler, mock_runner, sample_encrypted_message, user_keypair
+        self, handler, mock_enclave, sample_encrypted_message, user_keypair
     ):
         """Test processing message for a new user (no existing state)."""
         request = AgentMessageRequest(
@@ -88,21 +80,21 @@ class TestAgentHandler:
         assert response.success is True
         assert response.encrypted_response is not None
         assert response.encrypted_state is not None
-        mock_runner.create_fresh_agent.assert_called_once()
-        mock_runner.run_agent.assert_called_once()
-        mock_runner.cleanup_directory.assert_called_once()
+
+        # Verify enclave.run_agent was called with correct parameters
+        mock_enclave.run_agent.assert_called_once_with(
+            encrypted_message=sample_encrypted_message,
+            encrypted_state=None,
+            user_public_key=user_keypair.public_key,
+            agent_name="luna",
+            model="claude-3-5-sonnet",
+        )
 
     @pytest.mark.asyncio
     async def test_process_message_existing_user(
-        self, handler, mock_runner, mock_enclave, sample_encrypted_message, user_keypair
+        self, handler, mock_enclave, sample_encrypted_message, user_keypair
     ):
         """Test processing message for user with existing state."""
-        # Mock decrypting existing state to tarball bytes
-        mock_enclave.decrypt_transport_message.side_effect = [
-            b"existing_tarball_data",  # First call: decrypt state
-            b"Hello!",  # Second call: decrypt message
-        ]
-
         existing_state = EncryptedPayload(
             ephemeral_public_key=b"e" * 32,
             iv=b"f" * 16,
@@ -123,18 +115,25 @@ class TestAgentHandler:
         response = await handler.process_message(request)
 
         assert response.success is True
-        mock_runner.unpack_tarball.assert_called_once()
-        mock_runner.create_fresh_agent.assert_not_called()
+
+        # Verify existing state was passed to enclave
+        mock_enclave.run_agent.assert_called_once_with(
+            encrypted_message=sample_encrypted_message,
+            encrypted_state=existing_state,
+            user_public_key=user_keypair.public_key,
+            agent_name="luna",
+            model="claude-3-5-sonnet",
+        )
 
     @pytest.mark.asyncio
-    async def test_process_message_cli_error(
-        self, handler, mock_runner, sample_encrypted_message, user_keypair
+    async def test_process_message_enclave_error(
+        self, handler, mock_enclave, sample_encrypted_message, user_keypair
     ):
-        """Test handling CLI errors gracefully."""
-        mock_runner.run_agent.return_value = MagicMock(
+        """Test handling enclave errors gracefully."""
+        mock_enclave.run_agent = AsyncMock(return_value=AgentRunResponse(
             success=False,
             error="Model not available",
-        )
+        ))
 
         request = AgentMessageRequest(
             user_id="user_123",
@@ -149,14 +148,13 @@ class TestAgentHandler:
 
         assert response.success is False
         assert "Model not available" in response.error
-        mock_runner.cleanup_directory.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_cleanup_on_exception(
-        self, handler, mock_runner, sample_encrypted_message, user_keypair
+    async def test_process_message_exception(
+        self, handler, mock_enclave, sample_encrypted_message, user_keypair
     ):
-        """Test that cleanup happens even on exceptions."""
-        mock_runner.run_agent.side_effect = Exception("Unexpected error")
+        """Test that exceptions are handled gracefully."""
+        mock_enclave.run_agent = AsyncMock(side_effect=Exception("Unexpected error"))
 
         request = AgentMessageRequest(
             user_id="user_123",
@@ -171,7 +169,27 @@ class TestAgentHandler:
 
         assert response.success is False
         assert "Unexpected error" in response.error
-        mock_runner.cleanup_directory.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_message_no_enclave(
+        self, sample_encrypted_message, user_keypair
+    ):
+        """Test error when enclave is not configured."""
+        handler = AgentHandler(enclave=None)
+
+        request = AgentMessageRequest(
+            user_id="user_123",
+            agent_name="luna",
+            encrypted_message=sample_encrypted_message,
+            encrypted_state=None,
+            user_public_key=user_keypair.public_key,
+            model="claude-3-5-sonnet",
+        )
+
+        response = await handler.process_message(request)
+
+        assert response.success is False
+        assert "not configured" in response.error
 
 
 class TestAgentMessageRequest:

@@ -32,7 +32,13 @@ import sys
 import json
 import os
 import time
-from typing import List
+import io
+import tarfile
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import List, Optional
 
 from crypto_primitives import (
     generate_x25519_keypair,
@@ -298,6 +304,243 @@ class BedrockServer:
                 "error": str(e),
             }
 
+    def handle_run_agent(self, data: dict) -> dict:
+        """
+        Run an OpenClaw agent with an encrypted message.
+
+        Required fields:
+        - encrypted_message: EncryptedPayload (user's message, encrypted to enclave key)
+        - user_public_key: Hex string of user's public key (for response encryption)
+        - agent_name: Name of the agent to run
+        - model: LLM model to use
+
+        Optional fields:
+        - encrypted_state: EncryptedPayload (existing agent state tarball)
+          If not provided, creates a fresh agent.
+
+        Returns:
+        - encrypted_response: Agent's response (encrypted to user's key)
+        - encrypted_state: Updated agent state tarball (encrypted to enclave's key)
+        """
+        tmpfs_path = None
+        try:
+            # Extract parameters
+            user_public_key = hex_to_bytes(data["user_public_key"])
+            agent_name = data["agent_name"]
+            model = data["model"]
+            encrypted_state_dict = data.get("encrypted_state")
+
+            print(f"[Enclave] RUN_AGENT: agent={agent_name}, model={model}", flush=True)
+
+            # Create tmpfs directory for this request
+            tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
+            tmpfs_path = Path(tempfile.mkdtemp(dir=tmpfs_base, prefix=f"agent_{agent_name}_"))
+            print(f"[Enclave] Using tmpfs: {tmpfs_path}", flush=True)
+
+            # Decrypt and extract existing state, or create fresh agent
+            if encrypted_state_dict:
+                encrypted_state = EncryptedPayload.from_dict(encrypted_state_dict)
+                state_bytes = decrypt_with_private_key(
+                    self.keypair.private_key,
+                    encrypted_state,
+                    "agent-state-storage",
+                )
+                self._unpack_tarball(state_bytes, tmpfs_path)
+                print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
+            else:
+                self._create_fresh_agent(tmpfs_path, agent_name, model)
+                print(f"[Enclave] Created fresh agent directory", flush=True)
+
+            # Decrypt user message
+            encrypted_message = EncryptedPayload.from_dict(data["encrypted_message"])
+            message_bytes = decrypt_with_private_key(
+                self.keypair.private_key,
+                encrypted_message,
+                "client-to-enclave-transport",
+            )
+            message = message_bytes.decode("utf-8")
+            print(f"[Enclave] Decrypted message: {message[:50]}...", flush=True)
+
+            # Run OpenClaw CLI
+            result = self._run_openclaw(tmpfs_path, message, agent_name, model)
+
+            if not result["success"]:
+                return {
+                    "status": "error",
+                    "command": "RUN_AGENT",
+                    "error": result["error"],
+                }
+
+            print(f"[Enclave] OpenClaw response: {result['response'][:50]}...", flush=True)
+
+            # Pack updated state
+            tarball_bytes = self._pack_directory(tmpfs_path)
+            print(f"[Enclave] Packed state: {len(tarball_bytes)} bytes", flush=True)
+
+            # Encrypt state for storage (to enclave's key for future decryption)
+            encrypted_state_out = encrypt_to_public_key(
+                self.keypair.public_key,
+                tarball_bytes,
+                "agent-state-storage",
+            )
+
+            # Encrypt response for transport (to user's key)
+            encrypted_response = encrypt_to_public_key(
+                user_public_key,
+                result["response"].encode("utf-8"),
+                "enclave-to-client-transport",
+            )
+
+            return {
+                "status": "success",
+                "command": "RUN_AGENT",
+                "encrypted_response": encrypted_response.to_dict(),
+                "encrypted_state": encrypted_state_out.to_dict(),
+            }
+
+        except KeyError as e:
+            print(f"[Enclave] RUN_AGENT missing field: {e}", flush=True)
+            return {
+                "status": "error",
+                "command": "RUN_AGENT",
+                "error": f"Missing required field: {e}",
+            }
+        except Exception as e:
+            print(f"[Enclave] RUN_AGENT error: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "command": "RUN_AGENT",
+                "error": str(e),
+            }
+        finally:
+            # Always cleanup tmpfs
+            if tmpfs_path and tmpfs_path.exists():
+                shutil.rmtree(tmpfs_path, ignore_errors=True)
+                print(f"[Enclave] Cleaned up tmpfs: {tmpfs_path}", flush=True)
+
+    def _unpack_tarball(self, tarball_bytes: bytes, target_dir: Path) -> None:
+        """Unpack a gzip tarball to a directory."""
+        target_dir.mkdir(parents=True, exist_ok=True)
+        buffer = io.BytesIO(tarball_bytes)
+        with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
+            # Security: Check for path traversal
+            for member in tar.getmembers():
+                if member.name.startswith("/") or ".." in member.name:
+                    raise ValueError(f"Unsafe path in tarball: {member.name}")
+            tar.extractall(target_dir)
+
+    def _pack_directory(self, directory: Path) -> bytes:
+        """Pack a directory into a gzip tarball."""
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            for item in directory.rglob("*"):
+                if item.is_file():
+                    arcname = item.relative_to(directory)
+                    tar.add(item, arcname=str(arcname))
+        buffer.seek(0)
+        return buffer.read()
+
+    def _create_fresh_agent(self, agent_dir: Path, agent_name: str, model: str) -> None:
+        """Create a fresh OpenClaw agent directory structure."""
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        # Default SOUL.md content
+        soul_content = f"""# {agent_name}
+
+You are {agent_name}, a personal AI companion.
+
+## Personality
+- Friendly and helpful
+- Remember past conversations
+- Learn user preferences over time
+
+## Guidelines
+- Be concise but thorough
+- Ask clarifying questions when needed
+- Respect user privacy
+"""
+
+        # Create openclaw.json config
+        config = {
+            "version": "1.0",
+            "agents": {agent_name: {"model": model}},
+            "defaults": {"model": model, "agent": agent_name},
+        }
+        config_file = agent_dir / "openclaw.json"
+        config_file.write_text(json.dumps(config, indent=2))
+
+        # Create agent directory structure
+        agent_subdir = agent_dir / "agents" / agent_name
+        agent_subdir.mkdir(parents=True, exist_ok=True)
+
+        # Create SOUL.md
+        (agent_subdir / "SOUL.md").write_text(soul_content)
+
+        # Create memory directory
+        memory_dir = agent_subdir / "memory"
+        memory_dir.mkdir(exist_ok=True)
+        (memory_dir / "MEMORY.md").write_text("# Memories\n\nNo memories yet.\n")
+
+        # Create sessions directory
+        (agent_subdir / "sessions").mkdir(exist_ok=True)
+
+    def _run_openclaw(
+        self, agent_dir: Path, message: str, agent_name: str, model: str, timeout: int = 120
+    ) -> dict:
+        """Run the OpenClaw CLI with a message."""
+        env = os.environ.copy()
+        env["OPENCLAW_STATE_DIR"] = str(agent_dir)
+        env["OPENCLAW_HOME"] = str(agent_dir)
+        env["HOME"] = str(agent_dir)
+
+        cmd = [
+            "openclaw",
+            "agent",
+            "--message", message,
+            "--agent", agent_name,
+            "--model", model,
+            "--non-interactive",
+        ]
+
+        print(f"[Enclave] Running: {' '.join(cmd)}", flush=True)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(agent_dir),
+            )
+
+            if result.returncode == 0:
+                return {
+                    "success": True,
+                    "response": result.stdout.strip(),
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.stderr.strip() or f"Exit code: {result.returncode}",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": f"Command timed out after {timeout} seconds",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
     def _send_event(self, conn: socket.socket, event: dict) -> None:
         """Send newline-delimited JSON event."""
         conn.sendall(json.dumps(event).encode("utf-8") + b"\n")
@@ -462,6 +705,7 @@ class BedrockServer:
             "HEALTH": self.handle_health,
             "CHAT": lambda: self.handle_chat(request),
             "RUN_TESTS": self.handle_run_tests,
+            "RUN_AGENT": lambda: self.handle_run_agent(request),
         }
 
         handler = handlers.get(command)

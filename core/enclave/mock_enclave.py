@@ -263,6 +263,47 @@ class EnclaveInterface(ABC):
         """
         pass
 
+    @abstractmethod
+    async def run_agent(
+        self,
+        encrypted_message: EncryptedPayload,
+        encrypted_state: Optional[EncryptedPayload],
+        user_public_key: bytes,
+        agent_name: str,
+        model: str,
+    ) -> "AgentRunResponse":
+        """
+        Run an OpenClaw agent with an encrypted message.
+
+        This method:
+        1. Decrypts the message and state tarball (if any)
+        2. Unpacks state to tmpfs
+        3. Runs OpenClaw CLI
+        4. Packs updated state
+        5. Re-encrypts state and response
+
+        Args:
+            encrypted_message: User's message encrypted to enclave
+            encrypted_state: Existing agent state tarball (None for new agent)
+            user_public_key: User's public key for response encryption
+            agent_name: Name of the agent to run
+            model: LLM model identifier
+
+        Returns:
+            AgentRunResponse with encrypted response and state
+        """
+        pass
+
+
+@dataclass
+class AgentRunResponse:
+    """Response from enclave run_agent operation."""
+
+    success: bool
+    encrypted_response: Optional[EncryptedPayload] = None
+    encrypted_state: Optional[EncryptedPayload] = None
+    error: str = ""
+
 
 # =============================================================================
 # Mock Enclave Implementation
@@ -1032,6 +1073,252 @@ class MockEnclave(EnclaveInterface):
 
             traceback.print_exc()
             yield (f"Error: {str(e)}", False)
+
+    async def run_agent(
+        self,
+        encrypted_message: EncryptedPayload,
+        encrypted_state: Optional[EncryptedPayload],
+        user_public_key: bytes,
+        agent_name: str,
+        model: str,
+    ) -> AgentRunResponse:
+        """
+        Run an OpenClaw agent with an encrypted message.
+
+        In mock mode, this tries to run the actual OpenClaw CLI if available,
+        otherwise returns a mock response for testing.
+        """
+        import io
+        import tarfile
+        import shutil
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        from . import EncryptionContext
+
+        tmpfs_path = None
+
+        try:
+            # Create tmpfs directory
+            tmpfs_base = "/tmp/openclaw"
+            Path(tmpfs_base).mkdir(parents=True, exist_ok=True)
+            tmpfs_path = Path(tempfile.mkdtemp(dir=tmpfs_base, prefix=f"agent_{agent_name}_"))
+
+            logger.info(f"[MockEnclave] Running agent {agent_name} in {tmpfs_path}")
+
+            # Decrypt and extract existing state, or create fresh agent
+            if encrypted_state:
+                state_bytes = decrypt_with_private_key(
+                    self._keypair.private_key,
+                    encrypted_state,
+                    EncryptionContext.AGENT_STATE_STORAGE.value,
+                )
+                self._unpack_tarball(state_bytes, tmpfs_path)
+                logger.info(f"[MockEnclave] Extracted existing state ({len(state_bytes)} bytes)")
+            else:
+                self._create_fresh_agent(tmpfs_path, agent_name, model)
+                logger.info("[MockEnclave] Created fresh agent directory")
+
+            # Decrypt user message
+            message_bytes = decrypt_with_private_key(
+                self._keypair.private_key,
+                encrypted_message,
+                EncryptionContext.CLIENT_TO_ENCLAVE.value,
+            )
+            message = message_bytes.decode("utf-8")
+            logger.info(f"[MockEnclave] Decrypted message: {message[:50]}...")
+
+            # Try to run OpenClaw CLI
+            result = self._run_openclaw(tmpfs_path, message, agent_name, model)
+
+            if not result["success"]:
+                return AgentRunResponse(
+                    success=False,
+                    error=result["error"],
+                )
+
+            logger.info(f"[MockEnclave] Agent response: {result['response'][:50]}...")
+
+            # Pack updated state
+            tarball_bytes = self._pack_directory(tmpfs_path)
+            logger.info(f"[MockEnclave] Packed state: {len(tarball_bytes)} bytes")
+
+            # Encrypt state for storage (to enclave's key for future decryption)
+            encrypted_state_out = encrypt_to_public_key(
+                self._keypair.public_key,
+                tarball_bytes,
+                EncryptionContext.AGENT_STATE_STORAGE.value,
+            )
+
+            # Encrypt response for transport (to user's key)
+            encrypted_response = encrypt_to_public_key(
+                user_public_key,
+                result["response"].encode("utf-8"),
+                EncryptionContext.ENCLAVE_TO_CLIENT.value,
+            )
+
+            return AgentRunResponse(
+                success=True,
+                encrypted_response=encrypted_response,
+                encrypted_state=encrypted_state_out,
+            )
+
+        except Exception as e:
+            logger.exception(f"[MockEnclave] run_agent error: {e}")
+            return AgentRunResponse(
+                success=False,
+                error=str(e),
+            )
+
+        finally:
+            # Always cleanup tmpfs
+            if tmpfs_path and tmpfs_path.exists():
+                shutil.rmtree(tmpfs_path, ignore_errors=True)
+                logger.debug(f"[MockEnclave] Cleaned up tmpfs: {tmpfs_path}")
+
+    def _unpack_tarball(self, tarball_bytes: bytes, target_dir) -> None:
+        """Unpack a gzip tarball to a directory."""
+        import io
+        import tarfile
+        from pathlib import Path
+
+        target_dir = Path(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        buffer = io.BytesIO(tarball_bytes)
+        with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
+            for member in tar.getmembers():
+                if member.name.startswith("/") or ".." in member.name:
+                    raise ValueError(f"Unsafe path in tarball: {member.name}")
+            tar.extractall(target_dir)
+
+    def _pack_directory(self, directory) -> bytes:
+        """Pack a directory into a gzip tarball."""
+        import io
+        import tarfile
+        from pathlib import Path
+
+        directory = Path(directory)
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            for item in directory.rglob("*"):
+                if item.is_file():
+                    arcname = item.relative_to(directory)
+                    tar.add(item, arcname=str(arcname))
+        buffer.seek(0)
+        return buffer.read()
+
+    def _create_fresh_agent(self, agent_dir, agent_name: str, model: str) -> None:
+        """Create a fresh OpenClaw agent directory structure."""
+        import json
+        from pathlib import Path
+
+        agent_dir = Path(agent_dir)
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        soul_content = f"""# {agent_name}
+
+You are {agent_name}, a personal AI companion.
+
+## Personality
+- Friendly and helpful
+- Remember past conversations
+- Learn user preferences over time
+
+## Guidelines
+- Be concise but thorough
+- Ask clarifying questions when needed
+- Respect user privacy
+"""
+
+        config = {
+            "version": "1.0",
+            "agents": {agent_name: {"model": model}},
+            "defaults": {"model": model, "agent": agent_name},
+        }
+        (agent_dir / "openclaw.json").write_text(json.dumps(config, indent=2))
+
+        agent_subdir = agent_dir / "agents" / agent_name
+        agent_subdir.mkdir(parents=True, exist_ok=True)
+        (agent_subdir / "SOUL.md").write_text(soul_content)
+
+        memory_dir = agent_subdir / "memory"
+        memory_dir.mkdir(exist_ok=True)
+        (memory_dir / "MEMORY.md").write_text("# Memories\n\nNo memories yet.\n")
+
+        (agent_subdir / "sessions").mkdir(exist_ok=True)
+
+    def _run_openclaw(self, agent_dir, message: str, agent_name: str, model: str, timeout: int = 120) -> dict:
+        """Run the OpenClaw CLI with a message."""
+        import os
+        import subprocess
+        from pathlib import Path
+
+        agent_dir = Path(agent_dir)
+        env = os.environ.copy()
+        env["OPENCLAW_STATE_DIR"] = str(agent_dir)
+        env["OPENCLAW_HOME"] = str(agent_dir)
+        env["HOME"] = str(agent_dir)
+
+        cmd = [
+            "openclaw",
+            "agent",
+            "--message", message,
+            "--agent", agent_name,
+            "--model", model,
+            "--non-interactive",
+        ]
+
+        logger.info(f"[MockEnclave] Running: {' '.join(cmd)}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(agent_dir),
+            )
+
+            if result.returncode == 0:
+                return {
+                    "success": True,
+                    "response": result.stdout.strip(),
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+            else:
+                # If openclaw isn't available, return a mock response
+                if "not found" in result.stderr.lower() or result.returncode == 127:
+                    logger.warning("[MockEnclave] openclaw CLI not found, returning mock response")
+                    return {
+                        "success": True,
+                        "response": f"[Mock Response] Hello! I'm {agent_name}. OpenClaw CLI is not installed in the mock enclave, so this is a simulated response to: {message[:100]}",
+                    }
+                return {
+                    "success": False,
+                    "error": result.stderr.strip() or f"Exit code: {result.returncode}",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+        except FileNotFoundError:
+            # openclaw not installed - return mock response
+            logger.warning("[MockEnclave] openclaw CLI not found, returning mock response")
+            return {
+                "success": True,
+                "response": f"[Mock Response] Hello! I'm {agent_name}. OpenClaw CLI is not installed, so this is a simulated response to: {message[:100]}",
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": f"Command timed out after {timeout} seconds",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
 
 
 # =============================================================================
