@@ -8,7 +8,8 @@
 # Use Amazon Linux 2023 for better Node.js support
 FROM amazonlinux:2023
 
-# Install system dependencies
+# Install system dependencies and Node.js
+# NOTE: Must install Node.js BEFORE changing Python symlinks, as dnf is a Python script
 RUN dnf install -y \
     python3.11 \
     python3.11-pip \
@@ -21,7 +22,12 @@ RUN dnf install -y \
     gzip \
     && dnf clean all
 
-# Set Python 3.11 as default
+# Install Node.js 22 (required for OpenClaw) - must happen before Python symlink change
+RUN curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && \
+    dnf install -y nodejs && \
+    dnf clean all
+
+# Set Python 3.11 as default (after all dnf operations are complete)
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
     ln -sf /usr/bin/pip3.11 /usr/bin/pip3 && \
     python3 -m pip install --upgrade pip
@@ -30,11 +36,6 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
 RUN python3 -m pip install --no-cache-dir \
     cryptography==44.0.0 \
     botocore==1.35.0
-
-# Install Node.js 22 (required for OpenClaw)
-RUN curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && \
-    dnf install -y nodejs && \
-    dnf clean all
 
 # Install pnpm globally
 RUN npm install -g pnpm
