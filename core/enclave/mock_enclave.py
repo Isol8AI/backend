@@ -1088,10 +1088,7 @@ class MockEnclave(EnclaveInterface):
         In mock mode, this tries to run the actual OpenClaw CLI if available,
         otherwise returns a mock response for testing.
         """
-        import io
-        import tarfile
         import shutil
-        import subprocess
         import tempfile
         from pathlib import Path
 
