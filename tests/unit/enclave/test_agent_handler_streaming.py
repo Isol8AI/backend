@@ -1,7 +1,7 @@
 """Tests for AgentHandler streaming and AgentStreamChunk/AgentStreamRequest dataclasses."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 from core.crypto import EncryptedPayload, generate_x25519_keypair
 from core.enclave.agent_handler import AgentHandler, AgentStreamRequest
