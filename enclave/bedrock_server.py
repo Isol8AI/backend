@@ -591,6 +591,7 @@ You are {agent_name}, a personal AI companion.
         if session_file is None:
             sessions_dir.mkdir(parents=True, exist_ok=True)
             from datetime import datetime as dt
+
             timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
             session_file = sessions_dir / f"{timestamp}.jsonl"
             # Write session header
@@ -607,6 +608,7 @@ You are {agent_name}, a personal AI companion.
     def _append_to_session(self, session_file: Path, role: str, content: str) -> None:
         """Append a message to a session JSONL file in OpenClaw format."""
         from datetime import datetime as dt
+
         record = {
             "type": "message",
             "timestamp": dt.now().isoformat(),
@@ -757,6 +759,7 @@ You are {agent_name}, a personal AI companion.
         except Exception as e:
             print(f"[Enclave] AGENT_CHAT_STREAM error: {e}", flush=True)
             import traceback
+
             traceback.print_exc()
             self._send_event(conn, {"error": str(e), "is_final": True})
 

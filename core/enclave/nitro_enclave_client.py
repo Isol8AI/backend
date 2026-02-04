@@ -631,9 +631,7 @@ class NitroEnclaveClient(EnclaveInterface):
                     break
 
                 if event.get("encrypted_content"):
-                    yield AgentStreamChunk(
-                        encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"])
-                    )
+                    yield AgentStreamChunk(encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"]))
 
                 if event.get("is_final"):
                     encrypted_state_result = None

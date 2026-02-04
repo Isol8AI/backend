@@ -87,9 +87,7 @@ class TestAgentChatMessageRouting:
         We mock the background processor to prevent it from running (it needs
         a real database); this test only verifies routing and validation.
         """
-        with patch(
-            "routers.websocket_chat._process_agent_chat_background"
-        ) as mock_bg:
+        with patch("routers.websocket_chat._process_agent_chat_background") as mock_bg:
             async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
                 response = await client.post(
                     "/ws/message",

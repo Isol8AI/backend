@@ -150,9 +150,7 @@ class AgentHandler:
             return
 
         try:
-            logger.info(
-                f"Processing streaming agent message for user {request.user_id}, agent {request.agent_name}"
-            )
+            logger.info(f"Processing streaming agent message for user {request.user_id}, agent {request.agent_name}")
 
             async for chunk in self.enclave.agent_chat_streaming(
                 encrypted_message=request.encrypted_message,

@@ -25,9 +25,11 @@ from dataclasses import dataclass
 # Mock enclave-only modules so we can import bedrock_server
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _FakeConverseTurn:
     """Stand-in for bedrock_client.ConverseTurn used in _read_agent_state."""
+
     role: str
     content: str
 
@@ -89,6 +91,7 @@ from bedrock_server import BedrockServer  # noqa: E402
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_server() -> BedrockServer:
     """Instantiate a BedrockServer with mocked dependencies."""

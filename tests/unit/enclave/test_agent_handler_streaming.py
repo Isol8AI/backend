@@ -213,9 +213,7 @@ class TestAgentHandlerStreaming:
         )
 
     @pytest.mark.asyncio
-    async def test_process_message_streaming_yields_chunks(
-        self, handler, mock_enclave, sample_stream_request
-    ):
+    async def test_process_message_streaming_yields_chunks(self, handler, mock_enclave, sample_stream_request):
         """Test that process_message_streaming yields chunks from enclave."""
         content_payload = EncryptedPayload(
             ephemeral_public_key=b"r" * 32,
@@ -286,18 +284,19 @@ class TestAgentHandlerStreaming:
         assert received_kwargs["agent_name"] == "luna"
 
     @pytest.mark.asyncio
-    async def test_process_message_streaming_handles_enclave_error(
-        self, handler, mock_enclave, sample_stream_request
-    ):
+    async def test_process_message_streaming_handles_enclave_error(self, handler, mock_enclave, sample_stream_request):
         """Test that enclave errors are yielded as error chunks."""
+
         async def mock_stream(*args, **kwargs):
-            yield AgentStreamChunk(encrypted_content=EncryptedPayload(
-                ephemeral_public_key=b"a" * 32,
-                iv=b"b" * 16,
-                ciphertext=b"partial",
-                auth_tag=b"c" * 16,
-                hkdf_salt=b"d" * 32,
-            ))
+            yield AgentStreamChunk(
+                encrypted_content=EncryptedPayload(
+                    ephemeral_public_key=b"a" * 32,
+                    iv=b"b" * 16,
+                    ciphertext=b"partial",
+                    auth_tag=b"c" * 16,
+                    hkdf_salt=b"d" * 32,
+                )
+            )
             yield AgentStreamChunk(error="Bedrock throttled", is_final=True)
 
         mock_enclave.agent_chat_streaming = mock_stream
@@ -312,10 +311,9 @@ class TestAgentHandlerStreaming:
         assert chunks[1].is_final is True
 
     @pytest.mark.asyncio
-    async def test_process_message_streaming_handles_exception(
-        self, handler, mock_enclave, sample_stream_request
-    ):
+    async def test_process_message_streaming_handles_exception(self, handler, mock_enclave, sample_stream_request):
         """Test that exceptions during streaming are caught and yield an error chunk."""
+
         async def mock_stream(*args, **kwargs):
             raise RuntimeError("Connection lost")
             yield  # type: ignore - make this a generator
@@ -339,13 +337,15 @@ class TestAgentHandlerStreaming:
 
         async def mock_stream(*args, **kwargs):
             nonlocal call_count
-            yield AgentStreamChunk(encrypted_content=EncryptedPayload(
-                ephemeral_public_key=b"a" * 32,
-                iv=b"b" * 16,
-                ciphertext=b"first chunk",
-                auth_tag=b"c" * 16,
-                hkdf_salt=b"d" * 32,
-            ))
+            yield AgentStreamChunk(
+                encrypted_content=EncryptedPayload(
+                    ephemeral_public_key=b"a" * 32,
+                    iv=b"b" * 16,
+                    ciphertext=b"first chunk",
+                    auth_tag=b"c" * 16,
+                    hkdf_salt=b"d" * 32,
+                )
+            )
             raise Exception("Unexpected failure mid-stream")
 
         mock_enclave.agent_chat_streaming = mock_stream
@@ -424,13 +424,15 @@ class TestAgentHandlerStreaming:
         """Test streaming with multiple content chunks before final."""
         payloads = []
         for i in range(5):
-            payloads.append(EncryptedPayload(
-                ephemeral_public_key=bytes([i]) * 32,
-                iv=bytes([i + 10]) * 16,
-                ciphertext=f"chunk {i}".encode(),
-                auth_tag=bytes([i + 20]) * 16,
-                hkdf_salt=bytes([i + 30]) * 32,
-            ))
+            payloads.append(
+                EncryptedPayload(
+                    ephemeral_public_key=bytes([i]) * 32,
+                    iv=bytes([i + 10]) * 16,
+                    ciphertext=f"chunk {i}".encode(),
+                    auth_tag=bytes([i + 20]) * 16,
+                    hkdf_salt=bytes([i + 30]) * 32,
+                )
+            )
 
         final_state = EncryptedPayload(
             ephemeral_public_key=b"z" * 32,

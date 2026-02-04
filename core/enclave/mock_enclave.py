@@ -1133,8 +1133,7 @@ class MockEnclave(EnclaveInterface):
         requires Bedrock streaming which runs inside the enclave.
         """
         raise NotImplementedError(
-            "agent_chat_streaming is only available in Nitro Enclave mode. "
-            "Use ENCLAVE_MODE=nitro for agent streaming."
+            "agent_chat_streaming is only available in Nitro Enclave mode. Use ENCLAVE_MODE=nitro for agent streaming."
         )
         yield  # type: ignore - make this a generator
 
