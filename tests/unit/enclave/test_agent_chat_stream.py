@@ -635,7 +635,7 @@ class TestAppendToSession:
 
         server._append_to_session(session_file, "user", "Hello there")
 
-        lines = [line for line in session_file.read_text().strip().split("\n") if l]
+        lines = [line for line in session_file.read_text().strip().split("\n") if line]
         assert len(lines) == 1
 
         record = json.loads(lines[0])
@@ -651,7 +651,7 @@ class TestAppendToSession:
 
         server._append_to_session(session_file, "assistant", "I can help with that.")
 
-        lines = [line for line in session_file.read_text().strip().split("\n") if l]
+        lines = [line for line in session_file.read_text().strip().split("\n") if line]
         record = json.loads(lines[0])
         assert record["message"]["role"] == "assistant"
         assert record["message"]["content"][0]["text"] == "I can help with that."
@@ -665,7 +665,7 @@ class TestAppendToSession:
         server._append_to_session(session_file, "assistant", "Second")
         server._append_to_session(session_file, "user", "Third")
 
-        lines = [line for line in session_file.read_text().strip().split("\n") if l]
+        lines = [line for line in session_file.read_text().strip().split("\n") if line]
         assert len(lines) == 3
 
         assert json.loads(lines[0])["message"]["content"][0]["text"] == "First"
@@ -681,7 +681,7 @@ class TestAppendToSession:
 
         server._append_to_session(session_file, "user", "New message")
 
-        lines = [line for line in session_file.read_text().strip().split("\n") if l]
+        lines = [line for line in session_file.read_text().strip().split("\n") if line]
         assert len(lines) == 2
         assert json.loads(lines[0])["type"] == "session"
         assert json.loads(lines[1])["type"] == "message"
@@ -694,7 +694,7 @@ class TestAppendToSession:
 
         server._append_to_session(session_file, "user", "Test content")
 
-        lines = [line for line in session_file.read_text().strip().split("\n") if l]
+        lines = [line for line in session_file.read_text().strip().split("\n") if line]
         record = json.loads(lines[0])
 
         # Verify structure
@@ -717,7 +717,7 @@ class TestAppendToSession:
 
         server._append_to_session(session_file, "user", "msg")
 
-        lines = [line for line in session_file.read_text().strip().split("\n") if l]
+        lines = [line for line in session_file.read_text().strip().split("\n") if line]
         record = json.loads(lines[0])
         ts = record["timestamp"]
 
