@@ -575,6 +575,7 @@ class NitroEnclaveClient(EnclaveInterface):
         encrypted_state: Optional[EncryptedPayload],
         client_public_key: bytes,
         agent_name: str,
+        encrypted_soul_content: Optional[EncryptedPayload] = None,
     ) -> AsyncGenerator[AgentStreamChunk, None]:
         """
         Process agent chat through Nitro Enclave with streaming.
@@ -593,6 +594,7 @@ class NitroEnclaveClient(EnclaveInterface):
             "encrypted_state": encrypted_state.to_dict() if encrypted_state else None,
             "client_public_key": client_public_key.hex(),
             "agent_name": agent_name,
+            "encrypted_soul_content": encrypted_soul_content.to_dict() if encrypted_soul_content else None,
         }
 
         logger.debug(f"Sending AGENT_CHAT_STREAM command for agent {agent_name}")

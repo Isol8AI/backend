@@ -62,7 +62,7 @@ class AgentService:
         self,
         user_id: str,
         agent_name: str,
-        encrypted_tarball: bytes,
+        encrypted_tarball: Optional[bytes] = None,
     ) -> AgentState:
         """
         Create new agent state.
@@ -70,7 +70,7 @@ class AgentService:
         Args:
             user_id: Clerk user ID
             agent_name: Agent name/identifier
-            encrypted_tarball: Encrypted tarball bytes
+            encrypted_tarball: Encrypted tarball bytes (None until first message)
 
         Returns:
             Created AgentState
@@ -79,7 +79,7 @@ class AgentService:
             user_id=user_id,
             agent_name=agent_name,
             encrypted_tarball=encrypted_tarball,
-            tarball_size_bytes=len(encrypted_tarball),
+            tarball_size_bytes=len(encrypted_tarball) if encrypted_tarball else 0,
         )
         self.db.add(state)
         await self.db.flush()

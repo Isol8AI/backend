@@ -53,7 +53,8 @@ class AgentState(Base):
     agent_name = Column(String, nullable=False)
 
     # Encrypted tarball containing the agent's ~/.openclaw directory
-    encrypted_tarball = Column(LargeBinary, nullable=False)
+    # Nullable: tarball is None until first message (enclave creates fresh state)
+    encrypted_tarball = Column(LargeBinary, nullable=True)
 
     # Metadata (not encrypted - needed for queries and quotas)
     tarball_size_bytes = Column(Integer, nullable=True)

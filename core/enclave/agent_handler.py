@@ -28,6 +28,7 @@ class AgentStreamRequest:
     encrypted_message: EncryptedPayload
     encrypted_state: Optional[EncryptedPayload]
     client_public_key: bytes
+    encrypted_soul_content: Optional[EncryptedPayload] = None
 
 
 @dataclass
@@ -157,6 +158,7 @@ class AgentHandler:
                 encrypted_state=request.encrypted_state,
                 client_public_key=request.client_public_key,
                 agent_name=request.agent_name,
+                encrypted_soul_content=request.encrypted_soul_content,
             ):
                 yield chunk
 

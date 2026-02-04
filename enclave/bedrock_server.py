@@ -443,12 +443,13 @@ class BedrockServer:
         buffer.seek(0)
         return buffer.read()
 
-    def _create_fresh_agent(self, agent_dir: Path, agent_name: str, model: str) -> None:
+    def _create_fresh_agent(self, agent_dir: Path, agent_name: str, model: str, soul_content: str = None) -> None:
         """Create a fresh OpenClaw agent directory structure."""
         agent_dir.mkdir(parents=True, exist_ok=True)
 
-        # Default SOUL.md content
-        soul_content = f"""# {agent_name}
+        # Use provided soul content or default
+        if not soul_content:
+            soul_content = f"""# {agent_name}
 
 You are {agent_name}, a personal AI companion.
 
@@ -641,6 +642,7 @@ You are {agent_name}, a personal AI companion.
             encrypted_state_dict = data.get("encrypted_state")
             client_public_key = hex_to_bytes(data["client_public_key"])
             agent_name = data["agent_name"]
+            encrypted_soul_dict = data.get("encrypted_soul_content")
 
             print(f"[Enclave] AGENT_CHAT_STREAM: agent={agent_name}", flush=True)
 
@@ -660,8 +662,20 @@ You are {agent_name}, a personal AI companion.
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
             else:
+                # Decrypt soul content if provided (encrypted by client to enclave key)
+                soul_content = None
+                if encrypted_soul_dict:
+                    encrypted_soul = EncryptedPayload.from_dict(encrypted_soul_dict)
+                    soul_bytes = decrypt_with_private_key(
+                        self.keypair.private_key,
+                        encrypted_soul,
+                        "client-to-enclave-transport",
+                    )
+                    soul_content = soul_bytes.decode("utf-8")
+                    print(f"[Enclave] Decrypted soul content ({len(soul_content)} chars)", flush=True)
+
                 default_model = "anthropic.claude-sonnet-4-20250514"
-                self._create_fresh_agent(tmpfs_path, agent_name, default_model)
+                self._create_fresh_agent(tmpfs_path, agent_name, default_model, soul_content)
                 print("[Enclave] Created fresh agent directory", flush=True)
 
             # Decrypt user message

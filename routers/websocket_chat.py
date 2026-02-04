@@ -466,10 +466,14 @@ def _validate_and_process_agent_chat(
         ValueError: If message format is invalid
     """
     try:
+        encrypted_soul = None
+        if body.get("encrypted_soul_content"):
+            encrypted_soul = EncryptedPayload(**body["encrypted_soul_content"])
         request = AgentChatWSRequest(
             agent_name=body["agent_name"],
             encrypted_message=EncryptedPayload(**body["encrypted_message"]),
             client_transport_public_key=body["client_transport_public_key"],
+            encrypted_soul_content=encrypted_soul,
         )
     except (KeyError, ValidationError) as e:
         logger.error("Invalid agent chat message format: %s", e)
@@ -482,6 +486,7 @@ def _validate_and_process_agent_chat(
         agent_name=request.agent_name,
         encrypted_message=request.encrypted_message,
         client_transport_public_key=request.client_transport_public_key,
+        encrypted_soul_content=request.encrypted_soul_content,
     )
 
 
@@ -491,6 +496,7 @@ async def _process_agent_chat_background(
     agent_name: str,
     encrypted_message: EncryptedPayload,
     client_transport_public_key: str,
+    encrypted_soul_content: Optional[EncryptedPayload] = None,
 ) -> None:
     """
     Process agent chat message in background task with streaming.
@@ -538,6 +544,11 @@ async def _process_agent_chat_background(
         encrypted_msg = encrypted_message.to_crypto_payload()
         client_pub_key = bytes.fromhex(client_transport_public_key)
 
+        # Convert encrypted_soul_content if provided
+        encrypted_soul = None
+        if encrypted_soul_content:
+            encrypted_soul = encrypted_soul_content.to_crypto_payload()
+
         # Create stream request
         enclave = get_enclave()
         handler = AgentHandler(enclave=enclave)
@@ -547,6 +558,7 @@ async def _process_agent_chat_background(
             encrypted_message=encrypted_msg,
             encrypted_state=encrypted_state,
             client_public_key=client_pub_key,
+            encrypted_soul_content=encrypted_soul,
         )
 
         # Stream response chunks

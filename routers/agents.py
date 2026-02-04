@@ -7,8 +7,6 @@ All agent data is encrypted - the server cannot read it.
 
 import json
 import logging
-import tempfile
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -16,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import AuthContext, get_current_user
 from core.database import get_db
-from core.enclave import get_enclave, AgentRunner, AgentConfig
+from core.enclave import get_enclave
 from core.enclave.agent_handler import AgentHandler, AgentMessageRequest
 from core.crypto import EncryptedPayload as CryptoEncryptedPayload
 from core.services.agent_service import AgentService
@@ -75,8 +73,12 @@ async def create_agent(
     """
     Create a new agent.
 
-    Creates a fresh agent with the specified personality (SOUL.md).
-    The agent state is stored as an encrypted tarball.
+    Stores metadata only. The actual agent state (SOUL.md, config, memory)
+    is created inside the enclave on first message, preserving zero-trust:
+    the server never sees the personality content.
+
+    The client passes soul_content encrypted to the enclave in the first
+    AGENT_CHAT_STREAM message.
     """
     service = AgentService(db)
 
@@ -91,37 +93,11 @@ async def create_agent(
             detail=f"Agent '{request.agent_name}' already exists",
         )
 
-    # Create fresh agent directory and pack it
-    runner = AgentRunner()
-    enclave = get_enclave()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        agent_dir = Path(tmpdir)
-        config = AgentConfig(
-            agent_name=request.agent_name,
-            soul_content=request.soul_content,
-            model=request.model,
-        )
-        runner.create_fresh_agent(agent_dir, config)
-
-        # Pack and encrypt
-        tarball_bytes = runner.pack_directory(agent_dir)
-
-        # Encrypt to enclave's key
-        encrypted_tarball = enclave.encrypt_for_storage(
-            tarball_bytes,
-            enclave.get_info().enclave_public_key,
-            is_assistant=False,
-        )
-
-        # Serialize encrypted payload to bytes for storage
-        encrypted_bytes = _serialize_encrypted_payload(encrypted_tarball)
-
-    # Save to database
+    # Store metadata only — no tarball, no plaintext soul content
+    # The enclave creates the fresh agent state on first message
     state = await service.create_agent_state(
         user_id=auth.user_id,
         agent_name=request.agent_name,
-        encrypted_tarball=encrypted_bytes,
     )
     await db.commit()
 

@@ -318,6 +318,7 @@ class EnclaveInterface(ABC):
         encrypted_state: Optional[EncryptedPayload],
         client_public_key: bytes,
         agent_name: str,
+        encrypted_soul_content: Optional[EncryptedPayload] = None,
     ) -> AsyncGenerator["AgentStreamChunk", None]:
         """
         Process an agent chat message with streaming response.
@@ -1125,6 +1126,7 @@ class MockEnclave(EnclaveInterface):
         encrypted_state: Optional[EncryptedPayload],
         client_public_key: bytes,
         agent_name: str,
+        encrypted_soul_content: Optional[EncryptedPayload] = None,
     ) -> AsyncGenerator[AgentStreamChunk, None]:
         """
         Agent chat streaming is only available in Nitro Enclave mode.
