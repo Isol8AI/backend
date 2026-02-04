@@ -20,6 +20,7 @@ from .mock_enclave import (
     EnclaveInterface,
     EnclaveInfo,
     StreamChunk,
+    AgentStreamChunk,
     AgentRunResponse,
 )
 
@@ -567,3 +568,88 @@ class NitroEnclaveClient(EnclaveInterface):
                 success=False,
                 error="Request timed out",
             )
+
+    async def agent_chat_streaming(
+        self,
+        encrypted_message: EncryptedPayload,
+        encrypted_state: Optional[EncryptedPayload],
+        client_public_key: bytes,
+        agent_name: str,
+    ) -> AsyncGenerator[AgentStreamChunk, None]:
+        """
+        Process agent chat through Nitro Enclave with streaming.
+
+        Sends AGENT_CHAT_STREAM command, yields AgentStreamChunk objects
+        as enclave streams back encrypted response chunks.
+        """
+        # Check if credentials need refresh
+        if self._credentials_expiring_soon():
+            logger.info("Credentials expiring soon, refreshing...")
+            await self._push_credentials_async()
+
+        command = {
+            "command": "AGENT_CHAT_STREAM",
+            "encrypted_message": encrypted_message.to_dict(),
+            "encrypted_state": encrypted_state.to_dict() if encrypted_state else None,
+            "client_public_key": client_public_key.hex(),
+            "agent_name": agent_name,
+        }
+
+        logger.debug(f"Sending AGENT_CHAT_STREAM command for agent {agent_name}")
+
+        # Use asyncio.Queue for proper async waiting
+        event_queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        def stream_in_thread():
+            """Run sync generator in thread, put events in async queue."""
+            try:
+                for event in self._send_command_stream(command):
+                    loop.call_soon_threadsafe(event_queue.put_nowait, ("event", event))
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("done", None))
+            except Exception as e:
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("error", e))
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        loop.run_in_executor(executor, stream_in_thread)
+
+        try:
+            while True:
+                item_type, item = await event_queue.get()
+
+                if item_type == "done":
+                    break
+
+                if item_type == "error":
+                    yield AgentStreamChunk(error="Internal error", is_final=True)
+                    break
+
+                event = item
+                if event.get("error"):
+                    logger.error(f"Enclave agent error: {event['error']}")
+                    yield AgentStreamChunk(error=event["error"], is_final=True)
+                    break
+
+                if event.get("encrypted_content"):
+                    yield AgentStreamChunk(
+                        encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"])
+                    )
+
+                if event.get("is_final"):
+                    encrypted_state_result = None
+                    if event.get("encrypted_state"):
+                        encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
+
+                    yield AgentStreamChunk(
+                        encrypted_state=encrypted_state_result,
+                        is_final=True,
+                        input_tokens=event.get("input_tokens", 0),
+                        output_tokens=event.get("output_tokens", 0),
+                    )
+                    break
+
+        except Exception:
+            logger.exception("Unexpected error in agent streaming")
+            yield AgentStreamChunk(error="Internal error", is_final=True)
+        finally:
+            executor.shutdown(wait=False)

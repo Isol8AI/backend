@@ -28,6 +28,7 @@ from core.database import get_session_factory as db_get_session_factory
 from core.services.chat_service import ChatService
 from core.services.connection_service import ConnectionService, ConnectionServiceError
 from core.services.management_api_client import ManagementApiClient, ManagementApiClientError
+from schemas.agent import AgentChatWSRequest
 from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
 
 logger = logging.getLogger(__name__)
@@ -200,6 +201,19 @@ async def ws_message(
 
     if msg_type == "pong":
         # Client acknowledged our ping - no action needed
+        return Response(status_code=200)
+
+    if msg_type == "agent_chat":
+        try:
+            _validate_and_process_agent_chat(
+                connection_id=x_connection_id,
+                user_id=user_id,
+                body=body,
+                background_tasks=background_tasks,
+            )
+        except ValueError as e:
+            management_api = get_management_api_client()
+            management_api.send_message(x_connection_id, {"type": "error", "message": str(e)})
         return Response(status_code=200)
 
     # Assume it's a chat message - validate and process
@@ -432,3 +446,157 @@ async def _process_chat_message_background(
             )
         except Exception:
             pass  # Best effort
+
+
+# =============================================================================
+# Agent Chat (Streaming)
+# =============================================================================
+
+
+def _validate_and_process_agent_chat(
+    connection_id: str,
+    user_id: str,
+    body: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+) -> None:
+    """
+    Validate agent chat message and queue for background processing.
+
+    Raises:
+        ValueError: If message format is invalid
+    """
+    try:
+        request = AgentChatWSRequest(
+            agent_name=body["agent_name"],
+            encrypted_message=EncryptedPayload(**body["encrypted_message"]),
+            client_transport_public_key=body["client_transport_public_key"],
+        )
+    except (KeyError, ValidationError) as e:
+        logger.error("Invalid agent chat message format: %s", e)
+        raise ValueError(f"Invalid message format: {e}")
+
+    background_tasks.add_task(
+        _process_agent_chat_background,
+        connection_id=connection_id,
+        user_id=user_id,
+        agent_name=request.agent_name,
+        encrypted_message=request.encrypted_message,
+        client_transport_public_key=request.client_transport_public_key,
+    )
+
+
+async def _process_agent_chat_background(
+    connection_id: str,
+    user_id: str,
+    agent_name: str,
+    encrypted_message: EncryptedPayload,
+    client_transport_public_key: str,
+) -> None:
+    """
+    Process agent chat message in background task with streaming.
+    """
+    import json as json_module
+
+    from core.enclave import get_enclave, AgentHandler, AgentStreamRequest
+    from core.services.agent_service import AgentService
+
+    logger.debug(
+        "Processing agent chat - connection_id=%s, user_id=%s, agent=%s",
+        connection_id,
+        user_id,
+        agent_name,
+    )
+
+    management_api = get_management_api_client()
+    session_factory = get_session_factory()
+
+    try:
+        # Look up agent state from DB
+        async with session_factory() as db:
+            service = AgentService(db)
+            agent_state = await service.get_agent_state(user_id, agent_name)
+
+        if not agent_state:
+            management_api.send_message(
+                connection_id,
+                {"type": "error", "message": f"Agent '{agent_name}' not found"},
+            )
+            return
+
+        # Deserialize encrypted tarball to crypto EncryptedPayload
+        from core.crypto import EncryptedPayload as CryptoPayload
+
+        encrypted_state = None
+        if agent_state.encrypted_tarball:
+            try:
+                state_dict = json_module.loads(agent_state.encrypted_tarball)
+                encrypted_state = CryptoPayload.from_dict(state_dict)
+            except (json_module.JSONDecodeError, KeyError, TypeError):
+                logger.warning("Could not deserialize agent state, treating as new agent")
+
+        # Convert API encrypted_message to crypto payload
+        encrypted_msg = encrypted_message.to_crypto_payload()
+        client_pub_key = bytes.fromhex(client_transport_public_key)
+
+        # Create stream request
+        enclave = get_enclave()
+        handler = AgentHandler(enclave=enclave)
+        request = AgentStreamRequest(
+            user_id=user_id,
+            agent_name=agent_name,
+            encrypted_message=encrypted_msg,
+            encrypted_state=encrypted_state,
+            client_public_key=client_pub_key,
+        )
+
+        # Stream response chunks
+        chunk_count = 0
+        async for chunk in handler.process_message_streaming(request):
+            if chunk.error:
+                logger.debug("Agent enclave error for %s: %s", agent_name, chunk.error)
+                management_api.send_message(
+                    connection_id,
+                    {"type": "error", "message": chunk.error},
+                )
+                return
+
+            if chunk.encrypted_content:
+                chunk_count += 1
+                api_payload = EncryptedPayload.from_crypto_payload(chunk.encrypted_content)
+                if not management_api.send_message(
+                    connection_id,
+                    {"type": "encrypted_chunk", "encrypted_content": api_payload.model_dump()},
+                ):
+                    logger.warning("Connection %s gone during agent streaming", connection_id)
+                    return
+
+            if chunk.is_final and chunk.encrypted_state:
+                # Serialize updated state and store in DB
+                state_json = json_module.dumps(chunk.encrypted_state.to_dict()).encode("utf-8")
+
+                async with session_factory() as db:
+                    service = AgentService(db)
+                    await service.update_agent_state(user_id, agent_name, state_json)
+                    await db.commit()
+
+                logger.debug("Agent state updated for %s/%s", user_id, agent_name)
+
+        logger.debug(
+            "Agent stream complete for connection_id=%s, agent=%s, chunks=%d",
+            connection_id,
+            agent_name,
+            chunk_count,
+        )
+        management_api.send_message(connection_id, {"type": "done"})
+
+    except ManagementApiClientError as e:
+        logger.error("Management API error for connection %s: %s", connection_id, e)
+    except Exception as e:
+        logger.exception("Unexpected error processing agent chat for connection %s: %s", connection_id, e)
+        try:
+            management_api.send_message(
+                connection_id,
+                {"type": "error", "message": "Internal error during processing"},
+            )
+        except Exception:
+            pass

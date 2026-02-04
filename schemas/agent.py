@@ -48,3 +48,11 @@ class AgentMessageResponse(BaseModel):
     success: bool
     encrypted_response: Optional[EncryptedPayload] = None
     error: Optional[str] = None
+
+
+class AgentChatWSRequest(BaseModel):
+    """WebSocket request for streaming agent chat."""
+
+    agent_name: str = Field(..., min_length=1, max_length=50, pattern="^[a-zA-Z0-9_-]+$")
+    encrypted_message: EncryptedPayload
+    client_transport_public_key: str

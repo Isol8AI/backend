@@ -91,6 +91,23 @@ class ProcessedMessage:
 
 
 @dataclass
+class AgentStreamChunk:
+    """
+    A chunk of streaming response from the enclave for agent chat.
+
+    Key difference from StreamChunk: no stored_user_message/stored_assistant_message
+    (agent state IS the storage). Instead has encrypted_state (the updated tarball).
+    """
+
+    encrypted_content: Optional[EncryptedPayload] = None  # streaming text chunk
+    encrypted_state: Optional[EncryptedPayload] = None  # updated tarball (final)
+    is_final: bool = False
+    error: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@dataclass
 class StreamChunk:
     """
     A chunk of streaming response from the enclave.
@@ -293,6 +310,34 @@ class EnclaveInterface(ABC):
             AgentRunResponse with encrypted response and state
         """
         pass
+
+    @abstractmethod
+    async def agent_chat_streaming(
+        self,
+        encrypted_message: EncryptedPayload,
+        encrypted_state: Optional[EncryptedPayload],
+        client_public_key: bytes,
+        agent_name: str,
+    ) -> AsyncGenerator["AgentStreamChunk", None]:
+        """
+        Process an agent chat message with streaming response.
+
+        Yields AgentStreamChunk objects:
+        - encrypted_content: Encrypted text chunk during streaming
+        - encrypted_state + is_final: Updated tarball at end
+
+        Args:
+            encrypted_message: User's message encrypted to enclave
+            encrypted_state: Existing agent state tarball (None for new agent)
+            client_public_key: Client's public key for response encryption
+            agent_name: Name of the agent
+
+        Yields:
+            AgentStreamChunk objects
+        """
+        pass
+        # Make this a generator
+        yield  # type: ignore
 
 
 @dataclass
@@ -1073,6 +1118,25 @@ class MockEnclave(EnclaveInterface):
 
             traceback.print_exc()
             yield (f"Error: {str(e)}", False)
+
+    async def agent_chat_streaming(
+        self,
+        encrypted_message: EncryptedPayload,
+        encrypted_state: Optional[EncryptedPayload],
+        client_public_key: bytes,
+        agent_name: str,
+    ) -> AsyncGenerator[AgentStreamChunk, None]:
+        """
+        Agent chat streaming is only available in Nitro Enclave mode.
+
+        MockEnclave does not support agent streaming because agent chat
+        requires Bedrock streaming which runs inside the enclave.
+        """
+        raise NotImplementedError(
+            "agent_chat_streaming is only available in Nitro Enclave mode. "
+            "Use ENCLAVE_MODE=nitro for agent streaming."
+        )
+        yield  # type: ignore - make this a generator
 
     async def run_agent(
         self,

@@ -12,11 +12,22 @@ In development (MockEnclave): Agent runs in-process with fallback response
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 from core.crypto import EncryptedPayload
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentStreamRequest:
+    """Request to process a streaming agent chat message."""
+
+    user_id: str
+    agent_name: str
+    encrypted_message: EncryptedPayload
+    encrypted_state: Optional[EncryptedPayload]
+    client_public_key: bytes
 
 
 @dataclass
@@ -114,3 +125,43 @@ class AgentHandler:
                 success=False,
                 error=str(e),
             )
+
+    async def process_message_streaming(
+        self,
+        request: AgentStreamRequest,
+    ) -> AsyncGenerator:
+        """
+        Process a streaming agent chat message.
+
+        Delegates to enclave's agent_chat_streaming method which handles
+        all secure operations: decryption, Bedrock streaming, state update,
+        and re-encryption.
+
+        Args:
+            request: Agent stream request with encrypted data
+
+        Yields:
+            AgentStreamChunk objects with encrypted content or final state
+        """
+        from .mock_enclave import AgentStreamChunk
+
+        if self.enclave is None:
+            yield AgentStreamChunk(error="Enclave not configured", is_final=True)
+            return
+
+        try:
+            logger.info(
+                f"Processing streaming agent message for user {request.user_id}, agent {request.agent_name}"
+            )
+
+            async for chunk in self.enclave.agent_chat_streaming(
+                encrypted_message=request.encrypted_message,
+                encrypted_state=request.encrypted_state,
+                client_public_key=request.client_public_key,
+                agent_name=request.agent_name,
+            ):
+                yield chunk
+
+        except Exception as e:
+            logger.exception(f"Error in agent streaming: {e}")
+            yield AgentStreamChunk(error=str(e), is_final=True)

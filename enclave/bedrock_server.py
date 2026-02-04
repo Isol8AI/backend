@@ -487,6 +487,287 @@ You are {agent_name}, a personal AI companion.
         # Create sessions directory
         (agent_subdir / "sessions").mkdir(exist_ok=True)
 
+    def _read_agent_state(self, agent_dir: Path, agent_name: str) -> dict:
+        """
+        Read OpenClaw agent state files.
+
+        Returns:
+            {
+                "model": str,
+                "system_prompt": str,       # SOUL.md + MEMORY.md + daily memories
+                "history": List[ConverseTurn],
+                "session_file": Path,       # file to append new messages to
+            }
+        """
+        from datetime import datetime, timedelta
+        import glob as glob_module
+
+        agent_subdir = agent_dir / "agents" / agent_name
+
+        # --- Model resolution ---
+        model = "anthropic.claude-sonnet-4-20250514"
+        config_file = agent_dir / "openclaw.json"
+        if config_file.exists():
+            try:
+                config = json.loads(config_file.read_text())
+                agent_config = config.get("agents", {}).get(agent_name, {})
+                model = agent_config.get("model") or config.get("defaults", {}).get("model") or model
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+        # --- System prompt composition ---
+        # 1. SOUL.md
+        soul_content = ""
+        soul_file = agent_subdir / "SOUL.md"
+        if soul_file.exists():
+            soul_content = soul_file.read_text().strip()
+
+        # 2. MEMORY.md (long-term memories)
+        memory_content = ""
+        memory_file = agent_subdir / "memory" / "MEMORY.md"
+        if memory_file.exists():
+            memory_content = memory_file.read_text().strip()
+
+        # 3. Daily memories (today + yesterday)
+        daily_memories = ""
+        memory_dir = agent_subdir / "memory"
+        if memory_dir.exists():
+            today = datetime.now()
+            yesterday = today - timedelta(days=1)
+            for day in [yesterday, today]:
+                daily_file = memory_dir / f"{day.strftime('%Y-%m-%d')}.md"
+                if daily_file.exists():
+                    content = daily_file.read_text().strip()
+                    if content:
+                        daily_memories += f"\n### {day.strftime('%Y-%m-%d')}\n{content}\n"
+
+        # Combine system prompt
+        system_parts = []
+        if soul_content:
+            system_parts.append(soul_content)
+        if memory_content:
+            system_parts.append(f"## Memories\n{memory_content}")
+        if daily_memories:
+            system_parts.append(f"## Recent Notes{daily_memories}")
+
+        system_prompt = "\n\n".join(system_parts) if system_parts else f"You are {agent_name}, a helpful AI assistant."
+
+        # --- Session history parsing ---
+        history: List[ConverseTurn] = []
+        sessions_dir = agent_subdir / "sessions"
+        session_file = None
+
+        if sessions_dir.exists():
+            # Find session files, sorted by name (timestamp-based)
+            session_files = sorted(sessions_dir.glob("*.jsonl"))
+            if session_files:
+                # Use most recent session file
+                latest_session = session_files[-1]
+                session_file = latest_session
+
+                try:
+                    for line in latest_session.read_text().strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        try:
+                            record = json.loads(line)
+                            if record.get("type") == "message":
+                                msg = record.get("message", {})
+                                role = msg.get("role", "")
+                                content_blocks = msg.get("content", [])
+                                text = ""
+                                for block in content_blocks:
+                                    if isinstance(block, dict) and block.get("type") == "text":
+                                        text += block.get("text", "")
+                                    elif isinstance(block, str):
+                                        text += block
+                                if role in ("user", "assistant") and text:
+                                    history.append(ConverseTurn(role=role, content=text))
+                        except json.JSONDecodeError:
+                            continue
+                except Exception as e:
+                    print(f"[Enclave] Error reading session file: {e}", flush=True)
+
+        # If no session file, create one
+        if session_file is None:
+            sessions_dir.mkdir(parents=True, exist_ok=True)
+            from datetime import datetime as dt
+            timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+            session_file = sessions_dir / f"{timestamp}.jsonl"
+            # Write session header
+            header = json.dumps({"type": "session", "timestamp": timestamp, "agent": agent_name})
+            session_file.write_text(header + "\n")
+
+        return {
+            "model": model,
+            "system_prompt": system_prompt,
+            "history": history,
+            "session_file": session_file,
+        }
+
+    def _append_to_session(self, session_file: Path, role: str, content: str) -> None:
+        """Append a message to a session JSONL file in OpenClaw format."""
+        from datetime import datetime as dt
+        record = {
+            "type": "message",
+            "timestamp": dt.now().isoformat(),
+            "message": {
+                "role": role,
+                "content": [{"type": "text", "text": content}],
+            },
+        }
+        with open(session_file, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    def handle_agent_chat_stream(self, data: dict, conn: socket.socket) -> None:
+        """
+        Process encrypted agent chat with streaming response.
+
+        Streams newline-delimited JSON events:
+        - {"encrypted_content": {...}}  - Encrypted chunk for client
+        - {"is_final": true, "encrypted_state": {...}} - Final event with updated state
+        - {"error": "...", "is_final": true} - Error event
+        """
+        tmpfs_path = None
+        try:
+            # Check credentials
+            if not self.bedrock.has_credentials():
+                self._send_event(conn, {"error": "No AWS credentials", "is_final": True})
+                return
+
+            # Extract parameters
+            encrypted_message_dict = data["encrypted_message"]
+            encrypted_state_dict = data.get("encrypted_state")
+            client_public_key = hex_to_bytes(data["client_public_key"])
+            agent_name = data["agent_name"]
+
+            print(f"[Enclave] AGENT_CHAT_STREAM: agent={agent_name}", flush=True)
+
+            # Create tmpfs directory
+            tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
+            os.makedirs(tmpfs_base, exist_ok=True)
+            tmpfs_path = Path(tempfile.mkdtemp(dir=tmpfs_base, prefix=f"agent_{agent_name}_"))
+
+            # Decrypt and extract existing state, or create fresh agent
+            if encrypted_state_dict:
+                encrypted_state = EncryptedPayload.from_dict(encrypted_state_dict)
+                state_bytes = decrypt_with_private_key(
+                    self.keypair.private_key,
+                    encrypted_state,
+                    "agent-state-storage",
+                )
+                self._unpack_tarball(state_bytes, tmpfs_path)
+                print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
+            else:
+                default_model = "anthropic.claude-sonnet-4-20250514"
+                self._create_fresh_agent(tmpfs_path, agent_name, default_model)
+                print("[Enclave] Created fresh agent directory", flush=True)
+
+            # Decrypt user message
+            encrypted_message = EncryptedPayload.from_dict(encrypted_message_dict)
+            message_bytes = decrypt_with_private_key(
+                self.keypair.private_key,
+                encrypted_message,
+                "client-to-enclave-transport",
+            )
+            user_content = message_bytes.decode("utf-8")
+            print(f"[Enclave] Decrypted message: {user_content[:50]}...", flush=True)
+
+            # Read agent state (SOUL.md, memory, session history)
+            agent_state = self._read_agent_state(tmpfs_path, agent_name)
+            model_id = agent_state["model"]
+            system_prompt = agent_state["system_prompt"]
+            history = agent_state["history"]
+            session_file = agent_state["session_file"]
+
+            print(f"[Enclave] Agent model: {model_id}", flush=True)
+            print(f"[Enclave] History: {len(history)} messages", flush=True)
+
+            # Build Bedrock messages
+            messages = build_converse_messages(history, user_content)
+            system = [{"text": system_prompt}]
+            inference_config = {"maxTokens": 4096, "temperature": 0.7}
+
+            # Stream from Bedrock
+            full_response = ""
+            input_tokens = 0
+            output_tokens = 0
+            chunk_count = 0
+
+            print("[Enclave] Starting Bedrock stream...", flush=True)
+            stream_start = time.time()
+
+            for event in self.bedrock.converse_stream(model_id, messages, system, inference_config):
+                if event["type"] == "content":
+                    chunk_text = event["text"]
+                    full_response += chunk_text
+                    chunk_count += 1
+
+                    # Encrypt chunk for transport to client
+                    encrypted_chunk = encrypt_to_public_key(
+                        client_public_key,
+                        chunk_text.encode("utf-8"),
+                        "enclave-to-client-transport",
+                    )
+                    self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
+
+                elif event["type"] == "metadata":
+                    input_tokens = event["usage"].get("inputTokens", 0)
+                    output_tokens = event["usage"].get("outputTokens", 0)
+
+                elif event["type"] == "error":
+                    self._send_event(conn, {"error": event["message"], "is_final": True})
+                    return
+
+            print(f"[Enclave] Stream complete: {chunk_count} chunks, {len(full_response)} chars", flush=True)
+
+            # Update session JSONL with user message and assistant response
+            self._append_to_session(session_file, "user", user_content)
+            self._append_to_session(session_file, "assistant", full_response)
+
+            # TODO (Phase B): Memory flush — extract key information from conversation
+            # and append to memory/YYYY-MM-DD.md
+
+            # Pack updated state
+            tarball_bytes = self._pack_directory(tmpfs_path)
+            print(f"[Enclave] Packed state: {len(tarball_bytes)} bytes", flush=True)
+
+            # Encrypt state for storage (to enclave's key for future decryption)
+            encrypted_state_out = encrypt_to_public_key(
+                self.keypair.public_key,
+                tarball_bytes,
+                "agent-state-storage",
+            )
+
+            # Send final event with updated state
+            self._send_event(
+                conn,
+                {
+                    "is_final": True,
+                    "encrypted_state": encrypted_state_out.to_dict(),
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                },
+            )
+
+            print("[Enclave] AGENT_CHAT_STREAM complete", flush=True)
+
+        except KeyError as e:
+            print(f"[Enclave] AGENT_CHAT_STREAM missing field: {e}", flush=True)
+            self._send_event(conn, {"error": f"Missing field: {e}", "is_final": True})
+
+        except Exception as e:
+            print(f"[Enclave] AGENT_CHAT_STREAM error: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            self._send_event(conn, {"error": str(e), "is_final": True})
+
+        finally:
+            # Always cleanup tmpfs
+            if tmpfs_path and tmpfs_path.exists():
+                shutil.rmtree(tmpfs_path, ignore_errors=True)
+                print(f"[Enclave] Cleaned up tmpfs: {tmpfs_path}", flush=True)
+
     def _run_openclaw(self, agent_dir: Path, message: str, agent_name: str, model: str, timeout: int = 120) -> dict:
         """Run the OpenClaw CLI with a message."""
         env = os.environ.copy()
@@ -699,6 +980,9 @@ You are {agent_name}, a personal AI companion.
         if command == "CHAT_STREAM":
             self.handle_chat_stream(request, conn)
             return None  # Response already sent
+        if command == "AGENT_CHAT_STREAM":
+            self.handle_agent_chat_stream(request, conn)
+            return None  # Response already sent
 
         # Non-streaming commands
         handlers = {
@@ -717,7 +1001,7 @@ You are {agent_name}, a personal AI companion.
             return {
                 "status": "error",
                 "error": f"Unknown command: {command}",
-                "available_commands": list(handlers.keys()) + ["CHAT_STREAM"],
+                "available_commands": list(handlers.keys()) + ["CHAT_STREAM", "AGENT_CHAT_STREAM"],
             }
 
 

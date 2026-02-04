@@ -46,6 +46,7 @@ from .mock_enclave import (
     EnclaveInterface,
     ProcessedMessage,
     StreamChunk,
+    AgentStreamChunk,
     EnclaveInfo,
     DecryptedMessage,
     AgentRunResponse,
@@ -171,7 +172,7 @@ async def shutdown_enclave() -> None:
 
 # Import agent handling classes
 from .agent_runner import AgentRunner, AgentConfig, AgentRunResult
-from .agent_handler import AgentHandler, AgentMessageRequest, AgentMessageResponse
+from .agent_handler import AgentHandler, AgentMessageRequest, AgentMessageResponse, AgentStreamRequest
 
 __all__ = [
     "EncryptionContext",
@@ -182,6 +183,7 @@ __all__ = [
     "EnclaveInfo",
     "DecryptedMessage",
     "AgentRunResponse",
+    "AgentStreamChunk",
     "get_enclave",
     "reset_enclave",
     "startup_enclave",
@@ -193,4 +195,5 @@ __all__ = [
     "AgentHandler",
     "AgentMessageRequest",
     "AgentMessageResponse",
+    "AgentStreamRequest",
 ]
