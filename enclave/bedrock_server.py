@@ -500,7 +500,6 @@ You are {agent_name}, a personal AI companion.
             }
         """
         from datetime import datetime, timedelta
-        import glob as glob_module
 
         agent_subdir = agent_dir / "agents" / agent_name
 
@@ -695,7 +694,6 @@ You are {agent_name}, a personal AI companion.
             chunk_count = 0
 
             print("[Enclave] Starting Bedrock stream...", flush=True)
-            stream_start = time.time()
 
             for event in self.bedrock.converse_stream(model_id, messages, system, inference_config):
                 if event["type"] == "content":

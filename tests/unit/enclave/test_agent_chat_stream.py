@@ -20,8 +20,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Mock enclave-only modules so we can import bedrock_server
