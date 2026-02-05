@@ -278,18 +278,17 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
+            --timeout-seconds 180 \
             --parameters 'commands=[
               "set -e",
               "echo \"=== Pulling latest image ===\"",
               "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin '"${{ steps.login-ecr.outputs.registry }}"'",
               "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"'",
-              "echo \"=== Stopping old container ===\"",
-              "docker stop isol8 || true",
-              "docker rm isol8 || true",
-              "echo \"=== Starting new container ===\"",
-              "docker run -d --name isol8 --env-file /home/ec2-user/.env -p 8000:8000 --restart unless-stopped --device /dev/vsock:/dev/vsock '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"'",
+              "echo \"=== Restarting via systemd ===\"",
+              "systemctl restart isol8",
+              "echo \"=== Waiting for container to start ===\"",
+              "for i in $(seq 1 30); do docker inspect isol8 --format={{.State.Running}} 2>/dev/null && break || true; done",
               "echo \"=== Running init_db ===\"",
-              "sleep 5",
               "docker exec isol8 python init_db.py",
               "echo \"=== Container status ===\"",
               "docker ps --filter name=isol8",
