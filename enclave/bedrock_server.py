@@ -505,7 +505,7 @@ You are {agent_name}, a personal AI companion.
         agent_subdir = agent_dir / "agents" / agent_name
 
         # --- Model resolution ---
-        model = "anthropic.claude-sonnet-4-20250514"
+        model = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
         config_file = agent_dir / "openclaw.json"
         if config_file.exists():
             try:
@@ -674,7 +674,7 @@ You are {agent_name}, a personal AI companion.
                     soul_content = soul_bytes.decode("utf-8")
                     print(f"[Enclave] Decrypted soul content ({len(soul_content)} chars)", flush=True)
 
-                default_model = "anthropic.claude-sonnet-4-20250514"
+                default_model = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
                 self._create_fresh_agent(tmpfs_path, agent_name, default_model, soul_content)
                 print("[Enclave] Created fresh agent directory", flush=True)
 
