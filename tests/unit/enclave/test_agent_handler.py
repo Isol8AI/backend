@@ -86,6 +86,7 @@ class TestAgentHandler:
             user_public_key=user_keypair.public_key,
             agent_name="luna",
             model="claude-3-5-sonnet",
+            encryption_mode="zero_trust",
         )
 
     @pytest.mark.asyncio
@@ -119,6 +120,7 @@ class TestAgentHandler:
             user_public_key=user_keypair.public_key,
             agent_name="luna",
             model="claude-3-5-sonnet",
+            encryption_mode="zero_trust",
         )
 
     @pytest.mark.asyncio
