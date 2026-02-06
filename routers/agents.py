@@ -269,16 +269,23 @@ async def send_agent_message(
         encryption_mode = existing_state.encryption_mode.value
 
     # For zero_trust mode: client provides re-encrypted state in request
-    # For background mode: server would load encrypted_dek from DB (not implemented yet)
+    # For background mode: load KMS envelope from DB
     encrypted_state = None
+    kms_envelope = None
+
     if encryption_mode == "zero_trust" and request.encrypted_state:
         # Client decrypted and re-encrypted state to enclave transport key
         encrypted_state = request.encrypted_state.to_crypto_payload()
-    elif encryption_mode == "background":
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Background mode not yet implemented",
-        )
+    elif encryption_mode == "background" and existing_state and existing_state.encrypted_tarball:
+        # Background mode: load KMS envelope from DB
+        kms_envelope = json.loads(existing_state.encrypted_tarball.decode())
+        # Convert hex strings back to bytes for enclave
+        kms_envelope = {
+            "encrypted_dek": bytes.fromhex(kms_envelope["encrypted_dek"]),
+            "iv": bytes.fromhex(kms_envelope["iv"]),
+            "ciphertext": bytes.fromhex(kms_envelope["ciphertext"]),
+            "auth_tag": bytes.fromhex(kms_envelope["auth_tag"]),
+        }
 
     # Convert API payload to crypto payload
     encrypted_message = request.encrypted_message.to_crypto_payload()
@@ -293,6 +300,7 @@ async def send_agent_message(
         user_public_key=user_public_key,
         model=request.model,
         encryption_mode=encryption_mode,
+        kms_envelope=kms_envelope,
     )
 
     response = await handler.process_message(agent_request)
@@ -303,21 +311,43 @@ async def send_agent_message(
             error=response.error,
         )
 
-    # Store updated state
-    encrypted_state_bytes = _serialize_encrypted_payload(response.encrypted_state)
+    # Store updated state based on encryption mode
+    if encryption_mode == "background":
+        # Background mode: store KMS envelope (already has hex strings from enclave)
+        kms_envelope_serialized = json.dumps(response.kms_envelope).encode()
 
-    if existing_state:
-        await service.update_agent_state(
-            user_id=auth.user_id,
-            agent_name=agent_name,
-            encrypted_tarball=encrypted_state_bytes,
-        )
+        if existing_state:
+            await service.update_agent_state(
+                user_id=auth.user_id,
+                agent_name=agent_name,
+                encrypted_tarball=kms_envelope_serialized,
+            )
+        else:
+            from models.agent_state import EncryptionMode
+            await service.create_agent_state(
+                user_id=auth.user_id,
+                agent_name=agent_name,
+                encrypted_tarball=kms_envelope_serialized,
+                encryption_mode=EncryptionMode.BACKGROUND,
+            )
     else:
-        await service.create_agent_state(
-            user_id=auth.user_id,
-            agent_name=agent_name,
-            encrypted_tarball=encrypted_state_bytes,
-        )
+        # Zero trust mode: store encrypted state
+        encrypted_state_bytes = _serialize_encrypted_payload(response.encrypted_state)
+
+        if existing_state:
+            await service.update_agent_state(
+                user_id=auth.user_id,
+                agent_name=agent_name,
+                encrypted_tarball=encrypted_state_bytes,
+            )
+        else:
+            from models.agent_state import EncryptionMode
+            await service.create_agent_state(
+                user_id=auth.user_id,
+                agent_name=agent_name,
+                encrypted_tarball=encrypted_state_bytes,
+                encryption_mode=EncryptionMode.ZERO_TRUST,
+            )
 
     await db.commit()
 

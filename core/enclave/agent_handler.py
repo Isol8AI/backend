@@ -12,7 +12,7 @@ In development (MockEnclave): Agent runs in-process with fallback response
 
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Dict, Optional
 
 from core.crypto import EncryptedPayload
 
@@ -43,6 +43,7 @@ class AgentMessageRequest:
     user_public_key: bytes
     model: str
     encryption_mode: str = "zero_trust"  # "zero_trust" or "background"
+    kms_envelope: Optional[Dict[str, bytes]] = None  # KMS envelope for background mode (bytes)
 
 
 @dataclass
@@ -51,7 +52,8 @@ class AgentMessageResponse:
 
     success: bool
     encrypted_response: Optional[EncryptedPayload] = None
-    encrypted_state: Optional[EncryptedPayload] = None  # Updated state for storage
+    encrypted_state: Optional[EncryptedPayload] = None  # Updated state for storage (zero_trust)
+    kms_envelope: Optional[Dict[str, str]] = None  # KMS envelope for background mode (hex strings)
     error: str = ""
 
 
@@ -114,12 +116,14 @@ class AgentHandler:
                 agent_name=request.agent_name,
                 model=request.model,
                 encryption_mode=request.encryption_mode,
+                kms_envelope=request.kms_envelope,
             )
 
             return AgentMessageResponse(
                 success=result.success,
                 encrypted_response=result.encrypted_response,
                 encrypted_state=result.encrypted_state,
+                kms_envelope=result.kms_envelope,
                 error=result.error,
             )
 

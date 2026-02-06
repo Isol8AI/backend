@@ -135,15 +135,15 @@ class EnclaveInfo:
 class AgentRunResponse:
     """Response from enclave run_agent operation.
 
-    For background mode, kms_envelope contains the full KMS-encrypted state.
+    For background mode, kms_envelope contains the full KMS-encrypted state (hex strings).
     For zero_trust mode, encrypted_state contains state encrypted to user's key.
     """
 
     success: bool
     encrypted_response: Optional[EncryptedPayload] = None
     encrypted_state: Optional[EncryptedPayload] = None  # zero_trust mode
-    encrypted_dek: Optional[bytes] = None  # background mode: KMS-encrypted DEK
-    kms_envelope: Optional[Dict[str, bytes]] = None  # background mode: full envelope
+    encrypted_dek: Optional[bytes] = None  # Deprecated: use kms_envelope instead
+    kms_envelope: Optional[Dict[str, str]] = None  # background mode: hex-encoded KMS envelope
     error: str = ""
 
 

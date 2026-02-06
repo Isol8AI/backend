@@ -488,6 +488,7 @@ class NitroEnclaveClient(EnclaveInterface):
         agent_name: str,
         model: str,
         encryption_mode: str = "zero_trust",
+        kms_envelope: Optional[dict] = None,
     ) -> AgentRunResponse:
         """
         Run an OpenClaw agent inside the Nitro Enclave (non-streaming).
@@ -506,6 +507,7 @@ class NitroEnclaveClient(EnclaveInterface):
             agent_name: Name of the agent to run
             model: LLM model to use
             encryption_mode: "zero_trust" (default) or "background"
+            kms_envelope: KMS envelope dict for background mode (optional)
 
         Returns:
             AgentRunResponse with encrypted response and state
@@ -515,10 +517,23 @@ class NitroEnclaveClient(EnclaveInterface):
             logger.info("Credentials expiring soon, refreshing...")
             await self._push_credentials_async()
 
+        # For background mode, use kms_envelope instead of encrypted_state
+        encrypted_state_dict = None
+        if encryption_mode == "background" and kms_envelope:
+            # Serialize bytes to hex strings for JSON transmission
+            encrypted_state_dict = {
+                "encrypted_dek": kms_envelope["encrypted_dek"].hex(),
+                "iv": kms_envelope["iv"].hex(),
+                "ciphertext": kms_envelope["ciphertext"].hex(),
+                "auth_tag": kms_envelope["auth_tag"].hex(),
+            }
+        elif encrypted_state:
+            encrypted_state_dict = encrypted_state.to_dict()
+
         command = {
             "command": "RUN_AGENT",
             "encrypted_message": encrypted_message.to_dict(),
-            "encrypted_state": encrypted_state.to_dict() if encrypted_state else None,
+            "encrypted_state": encrypted_state_dict,
             "user_public_key": user_public_key.hex(),
             "agent_name": agent_name,
             "model": model,
@@ -548,17 +563,26 @@ class NitroEnclaveClient(EnclaveInterface):
             if response.get("encrypted_response"):
                 encrypted_response = EncryptedPayload.from_dict(response["encrypted_response"])
 
+            # Handle encrypted_state based on encryption_mode
             encrypted_state_result = None
-            if response.get("encrypted_state"):
-                encrypted_state_result = EncryptedPayload.from_dict(response["encrypted_state"])
+            kms_envelope_result = None
 
-            encrypted_dek = response.get("encrypted_dek")  # None for zero_trust, KMS-encrypted DEK for background
+            if response.get("encrypted_state"):
+                if encryption_mode == "background":
+                    # Background mode: encrypted_state is a raw KMS envelope dict
+                    kms_envelope_result = response["encrypted_state"]
+                else:
+                    # Zero trust mode: encrypted_state is an EncryptedPayload
+                    encrypted_state_result = EncryptedPayload.from_dict(response["encrypted_state"])
+
+            encrypted_dek = response.get("encrypted_dek")  # Deprecated, kms_envelope contains it
 
             return AgentRunResponse(
                 success=True,
                 encrypted_response=encrypted_response,
                 encrypted_state=encrypted_state_result,
                 encrypted_dek=encrypted_dek,
+                kms_envelope=kms_envelope_result,
             )
 
         except EnclaveConnectionError as e:

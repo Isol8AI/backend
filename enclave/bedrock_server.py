@@ -50,6 +50,7 @@ from crypto_primitives import (
     hex_to_bytes,
 )
 from bedrock_client import BedrockClient, BedrockResponse, build_converse_messages, ConverseTurn
+from kms_encryption import encrypt_with_kms, decrypt_with_kms
 
 # vsock constants
 VSOCK_PORT = 5000
@@ -349,7 +350,7 @@ class BedrockServer:
                 encrypted_state = EncryptedPayload.from_dict(encrypted_state_dict)
 
                 # For zero_trust mode: client re-encrypted state to enclave transport key
-                # For background mode: state comes from KMS (not implemented yet)
+                # For background mode: state comes from KMS envelope
                 if encryption_mode == "zero_trust":
                     # Client decrypted user-key-encrypted state and re-encrypted to enclave
                     state_bytes = decrypt_with_private_key(
@@ -358,8 +359,21 @@ class BedrockServer:
                         "client-to-enclave-transport",
                     )
                 else:
-                    # Background mode: decrypt with KMS (TODO)
-                    raise NotImplementedError("Background mode KMS decryption not yet implemented")
+                    # Background mode: decrypt with KMS envelope
+                    kms_key_id = os.environ.get("KMS_KEY_ID", "")
+                    if not kms_key_id:
+                        raise ValueError("KMS_KEY_ID environment variable required for background mode")
+
+                    # KMS envelope is passed in encrypted_state_dict as hex strings
+                    # Convert hex strings to bytes for decrypt_with_kms
+                    kms_envelope = {
+                        "encrypted_dek": hex_to_bytes(encrypted_state_dict["encrypted_dek"]),
+                        "iv": hex_to_bytes(encrypted_state_dict["iv"]),
+                        "ciphertext": hex_to_bytes(encrypted_state_dict["ciphertext"]),
+                        "auth_tag": hex_to_bytes(encrypted_state_dict["auth_tag"]),
+                    }
+                    state_bytes = decrypt_with_kms(kms_envelope, kms_key_id)
+                    print(f"[Enclave] Decrypted state from KMS ({len(state_bytes)} bytes)", flush=True)
 
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
@@ -394,6 +408,7 @@ class BedrockServer:
             print(f"[Enclave] Packed state: {len(tarball_bytes)} bytes", flush=True)
 
             # Encrypt state for storage based on encryption mode
+            encrypted_state_out = None
             encrypted_dek = None
 
             if encryption_mode == "zero_trust":
@@ -408,8 +423,19 @@ class BedrockServer:
                 print("[Enclave] Encrypted state to user's public key (zero_trust mode)", flush=True)
             else:
                 # BACKGROUND MODE: KMS envelope encryption
-                # TODO: Implement KMS envelope encryption
-                raise NotImplementedError("Background mode KMS encryption not yet implemented")
+                kms_key_id = os.environ.get("KMS_KEY_ID", "")
+                if not kms_key_id:
+                    raise ValueError("KMS_KEY_ID environment variable required for background mode")
+
+                kms_envelope = encrypt_with_kms(tarball_bytes, kms_key_id)
+                # Convert bytes to hex strings for JSON serialization
+                encrypted_state_out = {
+                    "encrypted_dek": kms_envelope["encrypted_dek"].hex(),
+                    "iv": kms_envelope["iv"].hex(),
+                    "ciphertext": kms_envelope["ciphertext"].hex(),
+                    "auth_tag": kms_envelope["auth_tag"].hex(),
+                }
+                print("[Enclave] Encrypted state with KMS envelope (background mode)", flush=True)
 
             # Encrypt response for transport (to user's key)
             encrypted_response = encrypt_to_public_key(
@@ -422,8 +448,8 @@ class BedrockServer:
                 "status": "success",
                 "command": "RUN_AGENT",
                 "encrypted_response": encrypted_response.to_dict(),
-                "encrypted_state": encrypted_state_out.to_dict(),
-                "encrypted_dek": encrypted_dek,  # None for zero_trust, KMS-encrypted DEK for background
+                "encrypted_state": encrypted_state_out.to_dict() if encryption_mode == "zero_trust" else encrypted_state_out,
+                "encrypted_dek": encrypted_dek,  # None for both modes (KMS envelope includes it)
             }
 
         except KeyError as e:
@@ -689,7 +715,7 @@ You are {agent_name}, a personal AI companion.
                 encrypted_state = EncryptedPayload.from_dict(encrypted_state_dict)
 
                 # For zero_trust mode: client re-encrypted state to enclave transport key
-                # For background mode: state comes from KMS (not implemented yet)
+                # For background mode: state comes from KMS envelope
                 if encryption_mode == "zero_trust":
                     # Client decrypted user-key-encrypted state and re-encrypted to enclave
                     state_bytes = decrypt_with_private_key(
@@ -698,8 +724,21 @@ You are {agent_name}, a personal AI companion.
                         "client-to-enclave-transport",
                     )
                 else:
-                    # Background mode: decrypt with KMS (TODO)
-                    raise NotImplementedError("Background mode KMS decryption not yet implemented")
+                    # Background mode: decrypt with KMS envelope
+                    kms_key_id = os.environ.get("KMS_KEY_ID", "")
+                    if not kms_key_id:
+                        raise ValueError("KMS_KEY_ID environment variable required for background mode")
+
+                    # KMS envelope is passed in encrypted_state_dict as hex strings
+                    # Convert hex strings to bytes for decrypt_with_kms
+                    kms_envelope = {
+                        "encrypted_dek": hex_to_bytes(encrypted_state_dict["encrypted_dek"]),
+                        "iv": hex_to_bytes(encrypted_state_dict["iv"]),
+                        "ciphertext": hex_to_bytes(encrypted_state_dict["ciphertext"]),
+                        "auth_tag": hex_to_bytes(encrypted_state_dict["auth_tag"]),
+                    }
+                    state_bytes = decrypt_with_kms(kms_envelope, kms_key_id)
+                    print(f"[Enclave] Decrypted state from KMS ({len(state_bytes)} bytes)", flush=True)
 
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
@@ -789,6 +828,7 @@ You are {agent_name}, a personal AI companion.
             print(f"[Enclave] Packed state: {len(tarball_bytes)} bytes", flush=True)
 
             # Encrypt state for storage based on encryption mode
+            encrypted_state_out = None
             encrypted_dek = None
 
             if encryption_mode == "zero_trust":
@@ -803,19 +843,27 @@ You are {agent_name}, a personal AI companion.
                 print("[Enclave] Encrypted state to user's public key (zero_trust mode)", flush=True)
             else:
                 # BACKGROUND MODE: KMS envelope encryption
-                # TODO: Implement KMS envelope encryption
-                # 1. Generate data key with KMS
-                # 2. Encrypt tarball with plaintext DEK
-                # 3. Return encrypted tarball + encrypted DEK
-                raise NotImplementedError("Background mode KMS encryption not yet implemented")
+                kms_key_id = os.environ.get("KMS_KEY_ID", "")
+                if not kms_key_id:
+                    raise ValueError("KMS_KEY_ID environment variable required for background mode")
+
+                kms_envelope = encrypt_with_kms(tarball_bytes, kms_key_id)
+                # Convert bytes to hex strings for JSON serialization
+                encrypted_state_out = {
+                    "encrypted_dek": kms_envelope["encrypted_dek"].hex(),
+                    "iv": kms_envelope["iv"].hex(),
+                    "ciphertext": kms_envelope["ciphertext"].hex(),
+                    "auth_tag": kms_envelope["auth_tag"].hex(),
+                }
+                print("[Enclave] Encrypted state with KMS envelope (background mode)", flush=True)
 
             # Send final event with updated state
             self._send_event(
                 conn,
                 {
                     "is_final": True,
-                    "encrypted_state": encrypted_state_out.to_dict(),
-                    "encrypted_dek": encrypted_dek,  # None for zero_trust, KMS-encrypted DEK for background
+                    "encrypted_state": encrypted_state_out.to_dict() if encryption_mode == "zero_trust" else encrypted_state_out,
+                    "encrypted_dek": encrypted_dek,  # None for both modes (KMS envelope includes it)
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                 },
