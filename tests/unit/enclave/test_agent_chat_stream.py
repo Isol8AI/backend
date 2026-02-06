@@ -50,6 +50,8 @@ def _build_enclave_mocks():
     crypto_mod.generate_x25519_keypair = MagicMock(return_value=fake_keypair)
     crypto_mod.encrypt_to_public_key = MagicMock()
     crypto_mod.decrypt_with_private_key = MagicMock()
+    crypto_mod.encrypt_aes_gcm = MagicMock(return_value=(b"\x00" * 16, b"\x01" * 32, b"\x02" * 16))
+    crypto_mod.decrypt_aes_gcm = MagicMock(return_value=b"decrypted")
     crypto_mod.EncryptedPayload = MagicMock()
     crypto_mod.KeyPair = MagicMock()
     crypto_mod.bytes_to_hex = lambda b: b.hex() if isinstance(b, bytes) else str(b)
