@@ -107,10 +107,13 @@ def encrypt_with_kms(plaintext_data: bytes, kms_key_id: str) -> Dict[str, bytes]
     iv, ciphertext, auth_tag = encrypt_aes_gcm(dek, plaintext_data)
 
     # Step 3: Encrypt DEK with KMS
-    response = _kms_request("Encrypt", {
-        "KeyId": kms_key_id,
-        "Plaintext": base64.b64encode(dek).decode("ascii"),
-    })
+    response = _kms_request(
+        "Encrypt",
+        {
+            "KeyId": kms_key_id,
+            "Plaintext": base64.b64encode(dek).decode("ascii"),
+        },
+    )
     encrypted_dek = base64.b64decode(response["CiphertextBlob"])
 
     # Step 4: Return envelope
@@ -146,9 +149,12 @@ def decrypt_with_kms(envelope: Dict[str, bytes], kms_key_id: str) -> bytes:
         raise ValueError(f"Invalid KMS envelope: missing fields {missing}")
 
     # Step 1: Decrypt DEK with KMS
-    response = _kms_request("Decrypt", {
-        "CiphertextBlob": base64.b64encode(envelope["encrypted_dek"]).decode("ascii"),
-    })
+    response = _kms_request(
+        "Decrypt",
+        {
+            "CiphertextBlob": base64.b64encode(envelope["encrypted_dek"]).decode("ascii"),
+        },
+    )
     dek = base64.b64decode(response["Plaintext"])
 
     # Step 2: Decrypt data with DEK using AES-256-GCM
