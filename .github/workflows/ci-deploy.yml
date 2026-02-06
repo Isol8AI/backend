@@ -87,14 +87,14 @@ jobs:
           ruff check .
           ruff format --check .
 
-      - name: Run database migrations
+      - name: Initialize database schema
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/isol8_test
           CLERK_ISSUER: https://test.clerk.accounts.dev
           HUGGINGFACE_TOKEN: test_token
           DEBUG: "false"
         run: |
-          alembic upgrade head
+          python init_db.py --reset
 
       - name: Run tests
         env:
@@ -297,8 +297,8 @@ jobs:
               "systemctl restart isol8",
               "echo \"=== Waiting for container to start ===\"",
               "for i in $(seq 1 30); do docker inspect isol8 --format={{.State.Running}} 2>/dev/null && break || true; done",
-              "echo \"=== Running database migrations ===\"",
-              "docker exec isol8 alembic upgrade head",
+              "echo \"=== Resetting database schema ===\"",
+              "docker exec isol8 python init_db.py --reset",
               "echo \"=== Container status ===\"",
               "docker ps --filter name=isol8",
               "echo \"=== Done ===\""
@@ -344,21 +344,8 @@ jobs:
             echo "EIF already in S3" || \
             echo "EIF not in S3 - instances will build from source"
 
-      - name: Check for New Migrations
-        id: check-migrations
+      - name: Reset Database Schema
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
-        run: |
-          # Check if there are new migration files in this commit
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q "alembic/versions/"; then
-            echo "has_migrations=true" >> $GITHUB_OUTPUT
-            echo "New migrations detected in this commit"
-          else
-            echo "has_migrations=false" >> $GITHUB_OUTPUT
-            echo "No new migrations in this commit, skipping migration step"
-          fi
-
-      - name: Run Database Migrations
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') && steps.check-migrations.outputs.has_migrations == 'true' }}
         run: |
           ASG_NAME="isol8-dev-asg"
 
@@ -367,7 +354,7 @@ jobs:
             --query 'AutoScalingGroups[0].Instances[0].InstanceId' \
             --output text)
 
-          echo "Running Alembic migrations on CURRENT instance $INSTANCE_ID before refresh..."
+          echo "Resetting database schema on CURRENT instance $INSTANCE_ID before refresh..."
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
@@ -375,15 +362,15 @@ jobs:
             --timeout-seconds 120 \
             --parameters 'commands=[
               "set -e",
-              "echo \"=== Running database migrations ===\"",
-              "docker exec isol8 alembic upgrade head",
-              "echo \"=== Migrations complete ===\""
+              "echo \"=== Resetting database schema ===\"",
+              "docker exec isol8 python init_db.py --reset",
+              "echo \"=== Schema reset complete ===\""
             ]' \
             --query 'Command.CommandId' \
             --output text)
 
           echo "SSM Command ID: $COMMAND_ID"
-          echo "Waiting for migrations to complete..."
+          echo "Waiting for schema reset to complete..."
 
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
@@ -394,14 +381,14 @@ jobs:
             --instance-id "$INSTANCE_ID" \
             --query 'Status' --output text)
 
-          echo "=== Migration Output ==="
+          echo "=== Schema Reset Output ==="
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
             --query 'StandardOutputContent' --output text
 
           if [ "$STATUS" != "Success" ]; then
-            echo "=== Migration Error Output ==="
+            echo "=== Schema Reset Error Output ==="
             aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$INSTANCE_ID" \
@@ -599,7 +586,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["docker exec isol8 alembic upgrade head"]' \
+            --parameters 'commands=["docker exec isol8 python init_db.py --reset"]' \
             --query 'Command.CommandId' \
             --output text)
 
@@ -697,7 +684,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["docker exec isol8 alembic upgrade head"]' \
+            --parameters 'commands=["docker exec isol8 python init_db.py --reset"]' \
             --query 'Command.CommandId' \
             --output text)
 
