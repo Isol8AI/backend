@@ -87,6 +87,7 @@ class TestAgentHandler:
             agent_name="luna",
             model="claude-3-5-sonnet",
             encryption_mode="zero_trust",
+            kms_envelope=None,
         )
 
     @pytest.mark.asyncio
@@ -121,6 +122,7 @@ class TestAgentHandler:
             agent_name="luna",
             model="claude-3-5-sonnet",
             encryption_mode="zero_trust",
+            kms_envelope=None,
         )
 
     @pytest.mark.asyncio
