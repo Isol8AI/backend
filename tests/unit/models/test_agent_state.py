@@ -128,7 +128,7 @@ class TestAgentStateEncryptionMode:
             encrypted_tarball=b"encrypted_data",
         )
 
-        assert state.encryption_mode == EncryptionMode.ZERO_TRUST
+        assert state.encryption_mode == "zero_trust"
         assert hasattr(EncryptionMode, "ZERO_TRUST")
         assert hasattr(EncryptionMode, "BACKGROUND")
 
@@ -143,37 +143,45 @@ class TestAgentStateEncryptionMode:
             encryption_mode=EncryptionMode.BACKGROUND,
         )
 
-        assert state.encryption_mode == EncryptionMode.BACKGROUND
+        assert state.encryption_mode == "background"
 
-    def test_agent_state_has_encrypted_dek_column(self):
-        """Test that AgentState has encrypted_dek for background mode."""
-        from models.agent_state import AgentState, EncryptionMode
+    def test_agent_state_encryption_mode_string_value(self):
+        """Test that encryption_mode can be set as plain string."""
+        from models.agent_state import AgentState
 
         state = AgentState(
             user_id="user_123",
             agent_name="test_agent",
             encrypted_tarball=b"encrypted_data",
-            encryption_mode=EncryptionMode.BACKGROUND,
+            encryption_mode="background",
+        )
+
+        assert state.encryption_mode == "background"
+
+    def test_agent_state_has_encrypted_dek_column(self):
+        """Test that AgentState has encrypted_dek for background mode."""
+        from models.agent_state import AgentState
+
+        state = AgentState(
+            user_id="user_123",
+            agent_name="test_agent",
+            encrypted_tarball=b"encrypted_data",
+            encryption_mode="background",
             encrypted_dek=b"kms_encrypted_key",
         )
 
         assert state.encrypted_dek == b"kms_encrypted_key"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires schema migration - will be tested after deployment to dev")
     async def test_encryption_mode_persists_to_database(self, db_session, test_user):
-        """Test that encryption_mode is correctly persisted and retrieved.
-
-        Note: This test is skipped until the schema migration is deployed.
-        The migration adds encryption_mode and encrypted_dek columns to agent_states.
-        """
-        from models.agent_state import AgentState, EncryptionMode
+        """Test that encryption_mode is correctly persisted and retrieved."""
+        from models.agent_state import AgentState
 
         state = AgentState(
             user_id=test_user.id,
             agent_name="background_agent",
             encrypted_tarball=b"encrypted_data",
-            encryption_mode=EncryptionMode.BACKGROUND,
+            encryption_mode="background",
             encrypted_dek=b"kms_key_data",
         )
         db_session.add(state)
@@ -183,5 +191,5 @@ class TestAgentStateEncryptionMode:
         result = await db_session.execute(select(AgentState).where(AgentState.id == state.id))
         retrieved = result.scalar_one()
 
-        assert retrieved.encryption_mode == EncryptionMode.BACKGROUND
+        assert retrieved.encryption_mode == "background"
         assert retrieved.encrypted_dek == b"kms_key_data"

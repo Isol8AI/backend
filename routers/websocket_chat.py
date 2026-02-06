@@ -540,7 +540,7 @@ async def _process_agent_chat_background(
             )
             return
 
-        encryption_mode = agent_state.encryption_mode.value
+        encryption_mode = agent_state.encryption_mode
 
         # For zero_trust mode: client provides re-encrypted state in request
         # For background mode: server loads encrypted_dek from DB (not implemented)

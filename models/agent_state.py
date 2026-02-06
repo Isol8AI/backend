@@ -19,7 +19,6 @@ from sqlalchemy import (
     DateTime,
     UniqueConstraint,
     Index,
-    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -79,11 +78,13 @@ class AgentState(Base):
     # Encryption mode for this agent's state
     # ZERO_TRUST: encrypted to user's key (default, user must be online)
     # BACKGROUND: encrypted with KMS (opt-in, enables scheduled tasks)
+    # Uses String instead of SQLAlchemy Enum to avoid asyncpg type OID
+    # introspection issues with Supabase PgBouncer in transaction mode
     encryption_mode = Column(
-        SQLEnum(EncryptionMode),
-        default=EncryptionMode.ZERO_TRUST,
+        String(20),
+        default=EncryptionMode.ZERO_TRUST.value,
         nullable=False,
-        server_default="ZERO_TRUST",
+        server_default="zero_trust",
     )
 
     # KMS-encrypted data encryption key (only used in BACKGROUND mode)
@@ -112,7 +113,10 @@ class AgentState(Base):
         """Initialize AgentState with encryption_mode default."""
         # Set encryption_mode default at Python object creation time
         if "encryption_mode" not in kwargs:
-            kwargs["encryption_mode"] = EncryptionMode.ZERO_TRUST
+            kwargs["encryption_mode"] = EncryptionMode.ZERO_TRUST.value
+        elif isinstance(kwargs["encryption_mode"], EncryptionMode):
+            # Convert enum to string value for storage
+            kwargs["encryption_mode"] = kwargs["encryption_mode"].value
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:

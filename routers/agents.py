@@ -58,7 +58,7 @@ async def list_agents(
                 created_at=a.created_at,
                 updated_at=a.updated_at,
                 tarball_size_bytes=a.tarball_size_bytes,
-                encryption_mode=a.encryption_mode.value,
+                encryption_mode=a.encryption_mode,
             )
             for a in agents
         ]
@@ -96,12 +96,10 @@ async def create_agent(
 
     # Store metadata only — no tarball, no plaintext soul content
     # The enclave creates the fresh agent state on first message
-    from models.agent_state import EncryptionMode
-
     state = await service.create_agent_state(
         user_id=auth.user_id,
         agent_name=request.agent_name,
-        encryption_mode=EncryptionMode(request.encryption_mode),
+        encryption_mode=request.encryption_mode,
     )
     await db.commit()
 
@@ -111,7 +109,7 @@ async def create_agent(
         created_at=state.created_at,
         updated_at=state.updated_at,
         tarball_size_bytes=state.tarball_size_bytes,
-        encryption_mode=state.encryption_mode.value,
+        encryption_mode=state.encryption_mode,
     )
 
 
@@ -144,7 +142,7 @@ async def get_agent(
         created_at=state.created_at,
         updated_at=state.updated_at,
         tarball_size_bytes=state.tarball_size_bytes,
-        encryption_mode=state.encryption_mode.value,
+        encryption_mode=state.encryption_mode,
     )
 
 
@@ -205,7 +203,7 @@ async def get_agent_state(
 
     return {
         "encrypted_state": api_payload,
-        "encryption_mode": state.encryption_mode.value,
+        "encryption_mode": state.encryption_mode,
     }
 
 
@@ -266,7 +264,7 @@ async def send_agent_message(
     # Determine encryption mode
     encryption_mode = "zero_trust"  # Default
     if existing_state:
-        encryption_mode = existing_state.encryption_mode.value
+        encryption_mode = existing_state.encryption_mode
 
     # For zero_trust mode: client provides re-encrypted state in request
     # For background mode: load KMS envelope from DB
@@ -323,13 +321,11 @@ async def send_agent_message(
                 encrypted_tarball=kms_envelope_serialized,
             )
         else:
-            from models.agent_state import EncryptionMode
-
             await service.create_agent_state(
                 user_id=auth.user_id,
                 agent_name=agent_name,
                 encrypted_tarball=kms_envelope_serialized,
-                encryption_mode=EncryptionMode.BACKGROUND,
+                encryption_mode="background",
             )
     else:
         # Zero trust mode: store encrypted state
@@ -342,13 +338,11 @@ async def send_agent_message(
                 encrypted_tarball=encrypted_state_bytes,
             )
         else:
-            from models.agent_state import EncryptionMode
-
             await service.create_agent_state(
                 user_id=auth.user_id,
                 agent_name=agent_name,
                 encrypted_tarball=encrypted_state_bytes,
-                encryption_mode=EncryptionMode.ZERO_TRUST,
+                encryption_mode="zero_trust",
             )
 
     await db.commit()
