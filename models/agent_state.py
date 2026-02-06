@@ -83,7 +83,7 @@ class AgentState(Base):
         SQLEnum(EncryptionMode),
         default=EncryptionMode.ZERO_TRUST,
         nullable=False,
-        server_default="zero_trust",
+        server_default="ZERO_TRUST",
     )
 
     # KMS-encrypted data encryption key (only used in BACKGROUND mode)
