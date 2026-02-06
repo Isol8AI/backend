@@ -324,6 +324,7 @@ async def send_agent_message(
             )
         else:
             from models.agent_state import EncryptionMode
+
             await service.create_agent_state(
                 user_id=auth.user_id,
                 agent_name=agent_name,
@@ -342,6 +343,7 @@ async def send_agent_message(
             )
         else:
             from models.agent_state import EncryptionMode
+
             await service.create_agent_state(
                 user_id=auth.user_id,
                 agent_name=agent_name,

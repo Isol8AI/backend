@@ -448,7 +448,9 @@ class BedrockServer:
                 "status": "success",
                 "command": "RUN_AGENT",
                 "encrypted_response": encrypted_response.to_dict(),
-                "encrypted_state": encrypted_state_out.to_dict() if encryption_mode == "zero_trust" else encrypted_state_out,
+                "encrypted_state": encrypted_state_out.to_dict()
+                if encryption_mode == "zero_trust"
+                else encrypted_state_out,
                 "encrypted_dek": encrypted_dek,  # None for both modes (KMS envelope includes it)
             }
 
@@ -862,7 +864,9 @@ You are {agent_name}, a personal AI companion.
                 conn,
                 {
                     "is_final": True,
-                    "encrypted_state": encrypted_state_out.to_dict() if encryption_mode == "zero_trust" else encrypted_state_out,
+                    "encrypted_state": encrypted_state_out.to_dict()
+                    if encryption_mode == "zero_trust"
+                    else encrypted_state_out,
                     "encrypted_dek": encrypted_dek,  # None for both modes (KMS envelope includes it)
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
