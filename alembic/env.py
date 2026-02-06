@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import our database configuration and models
 from core.config import settings
+from core.database import _db_schema
 from models.base import Base
 
 # Import all models to ensure they're registered with Base.metadata
@@ -62,9 +63,14 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table_schema=_db_schema if _db_schema != "public" else None,
+        include_schemas=True,
     )
 
     with context.begin_transaction():
+        # Set search_path to target schema for migrations
+        if _db_schema != "public":
+            context.execute(f"SET search_path TO {_db_schema}, public")
         context.run_migrations()
 
 
@@ -82,9 +88,17 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table_schema=_db_schema if _db_schema != "public" else None,
+            include_schemas=True,
+        )
 
         with context.begin_transaction():
+            # Set search_path to target schema for migrations
+            if _db_schema != "public":
+                context.execute(f"SET search_path TO {_db_schema}, public")
             context.run_migrations()
 
 
