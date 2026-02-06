@@ -79,6 +79,7 @@ COPY enclave/test_crypto_client.py .
 COPY enclave/vsock_http_client.py .
 COPY enclave/bedrock_client.py .
 COPY enclave/bedrock_server.py .
+COPY enclave/kms_encryption.py .
 
 # Set ownership
 RUN chown -R enclave:enclave /app /opt/openclaw
