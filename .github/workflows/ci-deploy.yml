@@ -87,6 +87,12 @@ jobs:
           ruff check .
           ruff format --check .
 
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/isol8_test
+        run: |
+          alembic upgrade head
+
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/isol8_test
