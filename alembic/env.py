@@ -11,7 +11,6 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import our database configuration and models
-from core.config import settings
 from core.database import _db_schema, _clean_db_url
 from models.base import Base
 
