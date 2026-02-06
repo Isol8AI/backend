@@ -86,9 +86,7 @@ class AgentService:
         )
         self.db.add(state)
         await self.db.flush()
-        logger.info(
-            f"Created agent state for user={user_id}, agent={agent_name}, encryption_mode={encryption_mode}"
-        )
+        logger.info(f"Created agent state for user={user_id}, agent={agent_name}, encryption_mode={encryption_mode}")
         return state
 
     async def update_agent_state(
