@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     ENCLAVE_INFERENCE_TIMEOUT: float = float(os.getenv("ENCLAVE_INFERENCE_TIMEOUT", "120.0"))
 
     # Nitro enclave settings (only used when ENCLAVE_MODE=nitro)
-    ENCLAVE_CID: int = int(os.getenv("ENCLAVE_CID", "") or "0")  # 0 = auto-discover
-    ENCLAVE_PORT: int = int(os.getenv("ENCLAVE_PORT", "5000"))
+    ENCLAVE_CID: int = 0  # 0 = auto-discover
+    ENCLAVE_PORT: int = 5000
 
     # Credential refresh interval (seconds) - creds expire after 1 hour
     ENCLAVE_CREDENTIAL_REFRESH_SECONDS: int = int(os.getenv("ENCLAVE_CREDENTIAL_REFRESH_SECONDS", "2700"))  # 45 minutes
@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     # WebSocket Configuration (API Gateway Management API)
     WS_CONNECTIONS_TABLE: str = os.getenv("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
     WS_MANAGEMENT_API_URL: str = os.getenv("WS_MANAGEMENT_API_URL", "")  # Set by Terraform
+
+    @field_validator("ENCLAVE_CID", mode="before")
+    @classmethod
+    def validate_enclave_cid(cls, v):
+        if v == "" or v is None:
+            return 0
+        return int(v)
 
     @field_validator("CLERK_ISSUER")
     @classmethod
