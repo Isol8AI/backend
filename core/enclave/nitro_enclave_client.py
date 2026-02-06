@@ -16,7 +16,7 @@ from typing import AsyncGenerator, List, Optional
 
 from core.config import settings
 from core.crypto import EncryptedPayload
-from .mock_enclave import (
+from .enclave_types import (
     EnclaveInterface,
     EnclaveInfo,
     StreamChunk,

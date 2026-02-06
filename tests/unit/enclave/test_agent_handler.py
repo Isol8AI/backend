@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 from core.crypto import EncryptedPayload, generate_x25519_keypair
 from core.enclave.agent_handler import AgentHandler, AgentMessageRequest, AgentMessageResponse
-from core.enclave.mock_enclave import AgentRunResponse
+from core.enclave.enclave_types import AgentRunResponse
 
 
 class TestAgentHandler:

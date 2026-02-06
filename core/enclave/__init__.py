@@ -40,9 +40,8 @@ class EncryptionContext(str, Enum):
     RECOVERY_KEY_ENCRYPTION = "recovery-key-encryption"
 
 
-# Import types from mock_enclave (used by both implementations)
-from .mock_enclave import (
-    MockEnclave,
+# Import shared types
+from .enclave_types import (
     EnclaveInterface,
     ProcessedMessage,
     StreamChunk,
@@ -88,38 +87,27 @@ def _discover_enclave_cid() -> int:
 
 def get_enclave() -> EnclaveInterface:
     """
-    Get the enclave instance based on ENCLAVE_MODE config.
-
-    - ENCLAVE_MODE=mock: Returns MockEnclave (in-process, for dev)
-    - ENCLAVE_MODE=nitro: Returns NitroEnclaveClient (vsock to real enclave)
+    Get the enclave instance (NitroEnclaveClient only).
 
     Returns:
-        EnclaveInterface implementation
+        NitroEnclaveClient instance
     """
     global _enclave_instance
 
     if _enclave_instance is None:
         from core.config import settings
+        from .nitro_enclave_client import NitroEnclaveClient
 
-        if settings.ENCLAVE_MODE == "nitro":
-            from .nitro_enclave_client import NitroEnclaveClient
+        # Discover enclave CID if not configured
+        cid = settings.ENCLAVE_CID
+        if cid == 0:
+            cid = _discover_enclave_cid()
 
-            # Discover enclave CID if not configured
-            cid = settings.ENCLAVE_CID
-            if cid == 0:
-                cid = _discover_enclave_cid()
-
-            _enclave_instance = NitroEnclaveClient(
-                enclave_cid=cid,
-                enclave_port=settings.ENCLAVE_PORT,
-            )
-            logger.info(f"Using NitroEnclaveClient (CID={cid}, port={settings.ENCLAVE_PORT})")
-        else:
-            _enclave_instance = MockEnclave(
-                aws_region=settings.AWS_REGION,
-                inference_timeout=settings.ENCLAVE_INFERENCE_TIMEOUT,
-            )
-            logger.info("Using MockEnclave (development mode)")
+        _enclave_instance = NitroEnclaveClient(
+            enclave_cid=cid,
+            enclave_port=settings.ENCLAVE_PORT,
+        )
+        logger.info(f"Using NitroEnclaveClient (CID={cid}, port={settings.ENCLAVE_PORT})")
 
     return _enclave_instance
 
@@ -176,7 +164,6 @@ from .agent_handler import AgentHandler, AgentMessageRequest, AgentMessageRespon
 
 __all__ = [
     "EncryptionContext",
-    "MockEnclave",
     "EnclaveInterface",
     "ProcessedMessage",
     "StreamChunk",

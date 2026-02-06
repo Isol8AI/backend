@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from core.crypto import EncryptedPayload, generate_x25519_keypair
 from core.enclave.agent_handler import AgentHandler, AgentStreamRequest
-from core.enclave.mock_enclave import AgentStreamChunk, MockEnclave
+from core.enclave.enclave_types import AgentStreamChunk
 
 
 class TestAgentStreamChunk:
@@ -473,29 +473,4 @@ class TestAgentHandlerStreaming:
         assert chunks[5].output_tokens == 1000
 
 
-class TestMockEnclaveAgentChatStreaming:
-    """Test MockEnclave.agent_chat_streaming raises NotImplementedError."""
-
-    @pytest.mark.asyncio
-    async def test_mock_enclave_agent_chat_streaming_raises(self):
-        """Test that MockEnclave.agent_chat_streaming raises NotImplementedError."""
-        enclave = MockEnclave.__new__(MockEnclave)
-        # Manually set the required attributes without full __init__
-        enclave._keypair = generate_x25519_keypair()
-
-        encrypted_msg = EncryptedPayload(
-            ephemeral_public_key=b"x" * 32,
-            iv=b"y" * 16,
-            ciphertext=b"test",
-            auth_tag=b"z" * 16,
-            hkdf_salt=b"s" * 32,
-        )
-
-        with pytest.raises(NotImplementedError, match="agent_chat_streaming is only available in Nitro Enclave mode"):
-            async for _ in enclave.agent_chat_streaming(
-                encrypted_message=encrypted_msg,
-                encrypted_state=None,
-                client_public_key=b"k" * 32,
-                agent_name="test_agent",
-            ):
-                pass  # Should not reach here
+# MockEnclave has been removed - agent streaming tests now only use NitroEnclaveClient

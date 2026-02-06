@@ -147,7 +147,7 @@ class AgentHandler:
         Yields:
             AgentStreamChunk objects with encrypted content or final state
         """
-        from .mock_enclave import AgentStreamChunk
+        from .enclave_types import AgentStreamChunk
 
         if self.enclave is None:
             yield AgentStreamChunk(error="Enclave not configured", is_final=True)

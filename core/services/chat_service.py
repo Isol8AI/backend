@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.crypto import EncryptedPayload
 from core.enclave import get_enclave
-from core.enclave.mock_enclave import StreamChunk
+from core.enclave.enclave_types import StreamChunk
 
 from models.audit_log import AuditLog
 from models.message import Message, MessageRole
