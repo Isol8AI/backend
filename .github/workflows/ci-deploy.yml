@@ -344,8 +344,21 @@ jobs:
             echo "EIF already in S3" || \
             echo "EIF not in S3 - instances will build from source"
 
-      - name: Run Database Migrations
+      - name: Check for New Migrations
+        id: check-migrations
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
+        run: |
+          # Check if there are new migration files in this commit
+          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q "alembic/versions/"; then
+            echo "has_migrations=true" >> $GITHUB_OUTPUT
+            echo "New migrations detected in this commit"
+          else
+            echo "has_migrations=false" >> $GITHUB_OUTPUT
+            echo "No new migrations in this commit, skipping migration step"
+          fi
+
+      - name: Run Database Migrations
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') && steps.check-migrations.outputs.has_migrations == 'true' }}
         run: |
           ASG_NAME="isol8-dev-asg"
 
