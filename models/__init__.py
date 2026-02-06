@@ -8,7 +8,7 @@ from .context_store import ContextStore
 from .session import Session
 from .message import Message, MessageRole
 from .audit_log import AuditLog, AuditEventType
-from .agent_state import AgentState
+from .agent_state import AgentState, EncryptionMode
 
 __all__ = [
     "Base",
@@ -23,4 +23,5 @@ __all__ = [
     "AuditLog",
     "AuditEventType",
     "AgentState",
+    "EncryptionMode",
 ]

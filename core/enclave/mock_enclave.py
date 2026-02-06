@@ -97,10 +97,14 @@ class AgentStreamChunk:
 
     Key difference from StreamChunk: no stored_user_message/stored_assistant_message
     (agent state IS the storage). Instead has encrypted_state (the updated tarball).
+
+    For background mode, encrypted_dek contains the KMS-encrypted data encryption key.
+    For zero_trust mode, encrypted_dek is None.
     """
 
     encrypted_content: Optional[EncryptedPayload] = None  # streaming text chunk
     encrypted_state: Optional[EncryptedPayload] = None  # updated tarball (final)
+    encrypted_dek: Optional[dict] = None  # KMS-encrypted DEK (background mode only)
     is_final: bool = False
     error: str = ""
     input_tokens: int = 0
@@ -343,11 +347,16 @@ class EnclaveInterface(ABC):
 
 @dataclass
 class AgentRunResponse:
-    """Response from enclave run_agent operation."""
+    """Response from enclave run_agent operation.
+
+    For background mode, encrypted_dek contains the KMS-encrypted data encryption key.
+    For zero_trust mode, encrypted_dek is None.
+    """
 
     success: bool
     encrypted_response: Optional[EncryptedPayload] = None
     encrypted_state: Optional[EncryptedPayload] = None
+    encrypted_dek: Optional[dict] = None  # KMS-encrypted DEK (background mode only)
     error: str = ""
 
 

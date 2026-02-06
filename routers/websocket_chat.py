@@ -469,11 +469,17 @@ def _validate_and_process_agent_chat(
         encrypted_soul = None
         if body.get("encrypted_soul_content"):
             encrypted_soul = EncryptedPayload(**body["encrypted_soul_content"])
+
+        encrypted_state_from_client = None
+        if body.get("encrypted_state"):
+            encrypted_state_from_client = EncryptedPayload(**body["encrypted_state"])
+
         request = AgentChatWSRequest(
             agent_name=body["agent_name"],
             encrypted_message=EncryptedPayload(**body["encrypted_message"]),
             client_transport_public_key=body["client_transport_public_key"],
             encrypted_soul_content=encrypted_soul,
+            encrypted_state=encrypted_state_from_client,
         )
     except (KeyError, ValidationError) as e:
         logger.error("Invalid agent chat message format: %s", e)
@@ -487,6 +493,7 @@ def _validate_and_process_agent_chat(
         encrypted_message=request.encrypted_message,
         client_transport_public_key=request.client_transport_public_key,
         encrypted_soul_content=request.encrypted_soul_content,
+        encrypted_state_from_client=request.encrypted_state,
     )
 
 
@@ -497,9 +504,13 @@ async def _process_agent_chat_background(
     encrypted_message: EncryptedPayload,
     client_transport_public_key: str,
     encrypted_soul_content: Optional[EncryptedPayload] = None,
+    encrypted_state_from_client: Optional[EncryptedPayload] = None,
 ) -> None:
     """
     Process agent chat message in background task with streaming.
+
+    For zero_trust mode: client provides encrypted_state_from_client (re-encrypted to enclave)
+    For background mode: server loads encrypted_dek from DB
     """
     import json as json_module
 
@@ -517,7 +528,7 @@ async def _process_agent_chat_background(
     session_factory = get_session_factory()
 
     try:
-        # Look up agent state from DB
+        # Look up agent to determine encryption mode
         async with session_factory() as db:
             service = AgentService(db)
             agent_state = await service.get_agent_state(user_id, agent_name)
@@ -529,16 +540,26 @@ async def _process_agent_chat_background(
             )
             return
 
-        # Deserialize encrypted tarball to crypto EncryptedPayload
-        from core.crypto import EncryptedPayload as CryptoPayload
+        encryption_mode = agent_state.encryption_mode.value
 
-        encrypted_state = None
-        if agent_state.encrypted_tarball:
-            try:
-                state_dict = json_module.loads(agent_state.encrypted_tarball)
-                encrypted_state = CryptoPayload.from_dict(state_dict)
-            except (json_module.JSONDecodeError, KeyError, TypeError):
-                logger.warning("Could not deserialize agent state, treating as new agent")
+        # For zero_trust mode: client provides re-encrypted state in request
+        # For background mode: server loads encrypted_dek from DB (not implemented)
+
+        encrypted_state_for_enclave = None
+        if encryption_mode == "zero_trust":
+            # For zero_trust mode: client provides re-encrypted state in the request
+            if encrypted_state_from_client:
+                # Client already decrypted (with user key) and re-encrypted (to enclave transport key)
+                encrypted_state_for_enclave = encrypted_state_from_client.to_crypto_payload()
+            # else: no state (new agent or first message)
+        elif encryption_mode == "background":
+            # Background mode: would load encrypted_dek from DB and pass to enclave
+            # Not yet implemented
+            management_api.send_message(
+                connection_id,
+                {"type": "error", "message": "Background mode not yet implemented"},
+            )
+            return
 
         # Convert API encrypted_message to crypto payload
         encrypted_msg = encrypted_message.to_crypto_payload()
@@ -556,9 +577,10 @@ async def _process_agent_chat_background(
             user_id=user_id,
             agent_name=agent_name,
             encrypted_message=encrypted_msg,
-            encrypted_state=encrypted_state,
+            encrypted_state=encrypted_state_for_enclave,
             client_public_key=client_pub_key,
             encrypted_soul_content=encrypted_soul,
+            encryption_mode=encryption_mode,
         )
 
         # Stream response chunks

@@ -306,7 +306,11 @@ class BedrockServer:
 
     def handle_run_agent(self, data: dict) -> dict:
         """
-        Run an OpenClaw agent with an encrypted message.
+        Run an OpenClaw agent with an encrypted message (non-streaming).
+
+        Supports dual encryption modes:
+        - zero_trust: State encrypted to user's public key (default)
+        - background: State encrypted with KMS envelope encryption (opt-in)
 
         Required fields:
         - encrypted_message: EncryptedPayload (user's message, encrypted to enclave key)
@@ -317,10 +321,12 @@ class BedrockServer:
         Optional fields:
         - encrypted_state: EncryptedPayload (existing agent state tarball)
           If not provided, creates a fresh agent.
+        - encryption_mode: "zero_trust" (default) or "background"
 
         Returns:
         - encrypted_response: Agent's response (encrypted to user's key)
-        - encrypted_state: Updated agent state tarball (encrypted to enclave's key)
+        - encrypted_state: Updated agent state tarball
+        - encrypted_dek: KMS-encrypted DEK (background mode only)
         """
         tmpfs_path = None
         try:
@@ -329,8 +335,9 @@ class BedrockServer:
             agent_name = data["agent_name"]
             model = data["model"]
             encrypted_state_dict = data.get("encrypted_state")
+            encryption_mode = data.get("encryption_mode", "zero_trust")
 
-            print(f"[Enclave] RUN_AGENT: agent={agent_name}, model={model}", flush=True)
+            print(f"[Enclave] RUN_AGENT: agent={agent_name}, model={model}, mode={encryption_mode}", flush=True)
 
             # Create tmpfs directory for this request
             tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
@@ -340,11 +347,20 @@ class BedrockServer:
             # Decrypt and extract existing state, or create fresh agent
             if encrypted_state_dict:
                 encrypted_state = EncryptedPayload.from_dict(encrypted_state_dict)
-                state_bytes = decrypt_with_private_key(
-                    self.keypair.private_key,
-                    encrypted_state,
-                    "agent-state-storage",
-                )
+
+                # For zero_trust mode: client re-encrypted state to enclave transport key
+                # For background mode: state comes from KMS (not implemented yet)
+                if encryption_mode == "zero_trust":
+                    # Client decrypted user-key-encrypted state and re-encrypted to enclave
+                    state_bytes = decrypt_with_private_key(
+                        self.keypair.private_key,
+                        encrypted_state,
+                        "client-to-enclave-transport",
+                    )
+                else:
+                    # Background mode: decrypt with KMS (TODO)
+                    raise NotImplementedError("Background mode KMS decryption not yet implemented")
+
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
             else:
@@ -377,12 +393,23 @@ class BedrockServer:
             tarball_bytes = self._pack_directory(tmpfs_path)
             print(f"[Enclave] Packed state: {len(tarball_bytes)} bytes", flush=True)
 
-            # Encrypt state for storage (to enclave's key for future decryption)
-            encrypted_state_out = encrypt_to_public_key(
-                self.keypair.public_key,
-                tarball_bytes,
-                "agent-state-storage",
-            )
+            # Encrypt state for storage based on encryption mode
+            encrypted_dek = None
+
+            if encryption_mode == "zero_trust":
+                # ZERO TRUST MODE: Encrypt state to user's public key
+                # Only the user can decrypt (requires passcode to unlock private key)
+                # This is the critical fix: use user_public_key, NOT self.keypair.public_key
+                encrypted_state_out = encrypt_to_public_key(
+                    user_public_key,  # ← FIX: User's key, not enclave's ephemeral key
+                    tarball_bytes,
+                    "agent-state-storage",
+                )
+                print("[Enclave] Encrypted state to user's public key (zero_trust mode)", flush=True)
+            else:
+                # BACKGROUND MODE: KMS envelope encryption
+                # TODO: Implement KMS envelope encryption
+                raise NotImplementedError("Background mode KMS encryption not yet implemented")
 
             # Encrypt response for transport (to user's key)
             encrypted_response = encrypt_to_public_key(
@@ -396,6 +423,7 @@ class BedrockServer:
                 "command": "RUN_AGENT",
                 "encrypted_response": encrypted_response.to_dict(),
                 "encrypted_state": encrypted_state_out.to_dict(),
+                "encrypted_dek": encrypted_dek,  # None for zero_trust, KMS-encrypted DEK for background
             }
 
         except KeyError as e:
@@ -625,9 +653,13 @@ You are {agent_name}, a personal AI companion.
         """
         Process encrypted agent chat with streaming response.
 
+        Supports dual encryption modes:
+        - zero_trust: State encrypted to user's public key (default)
+        - background: State encrypted with KMS envelope encryption (opt-in)
+
         Streams newline-delimited JSON events:
         - {"encrypted_content": {...}}  - Encrypted chunk for client
-        - {"is_final": true, "encrypted_state": {...}} - Final event with updated state
+        - {"is_final": true, "encrypted_state": {...}, "encrypted_dek": {...}} - Final event
         - {"error": "...", "is_final": true} - Error event
         """
         tmpfs_path = None
@@ -643,8 +675,9 @@ You are {agent_name}, a personal AI companion.
             client_public_key = hex_to_bytes(data["client_public_key"])
             agent_name = data["agent_name"]
             encrypted_soul_dict = data.get("encrypted_soul_content")
+            encryption_mode = data.get("encryption_mode", "zero_trust")  # Default to zero_trust
 
-            print(f"[Enclave] AGENT_CHAT_STREAM: agent={agent_name}", flush=True)
+            print(f"[Enclave] AGENT_CHAT_STREAM: agent={agent_name}, mode={encryption_mode}", flush=True)
 
             # Create tmpfs directory
             tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
@@ -654,11 +687,20 @@ You are {agent_name}, a personal AI companion.
             # Decrypt and extract existing state, or create fresh agent
             if encrypted_state_dict:
                 encrypted_state = EncryptedPayload.from_dict(encrypted_state_dict)
-                state_bytes = decrypt_with_private_key(
-                    self.keypair.private_key,
-                    encrypted_state,
-                    "agent-state-storage",
-                )
+
+                # For zero_trust mode: client re-encrypted state to enclave transport key
+                # For background mode: state comes from KMS (not implemented yet)
+                if encryption_mode == "zero_trust":
+                    # Client decrypted user-key-encrypted state and re-encrypted to enclave
+                    state_bytes = decrypt_with_private_key(
+                        self.keypair.private_key,
+                        encrypted_state,
+                        "client-to-enclave-transport",
+                    )
+                else:
+                    # Background mode: decrypt with KMS (TODO)
+                    raise NotImplementedError("Background mode KMS decryption not yet implemented")
+
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
             else:
@@ -746,12 +788,26 @@ You are {agent_name}, a personal AI companion.
             tarball_bytes = self._pack_directory(tmpfs_path)
             print(f"[Enclave] Packed state: {len(tarball_bytes)} bytes", flush=True)
 
-            # Encrypt state for storage (to enclave's key for future decryption)
-            encrypted_state_out = encrypt_to_public_key(
-                self.keypair.public_key,
-                tarball_bytes,
-                "agent-state-storage",
-            )
+            # Encrypt state for storage based on encryption mode
+            encrypted_dek = None
+
+            if encryption_mode == "zero_trust":
+                # ZERO TRUST MODE: Encrypt state to user's public key
+                # Only the user can decrypt (requires passcode to unlock private key)
+                # This is the critical fix: use client_public_key (user's key), NOT self.keypair.public_key (enclave's ephemeral key)
+                encrypted_state_out = encrypt_to_public_key(
+                    client_public_key,  # ← FIX: User's key, not enclave's ephemeral key
+                    tarball_bytes,
+                    "agent-state-storage",
+                )
+                print("[Enclave] Encrypted state to user's public key (zero_trust mode)", flush=True)
+            else:
+                # BACKGROUND MODE: KMS envelope encryption
+                # TODO: Implement KMS envelope encryption
+                # 1. Generate data key with KMS
+                # 2. Encrypt tarball with plaintext DEK
+                # 3. Return encrypted tarball + encrypted DEK
+                raise NotImplementedError("Background mode KMS encryption not yet implemented")
 
             # Send final event with updated state
             self._send_event(
@@ -759,6 +815,7 @@ You are {agent_name}, a personal AI companion.
                 {
                     "is_final": True,
                     "encrypted_state": encrypted_state_out.to_dict(),
+                    "encrypted_dek": encrypted_dek,  # None for zero_trust, KMS-encrypted DEK for background
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                 },

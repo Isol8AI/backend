@@ -58,6 +58,7 @@ async def list_agents(
                 created_at=a.created_at,
                 updated_at=a.updated_at,
                 tarball_size_bytes=a.tarball_size_bytes,
+                encryption_mode=a.encryption_mode.value,
             )
             for a in agents
         ]
@@ -95,9 +96,12 @@ async def create_agent(
 
     # Store metadata only — no tarball, no plaintext soul content
     # The enclave creates the fresh agent state on first message
+    from models.agent_state import EncryptionMode
+
     state = await service.create_agent_state(
         user_id=auth.user_id,
         agent_name=request.agent_name,
+        encryption_mode=EncryptionMode(request.encryption_mode),
     )
     await db.commit()
 
@@ -107,6 +111,7 @@ async def create_agent(
         created_at=state.created_at,
         updated_at=state.updated_at,
         tarball_size_bytes=state.tarball_size_bytes,
+        encryption_mode=state.encryption_mode.value,
     )
 
 
@@ -139,6 +144,7 @@ async def get_agent(
         created_at=state.created_at,
         updated_at=state.updated_at,
         tarball_size_bytes=state.tarball_size_bytes,
+        encryption_mode=state.encryption_mode.value,
     )
 
 
@@ -168,6 +174,41 @@ async def delete_agent(
     await db.commit()
 
 
+@router.get("/{agent_name}/state")
+async def get_agent_state(
+    agent_name: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get encrypted agent state for zero_trust mode.
+
+    The client needs this to:
+    1. Decrypt state with user's private key
+    2. Re-encrypt to enclave transport key
+    3. Send in message request
+
+    Returns null if agent has no state yet (new agent).
+    """
+    service = AgentService(db)
+    state = await service.get_agent_state(
+        user_id=auth.user_id,
+        agent_name=agent_name,
+    )
+
+    if not state or not state.encrypted_tarball:
+        return {"encrypted_state": None, "encryption_mode": "zero_trust"}
+
+    # Deserialize and return as API payload
+    encrypted_payload = _deserialize_encrypted_payload(state.encrypted_tarball)
+    api_payload = EncryptedPayload.from_crypto_payload(encrypted_payload)
+
+    return {
+        "encrypted_state": api_payload,
+        "encryption_mode": state.encryption_mode.value,
+    }
+
+
 # =============================================================================
 # Agent Messaging
 # =============================================================================
@@ -186,12 +227,20 @@ async def send_agent_message(
     If the agent doesn't exist, it's created automatically.
     The message and response are end-to-end encrypted.
 
-    Flow:
-    1. Client encrypts message to enclave's public key
-    2. Server relays encrypted message to enclave (cannot read it)
-    3. Enclave decrypts, runs OpenClaw, re-encrypts response
-    4. Server stores encrypted state, returns encrypted response
-    5. Client decrypts response with their private key
+    Flow (zero_trust mode - default):
+    1. Client fetches encrypted state from GET /agents/{name}/state
+    2. Client decrypts state with user's private key (passcode-protected)
+    3. Client re-encrypts state to enclave transport key
+    4. Client encrypts message to enclave transport key
+    5. Client sends both in request
+    6. Enclave decrypts, processes, re-encrypts to user's key
+    7. Server stores encrypted state, returns encrypted response
+
+    Flow (background mode - opt-in):
+    1. Client encrypts message to enclave transport key
+    2. Server loads KMS-encrypted state from DB
+    3. Enclave decrypts with KMS, processes, re-encrypts with KMS
+    4. Server stores encrypted state + encrypted DEK
     """
     service = AgentService(db)
     enclave = get_enclave()
@@ -208,15 +257,28 @@ async def send_agent_message(
 
     user_public_key = bytes.fromhex(user.public_key)
 
-    # Get existing state if any
+    # Get or create agent state record
     existing_state = await service.get_agent_state(
         user_id=auth.user_id,
         agent_name=agent_name,
     )
 
-    encrypted_state = None
+    # Determine encryption mode
+    encryption_mode = "zero_trust"  # Default
     if existing_state:
-        encrypted_state = _deserialize_encrypted_payload(existing_state.encrypted_tarball)
+        encryption_mode = existing_state.encryption_mode.value
+
+    # For zero_trust mode: client provides re-encrypted state in request
+    # For background mode: server would load encrypted_dek from DB (not implemented yet)
+    encrypted_state = None
+    if encryption_mode == "zero_trust" and request.encrypted_state:
+        # Client decrypted and re-encrypted state to enclave transport key
+        encrypted_state = request.encrypted_state.to_crypto_payload()
+    elif encryption_mode == "background":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Background mode not yet implemented",
+        )
 
     # Convert API payload to crypto payload
     encrypted_message = request.encrypted_message.to_crypto_payload()
@@ -230,6 +292,7 @@ async def send_agent_message(
         encrypted_state=encrypted_state,
         user_public_key=user_public_key,
         model=request.model,
+        encryption_mode=encryption_mode,
     )
 
     response = await handler.process_message(agent_request)

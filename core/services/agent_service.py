@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.agent_state import AgentState
+from models.agent_state import AgentState, EncryptionMode
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class AgentService:
         user_id: str,
         agent_name: str,
         encrypted_tarball: Optional[bytes] = None,
+        encryption_mode: EncryptionMode = EncryptionMode.ZERO_TRUST,
     ) -> AgentState:
         """
         Create new agent state.
@@ -71,6 +72,7 @@ class AgentService:
             user_id: Clerk user ID
             agent_name: Agent name/identifier
             encrypted_tarball: Encrypted tarball bytes (None until first message)
+            encryption_mode: Encryption mode (zero_trust or background)
 
         Returns:
             Created AgentState
@@ -80,10 +82,13 @@ class AgentService:
             agent_name=agent_name,
             encrypted_tarball=encrypted_tarball,
             tarball_size_bytes=len(encrypted_tarball) if encrypted_tarball else 0,
+            encryption_mode=encryption_mode,
         )
         self.db.add(state)
         await self.db.flush()
-        logger.info(f"Created agent state for user={user_id}, agent={agent_name}")
+        logger.info(
+            f"Created agent state for user={user_id}, agent={agent_name}, encryption_mode={encryption_mode.value}"
+        )
         return state
 
     async def update_agent_state(

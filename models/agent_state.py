@@ -8,6 +8,7 @@ decrypt it.
 """
 
 from datetime import datetime, timezone
+import enum
 import uuid
 
 from sqlalchemy import (
@@ -18,10 +19,26 @@ from sqlalchemy import (
     DateTime,
     UniqueConstraint,
     Index,
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
 from models.base import Base
+
+
+class EncryptionMode(str, enum.Enum):
+    """Agent state encryption mode.
+
+    ZERO_TRUST: State encrypted to user's key. Only the user can decrypt.
+                Requires user to be online to process messages.
+
+    BACKGROUND: State encrypted with KMS. Enables scheduled tasks and
+                channel bridges (iMessage, WhatsApp, Telegram).
+                Opt-in mode for users who need always-on agents.
+    """
+
+    ZERO_TRUST = "zero_trust"  # Default: encrypted to user's key
+    BACKGROUND = "background"  # Opt-in: encrypted with KMS
 
 
 class AgentState(Base):
@@ -59,6 +76,21 @@ class AgentState(Base):
     # Metadata (not encrypted - needed for queries and quotas)
     tarball_size_bytes = Column(Integer, nullable=True)
 
+    # Encryption mode for this agent's state
+    # ZERO_TRUST: encrypted to user's key (default, user must be online)
+    # BACKGROUND: encrypted with KMS (opt-in, enables scheduled tasks)
+    encryption_mode = Column(
+        SQLEnum(EncryptionMode),
+        default=EncryptionMode.ZERO_TRUST,
+        nullable=False,
+        server_default="zero_trust",
+    )
+
+    # KMS-encrypted data encryption key (only used in BACKGROUND mode)
+    # Contains the symmetric key encrypted with KMS, allowing the enclave
+    # to decrypt state without user involvement
+    encrypted_dek = Column(LargeBinary, nullable=True)
+
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -75,6 +107,13 @@ class AgentState(Base):
         UniqueConstraint("user_id", "agent_name", name="uq_agent_states_user_agent"),
         Index("idx_agent_states_user", "user_id"),
     )
+
+    def __init__(self, **kwargs):
+        """Initialize AgentState with encryption_mode default."""
+        # Set encryption_mode default at Python object creation time
+        if "encryption_mode" not in kwargs:
+            kwargs["encryption_mode"] = EncryptionMode.ZERO_TRUST
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return f"<AgentState(id={self.id}, user_id={self.user_id}, agent_name={self.agent_name})>"

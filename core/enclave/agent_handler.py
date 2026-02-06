@@ -29,6 +29,7 @@ class AgentStreamRequest:
     encrypted_state: Optional[EncryptedPayload]
     client_public_key: bytes
     encrypted_soul_content: Optional[EncryptedPayload] = None
+    encryption_mode: str = "zero_trust"  # "zero_trust" or "background"
 
 
 @dataclass
@@ -41,6 +42,7 @@ class AgentMessageRequest:
     encrypted_state: Optional[EncryptedPayload]  # None for new users
     user_public_key: bytes
     model: str
+    encryption_mode: str = "zero_trust"  # "zero_trust" or "background"
 
 
 @dataclass
@@ -111,6 +113,7 @@ class AgentHandler:
                 user_public_key=request.user_public_key,
                 agent_name=request.agent_name,
                 model=request.model,
+                encryption_mode=request.encryption_mode,
             )
 
             return AgentMessageResponse(
@@ -159,6 +162,7 @@ class AgentHandler:
                 client_public_key=request.client_public_key,
                 agent_name=request.agent_name,
                 encrypted_soul_content=request.encrypted_soul_content,
+                encryption_mode=request.encryption_mode,
             ):
                 yield chunk
 

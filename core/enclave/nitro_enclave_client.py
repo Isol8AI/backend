@@ -487,9 +487,10 @@ class NitroEnclaveClient(EnclaveInterface):
         user_public_key: bytes,
         agent_name: str,
         model: str,
+        encryption_mode: str = "zero_trust",
     ) -> AgentRunResponse:
         """
-        Run an OpenClaw agent inside the Nitro Enclave.
+        Run an OpenClaw agent inside the Nitro Enclave (non-streaming).
 
         This sends the RUN_AGENT command to the real enclave via vsock.
         The enclave handles:
@@ -500,10 +501,11 @@ class NitroEnclaveClient(EnclaveInterface):
 
         Args:
             encrypted_message: User's message encrypted to enclave
-            encrypted_state: Existing agent state tarball (None for new agent)
-            user_public_key: User's public key for response encryption
+            encrypted_state: Existing agent state tarball (for zero_trust: re-encrypted by client)
+            user_public_key: User's public key for response and state encryption
             agent_name: Name of the agent to run
             model: LLM model to use
+            encryption_mode: "zero_trust" (default) or "background"
 
         Returns:
             AgentRunResponse with encrypted response and state
@@ -520,6 +522,7 @@ class NitroEnclaveClient(EnclaveInterface):
             "user_public_key": user_public_key.hex(),
             "agent_name": agent_name,
             "model": model,
+            "encryption_mode": encryption_mode,
         }
 
         logger.info(f"Sending RUN_AGENT command for agent {agent_name}")
@@ -549,10 +552,13 @@ class NitroEnclaveClient(EnclaveInterface):
             if response.get("encrypted_state"):
                 encrypted_state_result = EncryptedPayload.from_dict(response["encrypted_state"])
 
+            encrypted_dek = response.get("encrypted_dek")  # None for zero_trust, KMS-encrypted DEK for background
+
             return AgentRunResponse(
                 success=True,
                 encrypted_response=encrypted_response,
                 encrypted_state=encrypted_state_result,
+                encrypted_dek=encrypted_dek,
             )
 
         except EnclaveConnectionError as e:
@@ -576,12 +582,21 @@ class NitroEnclaveClient(EnclaveInterface):
         client_public_key: bytes,
         agent_name: str,
         encrypted_soul_content: Optional[EncryptedPayload] = None,
+        encryption_mode: str = "zero_trust",
     ) -> AsyncGenerator[AgentStreamChunk, None]:
         """
         Process agent chat through Nitro Enclave with streaming.
 
         Sends AGENT_CHAT_STREAM command, yields AgentStreamChunk objects
         as enclave streams back encrypted response chunks.
+
+        Args:
+            encrypted_message: User message encrypted to enclave transport key
+            encrypted_state: Agent state (for zero_trust: re-encrypted by client to enclave key)
+            client_public_key: User's public key (for encrypting responses and state)
+            agent_name: Name of the agent
+            encrypted_soul_content: Optional SOUL.md content for new agents
+            encryption_mode: "zero_trust" (default) or "background"
         """
         # Check if credentials need refresh
         if self._credentials_expiring_soon():
@@ -595,6 +610,7 @@ class NitroEnclaveClient(EnclaveInterface):
             "client_public_key": client_public_key.hex(),
             "agent_name": agent_name,
             "encrypted_soul_content": encrypted_soul_content.to_dict() if encrypted_soul_content else None,
+            "encryption_mode": encryption_mode,
         }
 
         logger.debug(f"Sending AGENT_CHAT_STREAM command for agent {agent_name}")
@@ -640,8 +656,11 @@ class NitroEnclaveClient(EnclaveInterface):
                     if event.get("encrypted_state"):
                         encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
 
+                    encrypted_dek = event.get("encrypted_dek")  # None for zero_trust, KMS-encrypted DEK for background
+
                     yield AgentStreamChunk(
                         encrypted_state=encrypted_state_result,
+                        encrypted_dek=encrypted_dek,
                         is_final=True,
                         input_tokens=event.get("input_tokens", 0),
                         output_tokens=event.get("output_tokens", 0),
