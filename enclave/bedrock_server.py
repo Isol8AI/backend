@@ -50,7 +50,7 @@ from crypto_primitives import (
     hex_to_bytes,
 )
 from bedrock_client import BedrockClient, BedrockResponse, build_converse_messages, ConverseTurn
-from kms_encryption import encrypt_with_kms, decrypt_with_kms
+from kms_encryption import encrypt_with_kms, decrypt_with_kms, set_kms_credentials
 
 # vsock constants
 VSOCK_PORT = 5000
@@ -91,7 +91,15 @@ class BedrockServer:
                 expiration=credentials.get("expiration"),
             )
 
-            print("[Enclave] AWS credentials set", flush=True)
+            # Also set KMS credentials for envelope encryption
+            set_kms_credentials(
+                access_key_id=credentials["access_key_id"],
+                secret_access_key=credentials["secret_access_key"],
+                session_token=credentials["session_token"],
+                region=self.region,
+            )
+
+            print("[Enclave] AWS credentials set (Bedrock + KMS)", flush=True)
             if credentials.get("expiration"):
                 print(f"[Enclave] Credentials expire: {credentials['expiration']}", flush=True)
 
