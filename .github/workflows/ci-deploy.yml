@@ -294,7 +294,7 @@ jobs:
               "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin '"${{ steps.login-ecr.outputs.registry }}"'",
               "docker pull '"${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"'",
               "echo \"=== Restarting via systemd ===\"",
-              "systemctl restart isol8-backend",
+              "systemctl restart isol8",
               "echo \"=== Waiting for container to start ===\"",
               "for i in $(seq 1 30); do docker inspect isol8 --format={{.State.Running}} 2>/dev/null && break || true; done",
               "echo \"=== Resetting database schema ===\"",
