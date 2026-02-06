@@ -361,10 +361,8 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --timeout-seconds 120 \
             --parameters 'commands=[
-              "set -e",
               "echo \"=== Resetting database schema ===\"",
-              "docker exec isol8 python init_db.py --reset",
-              "echo \"=== Schema reset complete ===\""
+              "if docker ps --format {{.Names}} | grep -q isol8; then docker exec isol8 python init_db.py --reset && echo \"=== Schema reset complete ===\"; else echo \"Container not running - skipping (new instance will handle schema via user_data.sh)\"; fi"
             ]' \
             --query 'Command.CommandId' \
             --output text)

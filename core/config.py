@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     ENCLAVE_INFERENCE_TIMEOUT: float = float(os.getenv("ENCLAVE_INFERENCE_TIMEOUT", "120.0"))
 
     # Nitro enclave settings (only used when ENCLAVE_MODE=nitro)
-    ENCLAVE_CID: int = int(os.getenv("ENCLAVE_CID", "0"))  # 0 = auto-discover
+    ENCLAVE_CID: int = int(os.getenv("ENCLAVE_CID", "") or "0")  # 0 = auto-discover
     ENCLAVE_PORT: int = int(os.getenv("ENCLAVE_PORT", "5000"))
 
     # Credential refresh interval (seconds) - creds expire after 1 hour
