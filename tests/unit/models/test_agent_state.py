@@ -180,9 +180,7 @@ class TestAgentStateEncryptionMode:
         await db_session.flush()
 
         # Query back
-        result = await db_session.execute(
-            select(AgentState).where(AgentState.id == state.id)
-        )
+        result = await db_session.execute(select(AgentState).where(AgentState.id == state.id))
         retrieved = result.scalar_one()
 
         assert retrieved.encryption_mode == EncryptionMode.BACKGROUND
