@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import our database configuration and models
 from core.config import settings
-from core.database import _db_schema
+from core.database import _db_schema, _clean_db_url
 from models.base import Base
 
 # Import all models to ensure they're registered with Base.metadata
@@ -23,9 +23,10 @@ import models  # noqa: F401
 config = context.config
 
 # Override sqlalchemy.url from .ini with our DATABASE_URL from settings
+# Use the cleaned URL from database.py (removes URL-encoded options parameter)
 # Convert async URL (postgresql+asyncpg://) to sync URL (postgresql://)
 # Alembic migrations run synchronously
-sync_url = settings.DATABASE_URL.replace("+asyncpg", "").replace("postgresql://", "postgresql+psycopg://")
+sync_url = _clean_db_url.replace("+asyncpg", "").replace("postgresql://", "postgresql+psycopg://")
 config.set_main_option("sqlalchemy.url", sync_url)
 
 # Interpret the config file for Python logging.
