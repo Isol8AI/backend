@@ -25,7 +25,6 @@ from typing import Dict, Optional
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
-from botocore.exceptions import ClientError
 
 from crypto_primitives import encrypt_aes_gcm, decrypt_aes_gcm
 from vsock_http_client import VsockHttpClient
