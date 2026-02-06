@@ -264,12 +264,26 @@ class TestEnclaveInfo:
     @pytest.mark.asyncio
     async def test_returns_enclave_public_key(self, async_client, test_user):
         """Returns enclave's public key for message encryption."""
-        response = await async_client.get("/api/v1/chat/enclave/info")
+        from unittest.mock import patch, MagicMock
+        from core.crypto import generate_x25519_keypair
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "enclave_public_key" in data
-        assert len(data["enclave_public_key"]) == 64  # 32 bytes as hex
+        # Mock the enclave
+        mock_enclave = MagicMock()
+        keypair = generate_x25519_keypair()
+        mock_info = MagicMock()
+        mock_info.to_hex_dict.return_value = {
+            "enclave_public_key": keypair.public_key.hex(),
+            "attestation_document": None,
+        }
+        mock_enclave.get_info.return_value = mock_info
+
+        with patch("core.services.chat_service.get_enclave", return_value=mock_enclave):
+            response = await async_client.get("/api/v1/chat/enclave/info")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "enclave_public_key" in data
+            assert len(data["enclave_public_key"]) == 64  # 32 bytes as hex
 
     @pytest.mark.asyncio
     async def test_requires_authentication(self, unauthenticated_async_client):
