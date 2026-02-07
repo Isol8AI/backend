@@ -227,6 +227,12 @@ jobs:
           aws s3 sync agent/ "s3://${{ env.ENCLAVE_BUCKET }}/dev/source/agent/"
           echo "Enclave source + agent submodule uploaded for EC2 build"
 
+          # Delete any pre-built EIF so EC2 rebuilds from the new source.
+          # Without this, EC2 downloads the stale EIF and skips the build,
+          # causing the enclave to run outdated code.
+          aws s3 rm "s3://${{ env.ENCLAVE_BUCKET }}/dev/enclave.eif" || true
+          echo "Deleted old EIF from S3 - EC2 will rebuild from latest source"
+
   # ===========================================================================
   # Deploy to Dev (automatic via ASG Instance Refresh)
   # ===========================================================================
@@ -267,6 +273,9 @@ jobs:
 
       # =====================================================================
       # Fast Deploy: SSM pull + restart (skips ASG refresh, ~2 min)
+      # WARNING: Fast deploy only restarts the parent container. It does NOT
+      # rebuild or restart the Nitro Enclave. If enclave source changed,
+      # use a normal deploy (ASG instance refresh) instead.
       # =====================================================================
       - name: "[Fast] SSM Deploy - pull image and restart container"
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true' }}
