@@ -58,8 +58,8 @@ RUN pnpm install --frozen-lockfile && \
 # Link globally so 'openclaw' CLI is available
 RUN npm link
 
-# Verify installation
-RUN openclaw --version || echo "OpenClaw CLI installed"
+# Verify installation (fail the build if openclaw CLI is not available)
+RUN openclaw --version
 
 # =============================================================================
 # Enclave Application

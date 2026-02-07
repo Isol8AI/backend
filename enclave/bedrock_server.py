@@ -143,11 +143,7 @@ class BedrockServer:
         This method extracts them so they can be passed to the Node.js bridge
         subprocess (which uses AWS SDK and reads standard env vars).
         """
-        env = {}
-        if self.bedrock.has_credentials():
-            env["AWS_ACCESS_KEY_ID"] = self.bedrock._access_key_id
-            env["AWS_SECRET_ACCESS_KEY"] = self.bedrock._secret_access_key
-            env["AWS_SESSION_TOKEN"] = self.bedrock._session_token
+        env = self.bedrock.get_credentials_env()
         env["AWS_REGION"] = self.region
         env["AWS_DEFAULT_REGION"] = self.region
         return env
@@ -839,7 +835,9 @@ You are {agent_name}, a personal AI companion.
                                 tool_text.encode("utf-8"),
                                 "enclave-to-client-transport",
                             )
-                            self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict(), "event_type": "tool_result"})
+                            self._send_event(
+                                conn, {"encrypted_content": encrypted_chunk.to_dict(), "event_type": "tool_result"}
+                            )
 
                     elif event_type == "error":
                         # Agent-level error (exit 0, error via NDJSON)
@@ -851,10 +849,21 @@ You are {agent_name}, a personal AI companion.
                         meta = event.get("meta", {})
                         duration_ms = meta.get("durationMs", 0)
                         stop_reason = meta.get("stopReason", "unknown")
+                        # Extract token usage from agentMeta.usage
+                        agent_meta = meta.get("agentMeta") or {}
+                        usage = agent_meta.get("usage") or {}
+                        input_tokens = usage.get("input", 0) or 0
+                        output_tokens = usage.get("output", 0) or 0
                         meta_error = meta.get("error")
                         if meta_error:
-                            agent_error = meta_error.get("message", str(meta_error))
-                        print(f"[Enclave] Agent done: {duration_ms}ms, stop={stop_reason}", flush=True)
+                            if isinstance(meta_error, dict):
+                                agent_error = meta_error.get("message", str(meta_error))
+                            else:
+                                agent_error = str(meta_error)
+                        print(
+                            f"[Enclave] Agent done: {duration_ms}ms, stop={stop_reason}, tokens={input_tokens}/{output_tokens}",
+                            flush=True,
+                        )
 
                     # Skip: block (partials already sent), assistant_start, agent_event, reasoning
 

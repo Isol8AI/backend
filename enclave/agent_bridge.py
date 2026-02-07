@@ -68,8 +68,7 @@ def run_agent_streaming(
 
     if not script.exists():
         raise FileNotFoundError(
-            f"Agent bridge script not found: {script}. "
-            "Ensure run_agent.mjs is in the enclave directory."
+            f"Agent bridge script not found: {script}. Ensure run_agent.mjs is in the enclave directory."
         )
 
     # Build JSON request
@@ -109,50 +108,64 @@ def run_agent_streaming(
         env=proc_env,
     )
 
-    # Send request via stdin and close to signal EOF
     try:
-        proc.stdin.write(json.dumps(request))
-        proc.stdin.flush()
-        proc.stdin.close()
-    except BrokenPipeError:
-        # Process died before we finished writing — handled below
-        pass
-
-    # Stream NDJSON events from stdout
-    event_count = 0
-    for line in proc.stdout:
-        line = line.strip()
-        if not line:
-            continue
+        # Send request via stdin and close to signal EOF
         try:
-            event = json.loads(line)
-            event_count += 1
-            yield event
-        except json.JSONDecodeError:
-            logger.warning("Skipping malformed NDJSON line: %s", line[:100])
-            continue
+            proc.stdin.write(json.dumps(request))
+            proc.stdin.flush()
+            proc.stdin.close()
+        except BrokenPipeError:
+            # Process died before we finished writing — handled below
+            pass
 
-    # Wait for process to finish
-    proc.wait()
+        # Stream NDJSON events from stdout
+        event_count = 0
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                event_count += 1
+                yield event
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed NDJSON line: %s", line[:100])
+                continue
 
-    # Read stderr for diagnostics
-    stderr_output = proc.stderr.read() if proc.stderr else ""
+        # Wait for process to finish
+        proc.wait()
 
-    if proc.returncode != 0:
-        logger.error(
-            "Agent bridge failed (exit %d): %s",
+        # Read stderr for diagnostics
+        stderr_output = proc.stderr.read() if proc.stderr else ""
+
+        if proc.returncode != 0:
+            logger.error(
+                "Agent bridge failed (exit %d): %s",
+                proc.returncode,
+                stderr_output[:500],
+            )
+            raise RuntimeError(f"Agent bridge failed (exit {proc.returncode}): {stderr_output[:500]}")
+
+        logger.info(
+            "Agent bridge completed: %d events, exit %d",
+            event_count,
             proc.returncode,
-            stderr_output[:500],
         )
-        raise RuntimeError(
-            f"Agent bridge failed (exit {proc.returncode}): {stderr_output[:500]}"
-        )
-
-    logger.info(
-        "Agent bridge completed: %d events, exit %d",
-        event_count,
-        proc.returncode,
-    )
+    except GeneratorExit:
+        # Generator abandoned before full consumption — kill subprocess
+        logger.warning("Agent bridge generator abandoned, killing subprocess")
+        proc.kill()
+        proc.wait()
+        raise
+    finally:
+        # Ensure subprocess is always cleaned up
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.stderr:
+            proc.stderr.close()
 
 
 def collect_response_text(events: Generator[Dict[str, Any], None, None]) -> str:

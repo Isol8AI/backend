@@ -861,9 +861,11 @@ class TestHandleAgentChatStreamBridge:
         """Create a server instance with mocked credentials."""
         s = _make_server()
         s.bedrock.has_credentials.return_value = True
-        s.bedrock._access_key_id = "AKIATEST"
-        s.bedrock._secret_access_key = "secret123"
-        s.bedrock._session_token = "token456"
+        s.bedrock.get_credentials_env.return_value = {
+            "AWS_ACCESS_KEY_ID": "AKIATEST",
+            "AWS_SECRET_ACCESS_KEY": "secret123",
+            "AWS_SESSION_TOKEN": "token456",
+        }
         return s
 
     @pytest.fixture
@@ -901,19 +903,23 @@ class TestHandleAgentChatStreamBridge:
         @contextlib.contextmanager
         def _patches():
             # Mock decrypt_with_private_key to return plaintext
-            with patch.object(
-                sys.modules["bedrock_server"],
-                "decrypt_with_private_key",
-                return_value=b"Hello agent!",
-            ) as mock_decrypt, patch.object(
-                sys.modules["bedrock_server"],
-                "encrypt_to_public_key",
-                return_value=MagicMock(to_dict=lambda: {"ciphertext": "encrypted"}),
-            ) as mock_encrypt, patch.object(
-                sys.modules["bedrock_server"],
-                "run_agent_streaming",
-                return_value=iter(bridge_events),
-            ) as mock_bridge:
+            with (
+                patch.object(
+                    sys.modules["bedrock_server"],
+                    "decrypt_with_private_key",
+                    return_value=b"Hello agent!",
+                ) as mock_decrypt,
+                patch.object(
+                    sys.modules["bedrock_server"],
+                    "encrypt_to_public_key",
+                    return_value=MagicMock(to_dict=lambda: {"ciphertext": "encrypted"}),
+                ) as mock_encrypt,
+                patch.object(
+                    sys.modules["bedrock_server"],
+                    "run_agent_streaming",
+                    return_value=iter(bridge_events),
+                ) as mock_bridge,
+            ):
                 yield {
                     "decrypt": mock_decrypt,
                     "encrypt": mock_encrypt,
@@ -969,16 +975,14 @@ class TestHandleAgentChatStreamBridge:
             {"type": "done", "meta": {"durationMs": 200}},
         ]
 
-        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+        with self._patch_crypto_and_bridge(bridge_events):
             server.handle_agent_chat_stream(base_request, mock_conn)
 
             # Check that a tool_result event was sent
             send_calls = mock_conn.sendall.call_args_list
             # Find the tool_result event
             tool_events = [
-                json.loads(call[0][0].decode("utf-8").strip())
-                for call in send_calls
-                if b"event_type" in call[0][0]
+                json.loads(call[0][0].decode("utf-8").strip()) for call in send_calls if b"event_type" in call[0][0]
             ]
             assert len(tool_events) == 1
             assert tool_events[0].get("event_type") == "tool_result"
@@ -989,7 +993,7 @@ class TestHandleAgentChatStreamBridge:
             {"type": "error", "message": "context_overflow"},
         ]
 
-        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+        with self._patch_crypto_and_bridge(bridge_events):
             server.handle_agent_chat_stream(base_request, mock_conn)
 
             # Check final event sent is an error
@@ -1002,14 +1006,17 @@ class TestHandleAgentChatStreamBridge:
     def test_done_event_meta_error_forwarded(self, server, mock_conn, base_request):
         """Error in done event's meta is forwarded."""
         bridge_events = [
-            {"type": "done", "meta": {
-                "durationMs": 500,
-                "error": {"kind": "context_overflow", "message": "Too many tokens"},
-                "stopReason": "error",
-            }},
+            {
+                "type": "done",
+                "meta": {
+                    "durationMs": 500,
+                    "error": {"kind": "context_overflow", "message": "Too many tokens"},
+                    "stopReason": "error",
+                },
+            },
         ]
 
-        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+        with self._patch_crypto_and_bridge(bridge_events):
             server.handle_agent_chat_stream(base_request, mock_conn)
 
             send_calls = mock_conn.sendall.call_args_list
@@ -1019,14 +1026,17 @@ class TestHandleAgentChatStreamBridge:
 
     def test_bridge_runtime_error_handled(self, server, mock_conn, base_request):
         """RuntimeError from bridge is caught and forwarded as error."""
-        with patch.object(
-            sys.modules["bedrock_server"],
-            "decrypt_with_private_key",
-            return_value=b"message",
-        ), patch.object(
-            sys.modules["bedrock_server"],
-            "run_agent_streaming",
-            side_effect=RuntimeError("Bridge failed (exit 1): module not found"),
+        with (
+            patch.object(
+                sys.modules["bedrock_server"],
+                "decrypt_with_private_key",
+                return_value=b"message",
+            ),
+            patch.object(
+                sys.modules["bedrock_server"],
+                "run_agent_streaming",
+                side_effect=RuntimeError("Bridge failed (exit 1): module not found"),
+            ),
         ):
             server.handle_agent_chat_stream(base_request, mock_conn)
 
@@ -1037,14 +1047,17 @@ class TestHandleAgentChatStreamBridge:
 
     def test_bridge_file_not_found_handled(self, server, mock_conn, base_request):
         """FileNotFoundError from bridge is caught and forwarded."""
-        with patch.object(
-            sys.modules["bedrock_server"],
-            "decrypt_with_private_key",
-            return_value=b"message",
-        ), patch.object(
-            sys.modules["bedrock_server"],
-            "run_agent_streaming",
-            side_effect=FileNotFoundError("run_agent.mjs not found"),
+        with (
+            patch.object(
+                sys.modules["bedrock_server"],
+                "decrypt_with_private_key",
+                return_value=b"message",
+            ),
+            patch.object(
+                sys.modules["bedrock_server"],
+                "run_agent_streaming",
+                side_effect=FileNotFoundError("run_agent.mjs not found"),
+            ),
         ):
             server.handle_agent_chat_stream(base_request, mock_conn)
 
@@ -1078,7 +1091,8 @@ class TestHandleAgentChatStreamBridge:
             # encrypt_to_public_key should be called once for partial + once for state
             # NOT twice for both partial and block
             transport_encrypt_calls = [
-                call for call in mocks["encrypt"].call_args_list
+                call
+                for call in mocks["encrypt"].call_args_list
                 if len(call[0]) >= 3 and call[0][2] == "enclave-to-client-transport"
             ]
             assert len(transport_encrypt_calls) == 1  # Only the partial, not the block
@@ -1095,9 +1109,53 @@ class TestHandleAgentChatStreamBridge:
     def test_get_aws_env_without_credentials(self):
         """_get_aws_env returns empty credentials when not set."""
         server = _make_server()
-        server.bedrock.has_credentials.return_value = False
+        server.bedrock.get_credentials_env.return_value = {}
 
         env = server._get_aws_env()
 
         assert "AWS_ACCESS_KEY_ID" not in env
         assert "AWS_REGION" in env  # Region always present
+
+    def test_done_event_extracts_token_usage(self, server, mock_conn, base_request):
+        """Token usage is extracted from done event agentMeta.usage."""
+        bridge_events = [
+            {"type": "partial", "text": "Hello"},
+            {
+                "type": "done",
+                "meta": {
+                    "durationMs": 500,
+                    "agentMeta": {"usage": {"input": 42, "output": 17}},
+                    "stopReason": "end_turn",
+                },
+            },
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events):
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            # Find the final event
+            send_calls = mock_conn.sendall.call_args_list
+            last_event = json.loads(send_calls[-1][0][0].decode("utf-8").strip())
+            assert last_event.get("input_tokens") == 42
+            assert last_event.get("output_tokens") == 17
+
+    def test_done_event_string_error_handled(self, server, mock_conn, base_request):
+        """String error in done event meta is handled without AttributeError."""
+        bridge_events = [
+            {
+                "type": "done",
+                "meta": {
+                    "durationMs": 100,
+                    "error": "context window exceeded",
+                    "stopReason": "error",
+                },
+            },
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events):
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            send_calls = mock_conn.sendall.call_args_list
+            last_event = json.loads(send_calls[-1][0][0].decode("utf-8").strip())
+            assert "error" in last_event
+            assert last_event["error"] == "context window exceeded"

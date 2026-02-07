@@ -9,7 +9,7 @@ simulate the Node.js bridge process.
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -85,12 +85,14 @@ class TestRunAgentStreaming:
         """All valid NDJSON events should be yielded."""
         mock_popen_cls.return_value = _mock_popen(ndjson_events, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/agent_state",
-            agent_name="luna",
-            message="Hello!",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/agent_state",
+                agent_name="luna",
+                message="Hello!",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert len(events) == len(ndjson_events)
         assert events[0]["type"] == "assistant_start"
@@ -109,16 +111,18 @@ class TestRunAgentStreaming:
         )
         mock_popen_cls.return_value = mock_proc
 
-        list(run_agent_streaming(
-            state_dir="/tmp/test_state",
-            agent_name="rex",
-            message="How are you?",
-            model="us.anthropic.claude-3-5-sonnet-v2",
-            provider="amazon-bedrock",
-            timeout_ms=60000,
-            session_id="sess-123",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/test_state",
+                agent_name="rex",
+                message="How are you?",
+                model="us.anthropic.claude-3-5-sonnet-v2",
+                provider="amazon-bedrock",
+                timeout_ms=60000,
+                session_id="sess-123",
+                bridge_script=bridge_script,
+            )
+        )
 
         # Check what was written to stdin
         written_data = mock_proc.stdin.write.call_args[0][0]
@@ -141,12 +145,14 @@ class TestRunAgentStreaming:
         )
         mock_popen_cls.return_value = mock_proc
 
-        list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Hi",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Hi",
+                bridge_script=bridge_script,
+            )
+        )
 
         written_data = mock_proc.stdin.write.call_args[0][0]
         request = json.loads(written_data)
@@ -167,12 +173,14 @@ class TestRunAgentStreaming:
         )
         mock_popen_cls.return_value = mock_proc
 
-        list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                bridge_script=bridge_script,
+            )
+        )
 
         mock_proc.stdin.write.assert_called_once()
         mock_proc.stdin.flush.assert_called_once()
@@ -186,12 +194,14 @@ class TestRunAgentStreaming:
             returncode=0,
         )
 
-        list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                bridge_script=bridge_script,
+            )
+        )
 
         call_args = mock_popen_cls.call_args
         cmd = call_args[0][0]
@@ -210,13 +220,15 @@ class TestRunAgentStreaming:
             returncode=0,
         )
 
-        list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            node_path="/usr/local/bin/node22",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                node_path="/usr/local/bin/node22",
+                bridge_script=bridge_script,
+            )
+        )
 
         cmd = mock_popen_cls.call_args[0][0]
         assert cmd[0] == "/usr/local/bin/node22"
@@ -230,13 +242,15 @@ class TestRunAgentStreaming:
         )
 
         custom_env = {"OPENCLAW_PATH": "/custom/path", "AWS_REGION": "eu-west-1"}
-        list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            env=custom_env,
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                env=custom_env,
+                bridge_script=bridge_script,
+            )
+        )
 
         call_kwargs = mock_popen_cls.call_args[1]
         proc_env = call_kwargs["env"]
@@ -257,12 +271,14 @@ class TestRunAgentStreamingErrors:
     def test_missing_bridge_script_raises_file_not_found(self):
         """FileNotFoundError when bridge script doesn't exist."""
         with pytest.raises(FileNotFoundError, match="Agent bridge script not found"):
-            list(run_agent_streaming(
-                state_dir="/tmp/state",
-                agent_name="luna",
-                message="Test",
-                bridge_script="/nonexistent/run_agent.mjs",
-            ))
+            list(
+                run_agent_streaming(
+                    state_dir="/tmp/state",
+                    agent_name="luna",
+                    message="Test",
+                    bridge_script="/nonexistent/run_agent.mjs",
+                )
+            )
 
     @patch("agent_bridge.subprocess.Popen")
     def test_nonzero_exit_raises_runtime_error(self, mock_popen_cls, bridge_script):
@@ -274,12 +290,14 @@ class TestRunAgentStreamingErrors:
         )
 
         with pytest.raises(RuntimeError, match="Agent bridge failed.*exit 1"):
-            list(run_agent_streaming(
-                state_dir="/tmp/state",
-                agent_name="luna",
-                message="Test",
-                bridge_script=bridge_script,
-            ))
+            list(
+                run_agent_streaming(
+                    state_dir="/tmp/state",
+                    agent_name="luna",
+                    message="Test",
+                    bridge_script=bridge_script,
+                )
+            )
 
     @patch("agent_bridge.subprocess.Popen")
     def test_stderr_included_in_runtime_error(self, mock_popen_cls, bridge_script):
@@ -292,12 +310,14 @@ class TestRunAgentStreamingErrors:
         )
 
         with pytest.raises(RuntimeError, match="OpenClaw not found"):
-            list(run_agent_streaming(
-                state_dir="/tmp/state",
-                agent_name="luna",
-                message="Test",
-                bridge_script=bridge_script,
-            ))
+            list(
+                run_agent_streaming(
+                    state_dir="/tmp/state",
+                    agent_name="luna",
+                    message="Test",
+                    bridge_script=bridge_script,
+                )
+            )
 
     @patch("agent_bridge.subprocess.Popen")
     def test_malformed_ndjson_lines_skipped(self, mock_popen_cls, bridge_script):
@@ -312,12 +332,14 @@ class TestRunAgentStreamingErrors:
         mock_proc.stdout.__iter__ = MagicMock(return_value=iter(stdout_lines))
         mock_popen_cls.return_value = mock_proc
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                bridge_script=bridge_script,
+            )
+        )
 
         # Only valid events should be yielded
         assert len(events) == 2
@@ -337,12 +359,14 @@ class TestRunAgentStreamingErrors:
         mock_proc.stdout.__iter__ = MagicMock(return_value=iter(stdout_lines))
         mock_popen_cls.return_value = mock_proc
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert len(events) == 1
         assert events[0]["type"] == "done"
@@ -358,12 +382,14 @@ class TestRunAgentStreamingErrors:
         mock_popen_cls.return_value = mock_proc
 
         # Should not raise — the error event from stdout should still be yielded
-        events = list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert len(events) == 1
         assert events[0]["type"] == "error"
@@ -373,12 +399,14 @@ class TestRunAgentStreamingErrors:
         """No events should be yielded when stdout is empty."""
         mock_popen_cls.return_value = _mock_popen([], returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/state",
-            agent_name="luna",
-            message="Test",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/state",
+                agent_name="luna",
+                message="Test",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events == []
 
@@ -397,10 +425,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "partial", "text": "chunk"}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0] == {"type": "partial", "text": "chunk"}
 
@@ -410,10 +442,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "block", "text": "full block"}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0] == {"type": "block", "text": "full block"}
 
@@ -423,10 +459,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "tool_result", "text": "ls output"}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0] == {"type": "tool_result", "text": "ls output"}
 
@@ -436,10 +476,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "reasoning", "text": "thinking..."}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0] == {"type": "reasoning", "text": "thinking..."}
 
@@ -449,10 +493,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "assistant_start"}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0] == {"type": "assistant_start"}
 
@@ -462,10 +510,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "agent_event", "stream": "lifecycle", "data": {"status": "running"}}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0]["type"] == "agent_event"
         assert events[0]["stream"] == "lifecycle"
@@ -477,10 +529,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "error", "message": "context_overflow"}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0] == {"type": "error", "message": "context_overflow"}
 
@@ -490,10 +546,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "media", "urls": ["https://example.com/img.png"]}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0]["type"] == "media"
         assert events[0]["urls"] == ["https://example.com/img.png"]
@@ -510,10 +570,14 @@ class TestRunAgentStreamingEventTypes:
         events_in = [{"type": "done", "meta": meta}]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
-        events = list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        events = list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         assert events[0]["type"] == "done"
         assert events[0]["meta"]["durationMs"] == 5432
@@ -530,14 +594,16 @@ class TestCollectResponseText:
 
     def test_concatenates_partial_events(self):
         """Should concatenate text from all partial events."""
-        events = iter([
-            {"type": "assistant_start"},
-            {"type": "partial", "text": "Hello"},
-            {"type": "partial", "text": ", "},
-            {"type": "partial", "text": "world!"},
-            {"type": "block", "text": "Hello, world!"},
-            {"type": "done", "meta": {}},
-        ])
+        events = iter(
+            [
+                {"type": "assistant_start"},
+                {"type": "partial", "text": "Hello"},
+                {"type": "partial", "text": ", "},
+                {"type": "partial", "text": "world!"},
+                {"type": "block", "text": "Hello, world!"},
+                {"type": "done", "meta": {}},
+            ]
+        )
 
         result = collect_response_text(events)
         assert result == "Hello, world!"
@@ -549,46 +615,54 @@ class TestCollectResponseText:
 
     def test_no_partial_events(self):
         """Should return empty string when no partial events exist."""
-        events = iter([
-            {"type": "assistant_start"},
-            {"type": "block", "text": "full block"},
-            {"type": "done", "meta": {}},
-        ])
+        events = iter(
+            [
+                {"type": "assistant_start"},
+                {"type": "block", "text": "full block"},
+                {"type": "done", "meta": {}},
+            ]
+        )
 
         result = collect_response_text(events)
         assert result == ""
 
     def test_partial_events_with_none_text(self):
         """Partial events with None text should be skipped."""
-        events = iter([
-            {"type": "partial", "text": "Hello"},
-            {"type": "partial", "text": None},
-            {"type": "partial", "text": "!"},
-        ])
+        events = iter(
+            [
+                {"type": "partial", "text": "Hello"},
+                {"type": "partial", "text": None},
+                {"type": "partial", "text": "!"},
+            ]
+        )
 
         result = collect_response_text(events)
         assert result == "Hello!"
 
     def test_partial_events_with_empty_text(self):
         """Partial events with empty string text should be skipped."""
-        events = iter([
-            {"type": "partial", "text": "Hello"},
-            {"type": "partial", "text": ""},
-            {"type": "partial", "text": "!"},
-        ])
+        events = iter(
+            [
+                {"type": "partial", "text": "Hello"},
+                {"type": "partial", "text": ""},
+                {"type": "partial", "text": "!"},
+            ]
+        )
 
         result = collect_response_text(events)
         assert result == "Hello!"
 
     def test_ignores_non_partial_events(self):
         """Only partial events contribute to the response text."""
-        events = iter([
-            {"type": "reasoning", "text": "thinking..."},
-            {"type": "partial", "text": "response"},
-            {"type": "tool_result", "text": "ls output"},
-            {"type": "block", "text": "response"},
-            {"type": "error", "message": "warning"},
-        ])
+        events = iter(
+            [
+                {"type": "reasoning", "text": "thinking..."},
+                {"type": "partial", "text": "response"},
+                {"type": "tool_result", "text": "ls output"},
+                {"type": "block", "text": "response"},
+                {"type": "error", "message": "warning"},
+            ]
+        )
 
         result = collect_response_text(events)
         assert result == "response"
@@ -605,14 +679,13 @@ class TestStreamingBehavior:
     @patch("agent_bridge.subprocess.Popen")
     def test_events_yielded_incrementally(self, mock_popen_cls, bridge_script):
         """Events should be yielded one at a time, not buffered."""
-        events_in = [
-            {"type": "partial", "text": f"chunk-{i}"}
-            for i in range(100)
-        ]
+        events_in = [{"type": "partial", "text": f"chunk-{i}"} for i in range(100)]
         mock_popen_cls.return_value = _mock_popen(events_in, returncode=0)
 
         gen = run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
+            state_dir="/tmp/s",
+            agent_name="a",
+            message="m",
             bridge_script=bridge_script,
         )
 
@@ -633,10 +706,14 @@ class TestStreamingBehavior:
         )
         mock_popen_cls.return_value = mock_proc
 
-        list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         mock_proc.wait.assert_called_once()
 
@@ -650,9 +727,13 @@ class TestStreamingBehavior:
         )
         mock_popen_cls.return_value = mock_proc
 
-        list(run_agent_streaming(
-            state_dir="/tmp/s", agent_name="a", message="m",
-            bridge_script=bridge_script,
-        ))
+        list(
+            run_agent_streaming(
+                state_dir="/tmp/s",
+                agent_name="a",
+                message="m",
+                bridge_script=bridge_script,
+            )
+        )
 
         mock_proc.stderr.read.assert_called_once()
