@@ -570,16 +570,23 @@ async def _process_agent_chat_background(
         user_pub_key = bytes.fromhex(user_public_key)
 
         # DEBUG: Log key info for tracing encryption issues
-        print(f"AGENT_DEBUG: user_id={user_id}, agent={agent_name}, user_public_key={user_public_key[:16]}..., client_transport_key={client_transport_public_key[:16]}..., has_state={encrypted_state_from_client is not None}", flush=True)
+        print(
+            f"AGENT_DEBUG: user_id={user_id}, agent={agent_name}, user_public_key={user_public_key[:16]}..., client_transport_key={client_transport_public_key[:16]}..., has_state={encrypted_state_from_client is not None}",
+            flush=True,
+        )
 
         # Also look up the user's stored public key to compare
         async with session_factory() as db:
             from models.user import User
             from sqlalchemy import select
+
             result = await db.execute(select(User).where(User.id == user_id))
             user_row = result.scalar_one_or_none()
             if user_row and user_row.public_key:
-                print(f"AGENT_DEBUG: stored_public_key={user_row.public_key[:16]}..., MATCH={user_row.public_key == user_public_key}", flush=True)
+                print(
+                    f"AGENT_DEBUG: stored_public_key={user_row.public_key[:16]}..., MATCH={user_row.public_key == user_public_key}",
+                    flush=True,
+                )
             else:
                 print(f"AGENT_DEBUG: No stored public key for user {user_id}", flush=True)
 
@@ -628,7 +635,10 @@ async def _process_agent_chat_background(
                 state_dict = chunk.encrypted_state.to_dict()
                 state_json = json_module.dumps(state_dict).encode("utf-8")
 
-                print(f"AGENT_DEBUG: Storing state for {user_id}/{agent_name}: ephemeral_key={state_dict['ephemeral_public_key'][:16]}..., ciphertext_len={len(state_dict['ciphertext'])}, hkdf_salt={state_dict['hkdf_salt'][:16]}...", flush=True)
+                print(
+                    f"AGENT_DEBUG: Storing state for {user_id}/{agent_name}: ephemeral_key={state_dict['ephemeral_public_key'][:16]}..., ciphertext_len={len(state_dict['ciphertext'])}, hkdf_salt={state_dict['hkdf_salt'][:16]}...",
+                    flush=True,
+                )
 
                 async with session_factory() as db:
                     service = AgentService(db)

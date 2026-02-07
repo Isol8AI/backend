@@ -202,7 +202,10 @@ async def get_agent_state(
     encrypted_payload = _deserialize_encrypted_payload(state.encrypted_tarball)
     api_payload = EncryptedPayload.from_crypto_payload(encrypted_payload)
 
-    print(f"AGENT_DEBUG: GET state for {auth.user_id}/{agent_name}: mode={state.encryption_mode}, ephemeral_key={api_payload.ephemeral_public_key[:16]}..., ciphertext_len={len(api_payload.ciphertext)}, hkdf_salt={api_payload.hkdf_salt[:16]}...", flush=True)
+    print(
+        f"AGENT_DEBUG: GET state for {auth.user_id}/{agent_name}: mode={state.encryption_mode}, ephemeral_key={api_payload.ephemeral_public_key[:16]}..., ciphertext_len={len(api_payload.ciphertext)}, hkdf_salt={api_payload.hkdf_salt[:16]}...",
+        flush=True,
+    )
 
     return {
         "encrypted_state": api_payload,
