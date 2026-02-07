@@ -640,9 +640,13 @@ async def _process_agent_chat_background(
                 )
                 # TRACE_CRYPTO: Full field values at DB store boundary
                 import hashlib as _hl
+
                 print(f"TRACE_CRYPTO:DB_STORE eph_pub={state_dict['ephemeral_public_key']}", flush=True)
                 print(f"TRACE_CRYPTO:DB_STORE iv={state_dict['iv']}", flush=True)
-                print(f"TRACE_CRYPTO:DB_STORE ct_sha256={_hl.sha256(bytes.fromhex(state_dict['ciphertext'])).hexdigest()} ct_hex_len={len(state_dict['ciphertext'])}", flush=True)
+                print(
+                    f"TRACE_CRYPTO:DB_STORE ct_sha256={_hl.sha256(bytes.fromhex(state_dict['ciphertext'])).hexdigest()} ct_hex_len={len(state_dict['ciphertext'])}",
+                    flush=True,
+                )
                 print(f"TRACE_CRYPTO:DB_STORE auth_tag={state_dict['auth_tag']}", flush=True)
                 print(f"TRACE_CRYPTO:DB_STORE hkdf_salt={state_dict['hkdf_salt']}", flush=True)
                 print(f"TRACE_CRYPTO:DB_STORE state_json_len={len(state_json)}", flush=True)

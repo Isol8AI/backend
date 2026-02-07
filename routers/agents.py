@@ -208,13 +208,20 @@ async def get_agent_state(
     )
     # TRACE_CRYPTO: Full field values at API serve boundary
     import hashlib as _hl
+
     print(f"TRACE_CRYPTO:API_SERVE eph_pub={api_payload.ephemeral_public_key}", flush=True)
     print(f"TRACE_CRYPTO:API_SERVE iv={api_payload.iv}", flush=True)
-    print(f"TRACE_CRYPTO:API_SERVE ct_sha256={_hl.sha256(bytes.fromhex(api_payload.ciphertext)).hexdigest()} ct_hex_len={len(api_payload.ciphertext)}", flush=True)
+    print(
+        f"TRACE_CRYPTO:API_SERVE ct_sha256={_hl.sha256(bytes.fromhex(api_payload.ciphertext)).hexdigest()} ct_hex_len={len(api_payload.ciphertext)}",
+        flush=True,
+    )
     print(f"TRACE_CRYPTO:API_SERVE auth_tag={api_payload.auth_tag}", flush=True)
     print(f"TRACE_CRYPTO:API_SERVE hkdf_salt={api_payload.hkdf_salt}", flush=True)
     # Also log raw DB bytes hash for comparison
-    print(f"TRACE_CRYPTO:API_SERVE raw_db_sha256={_hl.sha256(state.encrypted_tarball).hexdigest()} raw_db_len={len(state.encrypted_tarball)}", flush=True)
+    print(
+        f"TRACE_CRYPTO:API_SERVE raw_db_sha256={_hl.sha256(state.encrypted_tarball).hexdigest()} raw_db_len={len(state.encrypted_tarball)}",
+        flush=True,
+    )
 
     return {
         "encrypted_state": api_payload,

@@ -904,10 +904,14 @@ You are {agent_name}, a personal AI companion.
                 print("[Enclave] Encrypted state to user's long-term public key (zero_trust mode)", flush=True)
                 # TRACE_CRYPTO: Log the to_dict output (what gets sent via vsock)
                 import hashlib as _hl
+
                 _sd = encrypted_state_out.to_dict()
                 print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND eph_pub={_sd['ephemeral_public_key']}", flush=True)
                 print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND iv={_sd['iv']}", flush=True)
-                print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND ct_sha256={_hl.sha256(bytes.fromhex(_sd['ciphertext'])).hexdigest()} ct_hex_len={len(_sd['ciphertext'])}", flush=True)
+                print(
+                    f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND ct_sha256={_hl.sha256(bytes.fromhex(_sd['ciphertext'])).hexdigest()} ct_hex_len={len(_sd['ciphertext'])}",
+                    flush=True,
+                )
                 print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND auth_tag={_sd['auth_tag']}", flush=True)
                 print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND hkdf_salt={_sd['hkdf_salt']}", flush=True)
             else:

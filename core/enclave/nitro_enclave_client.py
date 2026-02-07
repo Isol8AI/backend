@@ -684,10 +684,14 @@ class NitroEnclaveClient(EnclaveInterface):
                         encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
                         # TRACE_CRYPTO: Log what we received from vsock
                         import hashlib as _hl
+
                         _rd = event["encrypted_state"]
                         print(f"TRACE_CRYPTO:VSOCK_RECV eph_pub={_rd['ephemeral_public_key']}", flush=True)
                         print(f"TRACE_CRYPTO:VSOCK_RECV iv={_rd['iv']}", flush=True)
-                        print(f"TRACE_CRYPTO:VSOCK_RECV ct_sha256={_hl.sha256(bytes.fromhex(_rd['ciphertext'])).hexdigest()} ct_hex_len={len(_rd['ciphertext'])}", flush=True)
+                        print(
+                            f"TRACE_CRYPTO:VSOCK_RECV ct_sha256={_hl.sha256(bytes.fromhex(_rd['ciphertext'])).hexdigest()} ct_hex_len={len(_rd['ciphertext'])}",
+                            flush=True,
+                        )
                         print(f"TRACE_CRYPTO:VSOCK_RECV auth_tag={_rd['auth_tag']}", flush=True)
                         print(f"TRACE_CRYPTO:VSOCK_RECV hkdf_salt={_rd['hkdf_salt']}", flush=True)
 
