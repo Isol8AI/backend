@@ -569,11 +569,10 @@ async def _process_agent_chat_background(
         client_pub_key = bytes.fromhex(client_transport_public_key)
         user_pub_key = bytes.fromhex(user_public_key)
 
-        # DEBUG: Log key info for tracing encryption issues
-        print(
-            f"AGENT_DEBUG: user_id={user_id}, agent={agent_name}, user_public_key={user_public_key[:16]}..., client_transport_key={client_transport_public_key[:16]}..., has_state={encrypted_state_from_client is not None}",
-            flush=True,
-        )
+        # TRACE_CRYPTO: Log FULL keys sent to enclave
+        print(f"TRACE_CRYPTO:PARENT_SEND user_public_key={user_public_key}", flush=True)
+        print(f"TRACE_CRYPTO:PARENT_SEND client_transport_key={client_transport_public_key}", flush=True)
+        print(f"TRACE_CRYPTO:PARENT_SEND has_state={encrypted_state_from_client is not None}", flush=True)
 
         # Also look up the user's stored public key to compare
         async with session_factory() as db:
@@ -639,6 +638,14 @@ async def _process_agent_chat_background(
                     f"AGENT_DEBUG: Storing state for {user_id}/{agent_name}: ephemeral_key={state_dict['ephemeral_public_key'][:16]}..., ciphertext_len={len(state_dict['ciphertext'])}, hkdf_salt={state_dict['hkdf_salt'][:16]}...",
                     flush=True,
                 )
+                # TRACE_CRYPTO: Full field values at DB store boundary
+                import hashlib as _hl
+                print(f"TRACE_CRYPTO:DB_STORE eph_pub={state_dict['ephemeral_public_key']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE iv={state_dict['iv']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE ct_sha256={_hl.sha256(bytes.fromhex(state_dict['ciphertext'])).hexdigest()} ct_hex_len={len(state_dict['ciphertext'])}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE auth_tag={state_dict['auth_tag']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE hkdf_salt={state_dict['hkdf_salt']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE state_json_len={len(state_json)}", flush=True)
 
                 async with session_factory() as db:
                     service = AgentService(db)

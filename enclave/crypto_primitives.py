@@ -328,8 +328,23 @@ def encrypt_to_public_key(
         context,
     )
 
+    # TRACE_CRYPTO: Log intermediate values for cross-platform debugging
+    import hashlib
+    priv_key_obj = X25519PrivateKey.from_private_bytes(ephemeral.private_key)
+    pub_key_obj = X25519PublicKey.from_public_bytes(recipient_public_key)
+    _shared_secret = priv_key_obj.exchange(pub_key_obj)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT recipient_pub={recipient_public_key.hex()} context={context}", flush=True)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT eph_pub={ephemeral.public_key.hex()}", flush=True)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT shared_secret={_shared_secret.hex()}", flush=True)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT derived_key={derived_key.hex()}", flush=True)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT hkdf_salt={salt.hex()}", flush=True)
+
     # 4. Encrypt
     iv, ciphertext, auth_tag = encrypt_aes_gcm(derived_key, plaintext)
+
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT iv={iv.hex()}", flush=True)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT ct_sha256={hashlib.sha256(ciphertext).hexdigest()} ct_len={len(ciphertext)}", flush=True)
+    print(f"TRACE_CRYPTO:ENCLAVE_ENCRYPT auth_tag={auth_tag.hex()}", flush=True)
 
     # 5. Ephemeral private key is discarded (goes out of scope)
 
