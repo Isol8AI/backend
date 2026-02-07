@@ -96,6 +96,16 @@ class BedrockClient:
         """Check if credentials are set."""
         return bool(self._access_key_id and self._secret_access_key and self._session_token)
 
+    def get_credentials_env(self) -> dict:
+        """Return AWS credentials as environment variables dict for subprocesses."""
+        if not self.has_credentials():
+            return {}
+        return {
+            "AWS_ACCESS_KEY_ID": self._access_key_id,
+            "AWS_SECRET_ACCESS_KEY": self._secret_access_key,
+            "AWS_SESSION_TOKEN": self._session_token,
+        }
+
     def _get_credentials(self) -> Credentials:
         """Get botocore Credentials object."""
         if not self.has_credentials():

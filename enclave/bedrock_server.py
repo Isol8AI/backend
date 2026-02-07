@@ -51,6 +51,7 @@ from crypto_primitives import (
 )
 from bedrock_client import BedrockClient, BedrockResponse, build_converse_messages, ConverseTurn
 from kms_encryption import encrypt_with_kms, decrypt_with_kms, set_kms_credentials
+from agent_bridge import run_agent_streaming
 
 # vsock constants
 VSOCK_PORT = 5000
@@ -132,6 +133,20 @@ class BedrockServer:
             "region": self.region,
             "public_key": bytes_to_hex(self.keypair.public_key),
         }
+
+    def _get_aws_env(self) -> dict:
+        """
+        Build environment variables dict with AWS credentials for subprocess.
+
+        The enclave receives credentials via SET_CREDENTIALS command from the
+        parent instance. These are stored in self.bedrock but not in os.environ.
+        This method extracts them so they can be passed to the Node.js bridge
+        subprocess (which uses AWS SDK and reads standard env vars).
+        """
+        env = self.bedrock.get_credentials_env()
+        env["AWS_REGION"] = self.region
+        env["AWS_DEFAULT_REGION"] = self.region
+        return env
 
     def handle_chat(self, data: dict) -> dict:
         """
@@ -779,59 +794,89 @@ You are {agent_name}, a personal AI companion.
             user_content = message_bytes.decode("utf-8")
             print(f"[Enclave] Decrypted message: {user_content[:50]}...", flush=True)
 
-            # Read agent state (SOUL.md, memory, session history)
-            agent_state = self._read_agent_state(tmpfs_path, agent_name)
-            model_id = agent_state["model"]
-            system_prompt = agent_state["system_prompt"]
-            history = agent_state["history"]
-            session_file = agent_state["session_file"]
-
-            print(f"[Enclave] Agent model: {model_id}", flush=True)
-            print(f"[Enclave] History: {len(history)} messages", flush=True)
-
-            # Build Bedrock messages
-            messages = build_converse_messages(history, user_content)
-            system = [{"text": system_prompt}]
-            inference_config = {"maxTokens": 4096, "temperature": 0.7}
-
-            # Stream from Bedrock
-            full_response = ""
+            # Run OpenClaw agent via Node.js bridge
+            # The bridge handles: model selection, session management, history,
+            # tool execution, and memory — all via runEmbeddedPiAgent()
+            chunk_count = 0
             input_tokens = 0
             output_tokens = 0
-            chunk_count = 0
+            agent_error = None
 
-            print("[Enclave] Starting Bedrock stream...", flush=True)
+            print("[Enclave] Starting OpenClaw agent bridge...", flush=True)
 
-            for event in self.bedrock.converse_stream(model_id, messages, system, inference_config):
-                if event["type"] == "content":
-                    chunk_text = event["text"]
-                    full_response += chunk_text
-                    chunk_count += 1
+            try:
+                for event in run_agent_streaming(
+                    state_dir=str(tmpfs_path),
+                    agent_name=agent_name,
+                    message=user_content,
+                    provider="amazon-bedrock",
+                    env=self._get_aws_env(),
+                ):
+                    event_type = event.get("type")
 
-                    # Encrypt chunk for transport to client
-                    encrypted_chunk = encrypt_to_public_key(
-                        client_public_key,
-                        chunk_text.encode("utf-8"),
-                        "enclave-to-client-transport",
-                    )
-                    self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
+                    if event_type == "partial":
+                        # Token-by-token streaming — encrypt and forward to client
+                        chunk_text = event.get("text", "")
+                        if chunk_text:
+                            chunk_count += 1
+                            encrypted_chunk = encrypt_to_public_key(
+                                client_public_key,
+                                chunk_text.encode("utf-8"),
+                                "enclave-to-client-transport",
+                            )
+                            self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
 
-                elif event["type"] == "metadata":
-                    input_tokens = event["usage"].get("inputTokens", 0)
-                    output_tokens = event["usage"].get("outputTokens", 0)
+                    elif event_type == "tool_result":
+                        # Tool execution results — encrypt and forward
+                        tool_text = event.get("text", "")
+                        if tool_text:
+                            encrypted_chunk = encrypt_to_public_key(
+                                client_public_key,
+                                tool_text.encode("utf-8"),
+                                "enclave-to-client-transport",
+                            )
+                            self._send_event(
+                                conn, {"encrypted_content": encrypted_chunk.to_dict(), "event_type": "tool_result"}
+                            )
 
-                elif event["type"] == "error":
-                    self._send_event(conn, {"error": event["message"], "is_final": True})
-                    return
+                    elif event_type == "error":
+                        # Agent-level error (exit 0, error via NDJSON)
+                        agent_error = event.get("message", "Unknown agent error")
+                        print(f"[Enclave] Agent error: {agent_error}", flush=True)
 
-            print(f"[Enclave] Stream complete: {chunk_count} chunks, {len(full_response)} chars", flush=True)
+                    elif event_type == "done":
+                        # Completion with metadata
+                        meta = event.get("meta", {})
+                        duration_ms = meta.get("durationMs", 0)
+                        stop_reason = meta.get("stopReason", "unknown")
+                        # Extract token usage from agentMeta.usage
+                        agent_meta = meta.get("agentMeta") or {}
+                        usage = agent_meta.get("usage") or {}
+                        input_tokens = usage.get("input", 0) or 0
+                        output_tokens = usage.get("output", 0) or 0
+                        meta_error = meta.get("error")
+                        if meta_error:
+                            if isinstance(meta_error, dict):
+                                agent_error = meta_error.get("message", str(meta_error))
+                            else:
+                                agent_error = str(meta_error)
+                        print(
+                            f"[Enclave] Agent done: {duration_ms}ms, stop={stop_reason}, tokens={input_tokens}/{output_tokens}",
+                            flush=True,
+                        )
 
-            # Update session JSONL with user message and assistant response
-            self._append_to_session(session_file, "user", user_content)
-            self._append_to_session(session_file, "assistant", full_response)
+                    # Skip: block (partials already sent), assistant_start, agent_event, reasoning
 
-            # TODO (Phase B): Memory flush — extract key information from conversation
-            # and append to memory/YYYY-MM-DD.md
+            except (RuntimeError, FileNotFoundError) as e:
+                print(f"[Enclave] Bridge error: {e}", flush=True)
+                self._send_event(conn, {"error": str(e), "is_final": True})
+                return
+
+            if agent_error:
+                self._send_event(conn, {"error": agent_error, "is_final": True})
+                return
+
+            print(f"[Enclave] Stream complete: {chunk_count} chunks", flush=True)
 
             # Pack updated state
             tarball_bytes = self._pack_directory(tmpfs_path)
