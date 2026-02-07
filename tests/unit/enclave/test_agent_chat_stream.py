@@ -913,7 +913,15 @@ class TestHandleAgentChatStreamBridge:
                 patch.object(
                     sys.modules["bedrock_server"],
                     "encrypt_to_public_key",
-                    return_value=MagicMock(to_dict=lambda: {"ciphertext": "encrypted"}),
+                    return_value=MagicMock(
+                        to_dict=lambda: {
+                            "ephemeral_public_key": "aa" * 32,
+                            "iv": "bb" * 16,
+                            "ciphertext": "cc" * 32,
+                            "auth_tag": "dd" * 16,
+                            "hkdf_salt": "ee" * 32,
+                        }
+                    ),
                 ) as mock_encrypt,
                 patch.object(
                     sys.modules["bedrock_server"],
