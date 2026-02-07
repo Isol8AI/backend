@@ -20,6 +20,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # Mock enclave-only modules so we can import bedrock_server
@@ -836,3 +838,266 @@ class TestHandleAgentChatStreamRouting:
         ]
         for cmd in expected_commands:
             assert cmd in result["available_commands"], f"{cmd} missing from available_commands"
+
+
+# ===========================================================================
+# Tests for handle_agent_chat_stream OpenClaw bridge integration
+# ===========================================================================
+
+
+class TestHandleAgentChatStreamBridge:
+    """
+    Tests verifying handle_agent_chat_stream delegates to agent_bridge.run_agent_streaming.
+
+    These tests mock the bridge and crypto layers, focusing on:
+    - Bridge is called with correct parameters
+    - NDJSON events are correctly mapped to encrypted vsock events
+    - Error events from the bridge are forwarded properly
+    - Bridge exceptions are handled gracefully
+    """
+
+    @pytest.fixture
+    def server(self):
+        """Create a server instance with mocked credentials."""
+        s = _make_server()
+        s.bedrock.has_credentials.return_value = True
+        s.bedrock._access_key_id = "AKIATEST"
+        s.bedrock._secret_access_key = "secret123"
+        s.bedrock._session_token = "token456"
+        return s
+
+    @pytest.fixture
+    def mock_conn(self):
+        """Create a mock vsock connection."""
+        return MagicMock()
+
+    @pytest.fixture
+    def base_request(self, tmp_path):
+        """Create a minimal valid request for handle_agent_chat_stream."""
+        return {
+            "command": "AGENT_CHAT_STREAM",
+            "agent_name": "luna",
+            "encrypted_message": {
+                "ephemeral_public_key": "aa" * 32,
+                "iv": "bb" * 16,
+                "ciphertext": "cc" * 10,
+                "auth_tag": "dd" * 16,
+                "hkdf_salt": "ee" * 32,
+            },
+            "client_public_key": "ff" * 32,
+            "encryption_mode": "zero_trust",
+        }
+
+    def _patch_crypto_and_bridge(self, bridge_events):
+        """
+        Return a context manager that patches crypto and bridge functions.
+
+        Args:
+            bridge_events: List of dicts to yield from run_agent_streaming.
+        """
+        from unittest.mock import patch
+        import contextlib
+
+        @contextlib.contextmanager
+        def _patches():
+            # Mock decrypt_with_private_key to return plaintext
+            with patch.object(
+                sys.modules["bedrock_server"],
+                "decrypt_with_private_key",
+                return_value=b"Hello agent!",
+            ) as mock_decrypt, patch.object(
+                sys.modules["bedrock_server"],
+                "encrypt_to_public_key",
+                return_value=MagicMock(to_dict=lambda: {"ciphertext": "encrypted"}),
+            ) as mock_encrypt, patch.object(
+                sys.modules["bedrock_server"],
+                "run_agent_streaming",
+                return_value=iter(bridge_events),
+            ) as mock_bridge:
+                yield {
+                    "decrypt": mock_decrypt,
+                    "encrypt": mock_encrypt,
+                    "bridge": mock_bridge,
+                }
+
+        return _patches()
+
+    def test_bridge_called_with_correct_params(self, server, mock_conn, base_request, tmp_path):
+        """run_agent_streaming is called with correct state_dir, agent_name, message."""
+        bridge_events = [
+            {"type": "partial", "text": "Hi"},
+            {"type": "done", "meta": {"durationMs": 100, "stopReason": "end_turn"}},
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            mocks["bridge"].assert_called_once()
+            call_kwargs = mocks["bridge"].call_args[1]
+            assert call_kwargs["agent_name"] == "luna"
+            assert call_kwargs["message"] == "Hello agent!"
+            assert call_kwargs["provider"] == "amazon-bedrock"
+            # Verify AWS credentials are passed in env
+            env = call_kwargs["env"]
+            assert env["AWS_ACCESS_KEY_ID"] == "AKIATEST"
+            assert env["AWS_SECRET_ACCESS_KEY"] == "secret123"
+            assert env["AWS_SESSION_TOKEN"] == "token456"
+
+    def test_partial_events_encrypted_and_forwarded(self, server, mock_conn, base_request):
+        """Partial events are encrypted and sent as encrypted_content."""
+        bridge_events = [
+            {"type": "partial", "text": "Hello"},
+            {"type": "partial", "text": " world"},
+            {"type": "done", "meta": {"durationMs": 50}},
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            # encrypt_to_public_key called for 2 partials + state encryption
+            encrypt_calls = mocks["encrypt"].call_args_list
+            # First 2 calls are for partial chunks (enclave-to-client-transport)
+            assert len(encrypt_calls) >= 2
+            # Verify transport context used for chunks
+            assert encrypt_calls[0][0][2] == "enclave-to-client-transport"
+            assert encrypt_calls[1][0][2] == "enclave-to-client-transport"
+
+    def test_tool_result_events_forwarded(self, server, mock_conn, base_request):
+        """Tool result events are encrypted and sent with event_type marker."""
+        bridge_events = [
+            {"type": "tool_result", "text": "file.txt created"},
+            {"type": "done", "meta": {"durationMs": 200}},
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            # Check that a tool_result event was sent
+            send_calls = mock_conn.sendall.call_args_list
+            # Find the tool_result event
+            tool_events = [
+                json.loads(call[0][0].decode("utf-8").strip())
+                for call in send_calls
+                if b"event_type" in call[0][0]
+            ]
+            assert len(tool_events) == 1
+            assert tool_events[0].get("event_type") == "tool_result"
+
+    def test_agent_error_event_forwarded(self, server, mock_conn, base_request):
+        """Agent-level error events cause error response to client."""
+        bridge_events = [
+            {"type": "error", "message": "context_overflow"},
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            # Check final event sent is an error
+            send_calls = mock_conn.sendall.call_args_list
+            last_event = json.loads(send_calls[-1][0][0].decode("utf-8").strip())
+            assert "error" in last_event
+            assert last_event["error"] == "context_overflow"
+            assert last_event.get("is_final") is True
+
+    def test_done_event_meta_error_forwarded(self, server, mock_conn, base_request):
+        """Error in done event's meta is forwarded."""
+        bridge_events = [
+            {"type": "done", "meta": {
+                "durationMs": 500,
+                "error": {"kind": "context_overflow", "message": "Too many tokens"},
+                "stopReason": "error",
+            }},
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            send_calls = mock_conn.sendall.call_args_list
+            last_event = json.loads(send_calls[-1][0][0].decode("utf-8").strip())
+            assert "error" in last_event
+            assert "Too many tokens" in last_event["error"]
+
+    def test_bridge_runtime_error_handled(self, server, mock_conn, base_request):
+        """RuntimeError from bridge is caught and forwarded as error."""
+        with patch.object(
+            sys.modules["bedrock_server"],
+            "decrypt_with_private_key",
+            return_value=b"message",
+        ), patch.object(
+            sys.modules["bedrock_server"],
+            "run_agent_streaming",
+            side_effect=RuntimeError("Bridge failed (exit 1): module not found"),
+        ):
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            send_calls = mock_conn.sendall.call_args_list
+            last_event = json.loads(send_calls[-1][0][0].decode("utf-8").strip())
+            assert "error" in last_event
+            assert "Bridge failed" in last_event["error"]
+
+    def test_bridge_file_not_found_handled(self, server, mock_conn, base_request):
+        """FileNotFoundError from bridge is caught and forwarded."""
+        with patch.object(
+            sys.modules["bedrock_server"],
+            "decrypt_with_private_key",
+            return_value=b"message",
+        ), patch.object(
+            sys.modules["bedrock_server"],
+            "run_agent_streaming",
+            side_effect=FileNotFoundError("run_agent.mjs not found"),
+        ):
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            send_calls = mock_conn.sendall.call_args_list
+            last_event = json.loads(send_calls[-1][0][0].decode("utf-8").strip())
+            assert "error" in last_event
+            assert "run_agent.mjs" in last_event["error"]
+
+    def test_no_credentials_sends_error(self, server, mock_conn, base_request):
+        """When no AWS credentials, sends error without calling bridge."""
+        server.bedrock.has_credentials.return_value = False
+
+        server.handle_agent_chat_stream(base_request, mock_conn)
+
+        send_calls = mock_conn.sendall.call_args_list
+        event = json.loads(send_calls[0][0][0].decode("utf-8").strip())
+        assert "error" in event
+        assert "credentials" in event["error"].lower()
+
+    def test_block_events_not_forwarded(self, server, mock_conn, base_request):
+        """Block events should not generate additional encrypted_content events."""
+        bridge_events = [
+            {"type": "partial", "text": "Hello world"},
+            {"type": "block", "text": "Hello world"},  # Should not create another encrypted chunk
+            {"type": "done", "meta": {"durationMs": 100}},
+        ]
+
+        with self._patch_crypto_and_bridge(bridge_events) as mocks:
+            server.handle_agent_chat_stream(base_request, mock_conn)
+
+            # encrypt_to_public_key should be called once for partial + once for state
+            # NOT twice for both partial and block
+            transport_encrypt_calls = [
+                call for call in mocks["encrypt"].call_args_list
+                if len(call[0]) >= 3 and call[0][2] == "enclave-to-client-transport"
+            ]
+            assert len(transport_encrypt_calls) == 1  # Only the partial, not the block
+
+    def test_get_aws_env_extracts_credentials(self, server):
+        """_get_aws_env properly extracts credentials from bedrock client."""
+        env = server._get_aws_env()
+
+        assert env["AWS_ACCESS_KEY_ID"] == "AKIATEST"
+        assert env["AWS_SECRET_ACCESS_KEY"] == "secret123"
+        assert env["AWS_SESSION_TOKEN"] == "token456"
+        assert "AWS_REGION" in env
+
+    def test_get_aws_env_without_credentials(self):
+        """_get_aws_env returns empty credentials when not set."""
+        server = _make_server()
+        server.bedrock.has_credentials.return_value = False
+
+        env = server._get_aws_env()
+
+        assert "AWS_ACCESS_KEY_ID" not in env
+        assert "AWS_REGION" in env  # Region always present

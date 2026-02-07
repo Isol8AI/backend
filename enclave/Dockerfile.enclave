@@ -81,6 +81,10 @@ COPY enclave/bedrock_client.py .
 COPY enclave/bedrock_server.py .
 COPY enclave/kms_encryption.py .
 
+# OpenClaw bridge (Python ↔ Node.js bridge for runEmbeddedPiAgent)
+COPY enclave/agent_bridge.py .
+COPY enclave/run_agent.mjs .
+
 # Set ownership
 RUN chown -R enclave:enclave /app /opt/openclaw
 
@@ -90,6 +94,7 @@ USER enclave
 # Environment
 ENV AWS_REGION=us-east-1
 ENV OPENCLAW_HOME=/tmp/openclaw
+ENV OPENCLAW_PATH=/opt/openclaw
 ENV PATH="/opt/openclaw/node_modules/.bin:$PATH"
 
 # Entrypoint - run the Bedrock server
