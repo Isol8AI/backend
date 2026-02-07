@@ -60,6 +60,7 @@ def valid_agent_chat_message():
             "hkdf_salt": "e" * 64,
         },
         "client_transport_public_key": "f" * 64,
+        "user_public_key": "f" * 64,
     }
 
 
@@ -146,6 +147,7 @@ class TestAgentChatMessageRouting:
                         "hkdf_salt": "e" * 64,
                     },
                     "client_transport_public_key": "f" * 64,
+                    "user_public_key": "f" * 64,
                 },
             )
 
@@ -170,6 +172,7 @@ class TestAgentChatMessageRouting:
                     "agent_name": "my-agent",
                     # encrypted_message missing
                     "client_transport_public_key": "f" * 64,
+                    "user_public_key": "f" * 64,
                 },
             )
 
@@ -200,6 +203,7 @@ class TestAgentChatMessageRouting:
                         "hkdf_salt": "e" * 64,
                     },
                     # client_transport_public_key missing
+                    "user_public_key": "f" * 64,
                 },
             )
 
@@ -229,9 +233,11 @@ class TestAgentChatWSRequestValidation:
                 hkdf_salt="e" * 64,
             ),
             client_transport_public_key="f" * 64,
+            user_public_key="f" * 64,
         )
         assert request.agent_name == "my-agent"
         assert request.client_transport_public_key == "f" * 64
+        assert request.user_public_key == "f" * 64
 
     def test_agent_name_too_long(self):
         """agent_name > 50 chars should be rejected."""
@@ -250,6 +256,7 @@ class TestAgentChatWSRequestValidation:
                     hkdf_salt="e" * 64,
                 ),
                 client_transport_public_key="f" * 64,
+                user_public_key="f" * 64,
             )
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("agent_name",) for e in errors)
@@ -271,6 +278,7 @@ class TestAgentChatWSRequestValidation:
                     hkdf_salt="e" * 64,
                 ),
                 client_transport_public_key="f" * 64,
+                user_public_key="f" * 64,
             )
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("agent_name",) for e in errors)

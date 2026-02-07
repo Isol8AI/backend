@@ -478,6 +478,7 @@ def _validate_and_process_agent_chat(
             agent_name=body["agent_name"],
             encrypted_message=EncryptedPayload(**body["encrypted_message"]),
             client_transport_public_key=body["client_transport_public_key"],
+            user_public_key=body["user_public_key"],
             encrypted_soul_content=encrypted_soul,
             encrypted_state=encrypted_state_from_client,
         )
@@ -492,6 +493,7 @@ def _validate_and_process_agent_chat(
         agent_name=request.agent_name,
         encrypted_message=request.encrypted_message,
         client_transport_public_key=request.client_transport_public_key,
+        user_public_key=request.user_public_key,
         encrypted_soul_content=request.encrypted_soul_content,
         encrypted_state_from_client=request.encrypted_state,
     )
@@ -503,6 +505,7 @@ async def _process_agent_chat_background(
     agent_name: str,
     encrypted_message: EncryptedPayload,
     client_transport_public_key: str,
+    user_public_key: str,
     encrypted_soul_content: Optional[EncryptedPayload] = None,
     encrypted_state_from_client: Optional[EncryptedPayload] = None,
 ) -> None:
@@ -579,6 +582,7 @@ async def _process_agent_chat_background(
             encrypted_message=encrypted_msg,
             encrypted_state=encrypted_state_for_enclave,
             client_public_key=client_pub_key,
+            user_public_key=bytes.fromhex(user_public_key),
             encrypted_soul_content=encrypted_soul,
             encryption_mode=encryption_mode,
         )

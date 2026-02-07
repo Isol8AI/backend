@@ -887,6 +887,7 @@ class TestHandleAgentChatStreamBridge:
                 "hkdf_salt": "ee" * 32,
             },
             "client_public_key": "ff" * 32,
+            "user_public_key": "aa" * 32,
             "encryption_mode": "zero_trust",
         }
 

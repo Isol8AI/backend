@@ -313,6 +313,7 @@ class EnclaveInterface(ABC):
         encrypted_message: EncryptedPayload,
         encrypted_state: Optional[EncryptedPayload],
         client_public_key: bytes,
+        user_public_key: bytes,
         agent_name: str,
         encrypted_soul_content: Optional[EncryptedPayload] = None,
         encryption_mode: str = "zero_trust",
@@ -327,7 +328,8 @@ class EnclaveInterface(ABC):
         Args:
             encrypted_message: User's message encrypted to enclave
             encrypted_state: Existing agent state tarball (None for new agent)
-            client_public_key: Client's public key for response encryption
+            client_public_key: Ephemeral transport key for response chunk encryption
+            user_public_key: User's long-term public key for state encryption
             agent_name: Name of the agent
             encrypted_soul_content: Optional custom SOUL.md content
             encryption_mode: "zero_trust" or "background"
