@@ -195,22 +195,14 @@ async def get_agent_state(
     )
 
     if not state or not state.encrypted_tarball:
-        logger.info("AGENT_DEBUG: GET state for %s/%s: no state (new agent)", auth.user_id, agent_name)
+        print(f"AGENT_DEBUG: GET state for {auth.user_id}/{agent_name}: no state (new agent)", flush=True)
         return {"encrypted_state": None, "encryption_mode": "zero_trust"}
 
     # Deserialize and return as API payload
     encrypted_payload = _deserialize_encrypted_payload(state.encrypted_tarball)
     api_payload = EncryptedPayload.from_crypto_payload(encrypted_payload)
 
-    logger.info(
-        "AGENT_DEBUG: GET state for %s/%s: mode=%s, ephemeral_key=%s..., ciphertext_len=%d, hkdf_salt=%s...",
-        auth.user_id,
-        agent_name,
-        state.encryption_mode,
-        api_payload.ephemeral_public_key[:16],
-        len(api_payload.ciphertext),
-        api_payload.hkdf_salt[:16],
-    )
+    print(f"AGENT_DEBUG: GET state for {auth.user_id}/{agent_name}: mode={state.encryption_mode}, ephemeral_key={api_payload.ephemeral_public_key[:16]}..., ciphertext_len={len(api_payload.ciphertext)}, hkdf_salt={api_payload.hkdf_salt[:16]}...", flush=True)
 
     return {
         "encrypted_state": api_payload,

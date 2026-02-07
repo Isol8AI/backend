@@ -570,14 +570,7 @@ async def _process_agent_chat_background(
         user_pub_key = bytes.fromhex(user_public_key)
 
         # DEBUG: Log key info for tracing encryption issues
-        logger.info(
-            "AGENT_DEBUG: user_id=%s, agent=%s, user_public_key=%s..., client_transport_key=%s..., has_state=%s",
-            user_id,
-            agent_name,
-            user_public_key[:16],
-            client_transport_public_key[:16],
-            encrypted_state_from_client is not None,
-        )
+        print(f"AGENT_DEBUG: user_id={user_id}, agent={agent_name}, user_public_key={user_public_key[:16]}..., client_transport_key={client_transport_public_key[:16]}..., has_state={encrypted_state_from_client is not None}", flush=True)
 
         # Also look up the user's stored public key to compare
         async with session_factory() as db:
@@ -586,13 +579,9 @@ async def _process_agent_chat_background(
             result = await db.execute(select(User).where(User.id == user_id))
             user_row = result.scalar_one_or_none()
             if user_row and user_row.public_key:
-                logger.info(
-                    "AGENT_DEBUG: stored_public_key=%s..., MATCH=%s",
-                    user_row.public_key[:16],
-                    user_row.public_key == user_public_key,
-                )
+                print(f"AGENT_DEBUG: stored_public_key={user_row.public_key[:16]}..., MATCH={user_row.public_key == user_public_key}", flush=True)
             else:
-                logger.warning("AGENT_DEBUG: No stored public key for user %s", user_id)
+                print(f"AGENT_DEBUG: No stored public key for user {user_id}", flush=True)
 
         # Convert encrypted_soul_content if provided
         encrypted_soul = None
@@ -639,14 +628,7 @@ async def _process_agent_chat_background(
                 state_dict = chunk.encrypted_state.to_dict()
                 state_json = json_module.dumps(state_dict).encode("utf-8")
 
-                logger.info(
-                    "AGENT_DEBUG: Storing state for %s/%s: ephemeral_key=%s..., ciphertext_len=%d, hkdf_salt=%s...",
-                    user_id,
-                    agent_name,
-                    state_dict["ephemeral_public_key"][:16],
-                    len(state_dict["ciphertext"]),
-                    state_dict["hkdf_salt"][:16],
-                )
+                print(f"AGENT_DEBUG: Storing state for {user_id}/{agent_name}: ephemeral_key={state_dict['ephemeral_public_key'][:16]}..., ciphertext_len={len(state_dict['ciphertext'])}, hkdf_salt={state_dict['hkdf_salt'][:16]}...", flush=True)
 
                 async with session_factory() as db:
                     service = AgentService(db)
