@@ -567,6 +567,32 @@ async def _process_agent_chat_background(
         # Convert API encrypted_message to crypto payload
         encrypted_msg = encrypted_message.to_crypto_payload()
         client_pub_key = bytes.fromhex(client_transport_public_key)
+        user_pub_key = bytes.fromhex(user_public_key)
+
+        # DEBUG: Log key info for tracing encryption issues
+        logger.info(
+            "AGENT_DEBUG: user_id=%s, agent=%s, user_public_key=%s..., client_transport_key=%s..., has_state=%s",
+            user_id,
+            agent_name,
+            user_public_key[:16],
+            client_transport_public_key[:16],
+            encrypted_state_from_client is not None,
+        )
+
+        # Also look up the user's stored public key to compare
+        async with session_factory() as db:
+            from models.user import User
+            from sqlalchemy import select
+            result = await db.execute(select(User).where(User.id == user_id))
+            user_row = result.scalar_one_or_none()
+            if user_row and user_row.public_key:
+                logger.info(
+                    "AGENT_DEBUG: stored_public_key=%s..., MATCH=%s",
+                    user_row.public_key[:16],
+                    user_row.public_key == user_public_key,
+                )
+            else:
+                logger.warning("AGENT_DEBUG: No stored public key for user %s", user_id)
 
         # Convert encrypted_soul_content if provided
         encrypted_soul = None
@@ -582,7 +608,7 @@ async def _process_agent_chat_background(
             encrypted_message=encrypted_msg,
             encrypted_state=encrypted_state_for_enclave,
             client_public_key=client_pub_key,
-            user_public_key=bytes.fromhex(user_public_key),
+            user_public_key=user_pub_key,
             encrypted_soul_content=encrypted_soul,
             encryption_mode=encryption_mode,
         )
@@ -610,7 +636,17 @@ async def _process_agent_chat_background(
 
             if chunk.is_final and chunk.encrypted_state:
                 # Serialize updated state and store in DB
-                state_json = json_module.dumps(chunk.encrypted_state.to_dict()).encode("utf-8")
+                state_dict = chunk.encrypted_state.to_dict()
+                state_json = json_module.dumps(state_dict).encode("utf-8")
+
+                logger.info(
+                    "AGENT_DEBUG: Storing state for %s/%s: ephemeral_key=%s..., ciphertext_len=%d, hkdf_salt=%s...",
+                    user_id,
+                    agent_name,
+                    state_dict["ephemeral_public_key"][:16],
+                    len(state_dict["ciphertext"]),
+                    state_dict["hkdf_salt"][:16],
+                )
 
                 async with session_factory() as db:
                     service = AgentService(db)
