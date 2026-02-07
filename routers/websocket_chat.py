@@ -478,6 +478,7 @@ def _validate_and_process_agent_chat(
             agent_name=body["agent_name"],
             encrypted_message=EncryptedPayload(**body["encrypted_message"]),
             client_transport_public_key=body["client_transport_public_key"],
+            user_public_key=body["user_public_key"],
             encrypted_soul_content=encrypted_soul,
             encrypted_state=encrypted_state_from_client,
         )
@@ -492,6 +493,7 @@ def _validate_and_process_agent_chat(
         agent_name=request.agent_name,
         encrypted_message=request.encrypted_message,
         client_transport_public_key=request.client_transport_public_key,
+        user_public_key=request.user_public_key,
         encrypted_soul_content=request.encrypted_soul_content,
         encrypted_state_from_client=request.encrypted_state,
     )
@@ -503,6 +505,7 @@ async def _process_agent_chat_background(
     agent_name: str,
     encrypted_message: EncryptedPayload,
     client_transport_public_key: str,
+    user_public_key: str,
     encrypted_soul_content: Optional[EncryptedPayload] = None,
     encrypted_state_from_client: Optional[EncryptedPayload] = None,
 ) -> None:
@@ -564,6 +567,27 @@ async def _process_agent_chat_background(
         # Convert API encrypted_message to crypto payload
         encrypted_msg = encrypted_message.to_crypto_payload()
         client_pub_key = bytes.fromhex(client_transport_public_key)
+        user_pub_key = bytes.fromhex(user_public_key)
+
+        # TRACE_CRYPTO: Log FULL keys sent to enclave
+        print(f"TRACE_CRYPTO:PARENT_SEND user_public_key={user_public_key}", flush=True)
+        print(f"TRACE_CRYPTO:PARENT_SEND client_transport_key={client_transport_public_key}", flush=True)
+        print(f"TRACE_CRYPTO:PARENT_SEND has_state={encrypted_state_from_client is not None}", flush=True)
+
+        # Also look up the user's stored public key to compare
+        async with session_factory() as db:
+            from models.user import User
+            from sqlalchemy import select
+
+            result = await db.execute(select(User).where(User.id == user_id))
+            user_row = result.scalar_one_or_none()
+            if user_row and user_row.public_key:
+                print(
+                    f"AGENT_DEBUG: stored_public_key={user_row.public_key[:16]}..., MATCH={user_row.public_key == user_public_key}",
+                    flush=True,
+                )
+            else:
+                print(f"AGENT_DEBUG: No stored public key for user {user_id}", flush=True)
 
         # Convert encrypted_soul_content if provided
         encrypted_soul = None
@@ -579,6 +603,7 @@ async def _process_agent_chat_background(
             encrypted_message=encrypted_msg,
             encrypted_state=encrypted_state_for_enclave,
             client_public_key=client_pub_key,
+            user_public_key=user_pub_key,
             encrypted_soul_content=encrypted_soul,
             encryption_mode=encryption_mode,
         )
@@ -606,7 +631,25 @@ async def _process_agent_chat_background(
 
             if chunk.is_final and chunk.encrypted_state:
                 # Serialize updated state and store in DB
-                state_json = json_module.dumps(chunk.encrypted_state.to_dict()).encode("utf-8")
+                state_dict = chunk.encrypted_state.to_dict()
+                state_json = json_module.dumps(state_dict).encode("utf-8")
+
+                print(
+                    f"AGENT_DEBUG: Storing state for {user_id}/{agent_name}: ephemeral_key={state_dict['ephemeral_public_key'][:16]}..., ciphertext_len={len(state_dict['ciphertext'])}, hkdf_salt={state_dict['hkdf_salt'][:16]}...",
+                    flush=True,
+                )
+                # TRACE_CRYPTO: Full field values at DB store boundary
+                import hashlib as _hl
+
+                print(f"TRACE_CRYPTO:DB_STORE eph_pub={state_dict['ephemeral_public_key']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE iv={state_dict['iv']}", flush=True)
+                print(
+                    f"TRACE_CRYPTO:DB_STORE ct_sha256={_hl.sha256(bytes.fromhex(state_dict['ciphertext'])).hexdigest()} ct_hex_len={len(state_dict['ciphertext'])}",
+                    flush=True,
+                )
+                print(f"TRACE_CRYPTO:DB_STORE auth_tag={state_dict['auth_tag']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE hkdf_salt={state_dict['hkdf_salt']}", flush=True)
+                print(f"TRACE_CRYPTO:DB_STORE state_json_len={len(state_json)}", flush=True)
 
                 async with session_factory() as db:
                     service = AgentService(db)

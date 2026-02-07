@@ -69,6 +69,7 @@ class AgentChatWSRequest(BaseModel):
     agent_name: str = Field(..., min_length=1, max_length=50, pattern="^[a-zA-Z0-9_-]+$")
     encrypted_message: EncryptedPayload
     client_transport_public_key: str
+    user_public_key: str = Field(..., description="User's long-term public key for state encryption (zero_trust mode)")
     # Optional: encrypted soul/personality content for first message (new agent)
     # Encrypted to enclave's public key so server cannot read it
     encrypted_soul_content: Optional[EncryptedPayload] = None

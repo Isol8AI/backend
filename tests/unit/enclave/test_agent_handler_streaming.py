@@ -107,6 +107,7 @@ class TestAgentStreamRequest:
             encrypted_message=encrypted_msg,
             encrypted_state=encrypted_state,
             client_public_key=keypair.public_key,
+            user_public_key=keypair.public_key,
         )
 
         assert request.user_id == "user_123"
@@ -132,6 +133,7 @@ class TestAgentStreamRequest:
             encrypted_message=encrypted_msg,
             encrypted_state=None,
             client_public_key=keypair.public_key,
+            user_public_key=keypair.public_key,
         )
 
         assert request.user_id == "user_456"
@@ -162,6 +164,7 @@ class TestAgentStreamRequest:
             encrypted_message=encrypted_msg,
             encrypted_state=encrypted_state,
             client_public_key=keypair.public_key,
+            user_public_key=keypair.public_key,
         )
 
         assert request.encrypted_state is not None
@@ -210,6 +213,7 @@ class TestAgentHandlerStreaming:
             encrypted_message=sample_encrypted_message,
             encrypted_state=None,
             client_public_key=user_keypair.public_key,
+            user_public_key=user_keypair.public_key,
         )
 
     @pytest.mark.asyncio
@@ -372,6 +376,7 @@ class TestAgentHandlerStreaming:
             encrypted_message=sample_encrypted_message,
             encrypted_state=None,
             client_public_key=user_keypair.public_key,
+            user_public_key=user_keypair.public_key,
         )
 
         chunks = []
@@ -401,6 +406,7 @@ class TestAgentHandlerStreaming:
             encrypted_message=sample_encrypted_message,
             encrypted_state=existing_state,
             client_public_key=user_keypair.public_key,
+            user_public_key=user_keypair.public_key,
         )
 
         received_kwargs = {}

@@ -28,6 +28,7 @@ class AgentStreamRequest:
     encrypted_message: EncryptedPayload
     encrypted_state: Optional[EncryptedPayload]
     client_public_key: bytes
+    user_public_key: bytes
     encrypted_soul_content: Optional[EncryptedPayload] = None
     encryption_mode: str = "zero_trust"  # "zero_trust" or "background"
 
@@ -164,6 +165,7 @@ class AgentHandler:
                 encrypted_message=request.encrypted_message,
                 encrypted_state=request.encrypted_state,
                 client_public_key=request.client_public_key,
+                user_public_key=request.user_public_key,
                 agent_name=request.agent_name,
                 encrypted_soul_content=request.encrypted_soul_content,
                 encryption_mode=request.encryption_mode,

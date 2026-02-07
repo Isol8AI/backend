@@ -724,11 +724,16 @@ You are {agent_name}, a personal AI companion.
             encrypted_message_dict = data["encrypted_message"]
             encrypted_state_dict = data.get("encrypted_state")
             client_public_key = hex_to_bytes(data["client_public_key"])
+            user_public_key = hex_to_bytes(data["user_public_key"])
             agent_name = data["agent_name"]
             encrypted_soul_dict = data.get("encrypted_soul_content")
             encryption_mode = data.get("encryption_mode", "zero_trust")  # Default to zero_trust
 
             print(f"[Enclave] AGENT_CHAT_STREAM: agent={agent_name}, mode={encryption_mode}", flush=True)
+            # TRACE_CRYPTO: Log keys received from parent
+            print(f"TRACE_CRYPTO:ENCLAVE_RECV user_public_key={user_public_key.hex()}", flush=True)
+            print(f"TRACE_CRYPTO:ENCLAVE_RECV client_public_key={client_public_key.hex()}", flush=True)
+            print(f"TRACE_CRYPTO:ENCLAVE_RECV has_state={encrypted_state_dict is not None}", flush=True)
 
             # Create tmpfs directory
             tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
@@ -887,15 +892,28 @@ You are {agent_name}, a personal AI companion.
             encrypted_dek = None
 
             if encryption_mode == "zero_trust":
-                # ZERO TRUST MODE: Encrypt state to user's public key
+                # ZERO TRUST MODE: Encrypt state to user's LONG-TERM public key
                 # Only the user can decrypt (requires passcode to unlock private key)
-                # This is the critical fix: use client_public_key (user's key), NOT self.keypair.public_key (enclave's ephemeral key)
+                # user_public_key = long-term key for persistent storage
+                # client_public_key = ephemeral transport key for streaming response chunks only
                 encrypted_state_out = encrypt_to_public_key(
-                    client_public_key,  # ← FIX: User's key, not enclave's ephemeral key
+                    user_public_key,
                     tarball_bytes,
                     "agent-state-storage",
                 )
-                print("[Enclave] Encrypted state to user's public key (zero_trust mode)", flush=True)
+                print("[Enclave] Encrypted state to user's long-term public key (zero_trust mode)", flush=True)
+                # TRACE_CRYPTO: Log the to_dict output (what gets sent via vsock)
+                import hashlib as _hl
+
+                _sd = encrypted_state_out.to_dict()
+                print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND eph_pub={_sd['ephemeral_public_key']}", flush=True)
+                print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND iv={_sd['iv']}", flush=True)
+                print(
+                    f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND ct_sha256={_hl.sha256(bytes.fromhex(_sd['ciphertext'])).hexdigest()} ct_hex_len={len(_sd['ciphertext'])}",
+                    flush=True,
+                )
+                print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND auth_tag={_sd['auth_tag']}", flush=True)
+                print(f"TRACE_CRYPTO:ENCLAVE_VSOCK_SEND hkdf_salt={_sd['hkdf_salt']}", flush=True)
             else:
                 # BACKGROUND MODE: KMS envelope encryption
                 kms_key_id = os.environ.get("KMS_KEY_ID", "")

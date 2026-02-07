@@ -604,6 +604,7 @@ class NitroEnclaveClient(EnclaveInterface):
         encrypted_message: EncryptedPayload,
         encrypted_state: Optional[EncryptedPayload],
         client_public_key: bytes,
+        user_public_key: bytes,
         agent_name: str,
         encrypted_soul_content: Optional[EncryptedPayload] = None,
         encryption_mode: str = "zero_trust",
@@ -617,7 +618,8 @@ class NitroEnclaveClient(EnclaveInterface):
         Args:
             encrypted_message: User message encrypted to enclave transport key
             encrypted_state: Agent state (for zero_trust: re-encrypted by client to enclave key)
-            client_public_key: User's public key (for encrypting responses and state)
+            client_public_key: Ephemeral transport key for response chunk encryption
+            user_public_key: User's long-term public key for state encryption
             agent_name: Name of the agent
             encrypted_soul_content: Optional SOUL.md content for new agents
             encryption_mode: "zero_trust" (default) or "background"
@@ -632,6 +634,7 @@ class NitroEnclaveClient(EnclaveInterface):
             "encrypted_message": encrypted_message.to_dict(),
             "encrypted_state": encrypted_state.to_dict() if encrypted_state else None,
             "client_public_key": client_public_key.hex(),
+            "user_public_key": user_public_key.hex(),
             "agent_name": agent_name,
             "encrypted_soul_content": encrypted_soul_content.to_dict() if encrypted_soul_content else None,
             "encryption_mode": encryption_mode,
@@ -679,6 +682,18 @@ class NitroEnclaveClient(EnclaveInterface):
                     encrypted_state_result = None
                     if event.get("encrypted_state"):
                         encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
+                        # TRACE_CRYPTO: Log what we received from vsock
+                        import hashlib as _hl
+
+                        _rd = event["encrypted_state"]
+                        print(f"TRACE_CRYPTO:VSOCK_RECV eph_pub={_rd['ephemeral_public_key']}", flush=True)
+                        print(f"TRACE_CRYPTO:VSOCK_RECV iv={_rd['iv']}", flush=True)
+                        print(
+                            f"TRACE_CRYPTO:VSOCK_RECV ct_sha256={_hl.sha256(bytes.fromhex(_rd['ciphertext'])).hexdigest()} ct_hex_len={len(_rd['ciphertext'])}",
+                            flush=True,
+                        )
+                        print(f"TRACE_CRYPTO:VSOCK_RECV auth_tag={_rd['auth_tag']}", flush=True)
+                        print(f"TRACE_CRYPTO:VSOCK_RECV hkdf_salt={_rd['hkdf_salt']}", flush=True)
 
                     encrypted_dek = event.get("encrypted_dek")  # None for zero_trust, KMS-encrypted DEK for background
 
