@@ -82,8 +82,8 @@ COPY --from=openclaw-builder /build/skills/ ./skills/
 COPY --from=openclaw-builder /build/assets/ ./assets/
 COPY --from=openclaw-builder /build/patches/ ./patches/
 
-# Link globally so 'openclaw' CLI is available
-RUN npm link
+# Link globally so 'openclaw' CLI is available (skip postinstall, scripts/ not in final image)
+RUN npm link --ignore-scripts
 
 # Verify installation (fail the build if openclaw CLI is not available)
 RUN openclaw --version
