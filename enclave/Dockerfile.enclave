@@ -4,8 +4,45 @@
 # Build with: nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file enclave.eif
 #
 # Requires: git submodule update --init (agent/ must be populated)
+#
+# Uses multi-stage build to keep the final image small enough for EIF conversion.
+# The OpenClaw monorepo is ~4GB with all deps; we only need the built CLI + prod deps.
 
-# Use Amazon Linux 2023 for better Node.js support
+# =============================================================================
+# Stage 1: Build OpenClaw (thrown away after build)
+# =============================================================================
+FROM amazonlinux:2023 AS openclaw-builder
+
+RUN dnf install -y tar gzip && dnf clean all
+RUN curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && \
+    dnf install -y nodejs && \
+    dnf clean all
+RUN npm install -g pnpm
+
+WORKDIR /build
+
+# Copy only files needed for install and build
+COPY agent/package.json agent/pnpm-lock.yaml agent/pnpm-workspace.yaml agent/.npmrc ./
+COPY agent/openclaw.mjs ./
+COPY agent/scripts/ ./scripts/
+COPY agent/patches/ ./patches/
+COPY agent/src/ ./src/
+COPY agent/packages/ ./packages/
+COPY agent/extensions/ ./extensions/
+COPY agent/skills/ ./skills/
+COPY agent/assets/ ./assets/
+COPY agent/tsconfig.json ./
+COPY agent/ui/ ./ui/
+
+# Install all deps (need devDeps for build), build, then prune to prod only
+RUN pnpm install --frozen-lockfile && \
+    pnpm build && \
+    pnpm prune --prod && \
+    rm -rf src/ ui/ .pnpm-store/ /root/.local/share/pnpm/store/
+
+# =============================================================================
+# Stage 2: Final enclave image (slim)
+# =============================================================================
 FROM amazonlinux:2023
 
 # Install system dependencies and Node.js
@@ -37,23 +74,22 @@ RUN python3 -m pip install --no-cache-dir \
     cryptography==44.0.0 \
     botocore==1.35.0
 
-# Install pnpm globally
-RUN npm install -g pnpm
-
 # Create enclave user for security
 RUN useradd -r -s /bin/false enclave
 
 # =============================================================================
-# OpenClaw Agent Installation (from git submodule)
+# OpenClaw Agent (built artifacts only, from stage 1)
 # =============================================================================
 WORKDIR /opt/openclaw
 
-# Copy agent from git submodule (version pinned in .gitmodules)
-COPY agent/ .
-
-# Install dependencies and build
-RUN pnpm install --frozen-lockfile && \
-    pnpm build
+# Copy only the built output + production node_modules from builder
+COPY --from=openclaw-builder /build/openclaw.mjs ./
+COPY --from=openclaw-builder /build/package.json ./
+COPY --from=openclaw-builder /build/dist/ ./dist/
+COPY --from=openclaw-builder /build/node_modules/ ./node_modules/
+COPY --from=openclaw-builder /build/skills/ ./skills/
+COPY --from=openclaw-builder /build/assets/ ./assets/
+COPY --from=openclaw-builder /build/patches/ ./patches/
 
 # Link globally so 'openclaw' CLI is available
 RUN npm link
