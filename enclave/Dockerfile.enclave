@@ -111,6 +111,7 @@ COPY enclave/kms_encryption.py .
 # OpenClaw bridge (Python ↔ Node.js bridge for runEmbeddedPiAgent)
 COPY enclave/agent_bridge.py .
 COPY enclave/run_agent.mjs .
+COPY enclave/vsock_tcp_bridge.py .
 
 # Set ownership
 RUN chown -R enclave:enclave /app /opt/openclaw

@@ -50,6 +50,10 @@ class TestAgentStateModel:
         with pytest.raises(Exception):  # IntegrityError
             await db_session.flush()
 
+        # Rollback the failed transaction so the session stays usable
+        # for fixture cleanup (IntegrityError leaves the transaction aborted)
+        await db_session.rollback()
+
     @pytest.mark.asyncio
     async def test_different_users_same_agent_name(self, db_session, test_user, other_user):
         """Test that different users can have agents with same name."""

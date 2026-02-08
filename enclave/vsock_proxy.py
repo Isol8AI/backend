@@ -37,6 +37,7 @@ VSOCK_PROXY_PORT = 8443
 ALLOWED_HOSTS = [
     "bedrock-runtime.us-east-1.amazonaws.com",
     "bedrock-runtime.us-west-2.amazonaws.com",
+    "bedrock.us-east-1.amazonaws.com",
     "sts.amazonaws.com",
     "sts.us-east-1.amazonaws.com",
 ]

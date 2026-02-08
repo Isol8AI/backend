@@ -1322,6 +1322,40 @@ def handle_client(server: BedrockServer, conn: socket.socket, addr: tuple):
         conn.close()
 
 
+def _start_vsock_tcp_bridge():
+    """Start the TCP-to-vsock bridge subprocess for Node.js networking."""
+    bridge_script = Path(__file__).parent / "vsock_tcp_bridge.py"
+    if not bridge_script.exists():
+        print(f"[Enclave] vsock_tcp_bridge.py not found at {bridge_script}, skipping", flush=True)
+        return None
+
+    print("[Enclave] Starting TCP-to-vsock bridge...", flush=True)
+    proc = subprocess.Popen(
+        [sys.executable, str(bridge_script)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    # Read the "Ready" line to confirm it started
+    import select as _sel
+    if _sel.select([proc.stdout], [], [], 5.0)[0]:
+        for _ in range(3):
+            line = proc.stdout.readline().decode("utf-8", errors="replace").strip()
+            if line:
+                print(f"[Enclave] bridge: {line}", flush=True)
+            if "Ready" in line:
+                break
+    # Let remaining output go to /dev/null (daemon threads handle logging)
+    import threading
+    def _drain(pipe):
+        for line in pipe:
+            txt = line.decode("utf-8", errors="replace").strip()
+            if txt:
+                print(f"[Enclave] bridge: {txt}", flush=True)
+    threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
+    print(f"[Enclave] TCP-to-vsock bridge started (PID {proc.pid})", flush=True)
+    return proc
+
+
 def main():
     region = os.environ.get("AWS_REGION", "us-east-1")
 
@@ -1330,6 +1364,9 @@ def main():
     print("=" * 60, flush=True)
     print(f"Python version: {sys.version}", flush=True)
     print(f"AWS region: {region}", flush=True)
+
+    # Start TCP-to-vsock bridge for Node.js (OpenClaw) networking
+    bridge_proc = _start_vsock_tcp_bridge()
 
     server = BedrockServer(region=region)
 
