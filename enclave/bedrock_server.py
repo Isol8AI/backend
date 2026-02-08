@@ -933,7 +933,7 @@ You are {agent_name}, a personal AI companion.
                         "done_result_text_len": len(done_result_text),
                         "done_result_text_preview": done_result_text[:200] if done_result_text else "",
                         "agent_events": agent_events_data,
-                        "bridge_stderr": bridge_stderr[:1000] if bridge_stderr else "",
+                        "bridge_stderr": bridge_stderr[:4000] if bridge_stderr else "",
                     }
                 },
             )

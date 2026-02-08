@@ -197,7 +197,7 @@ if (sessionId) {
 // ---------------------------------------------------------------------------
 // Default model — can be overridden by the request or openclaw.json
 const resolvedModel =
-  model || "amazon-bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0";
+  model || "us.anthropic.claude-3-5-sonnet-20241022-v2:0";
 const resolvedProvider = provider || "amazon-bedrock";
 
 process.stderr.write(
@@ -274,11 +274,40 @@ try {
     },
   });
 
-  // Emit the full result object for diagnostics (text, meta, everything)
+  // Emit the full result object for diagnostics
   process.stderr.write(`[Bridge] result keys=${Object.keys(result).join(",")}, meta keys=${result.meta ? Object.keys(result.meta).join(",") : "null"}\n`);
   process.stderr.write(`[Bridge] result.text length=${(result.text || "").length}, stopReason=${result.meta?.stopReason}, error=${JSON.stringify(result.meta?.error)}\n`);
+  process.stderr.write(`[Bridge] result.didSendViaMessages=${result.didSendViaMessages}\n`);
 
-  // Emit completion with metadata + result text
+  // Extract text from payloads if result.text is missing
+  let responseText = result.text || "";
+  if (!responseText && Array.isArray(result.payloads)) {
+    process.stderr.write(`[Bridge] payloads count=${result.payloads.length}\n`);
+    for (const [i, p] of result.payloads.entries()) {
+      process.stderr.write(`[Bridge] payload[${i}] keys=${Object.keys(p).join(",")}, role=${p.role}, type=${typeof p.content}\n`);
+      if (typeof p.content === "string") {
+        process.stderr.write(`[Bridge] payload[${i}] content_len=${p.content.length}, preview=${p.content.slice(0, 200)}\n`);
+        if (p.role === "assistant" && p.content) {
+          responseText = p.content;
+        }
+      } else if (Array.isArray(p.content)) {
+        for (const [j, block] of p.content.entries()) {
+          process.stderr.write(`[Bridge] payload[${i}].content[${j}] type=${block.type}, text_len=${(block.text || "").length}\n`);
+          if (block.type === "text" && block.text && p.role === "assistant") {
+            responseText = block.text;
+          }
+        }
+      }
+    }
+  }
+  if (responseText) {
+    process.stderr.write(`[Bridge] Final responseText length=${responseText.length}, preview=${responseText.slice(0, 100)}\n`);
+  } else {
+    process.stderr.write(`[Bridge] WARNING: No response text found anywhere in result!\n`);
+    process.stderr.write(`[Bridge] Full result JSON: ${JSON.stringify(result).slice(0, 2000)}\n`);
+  }
+
+  // Emit completion with metadata + extracted response text
   emit({
     type: "done",
     meta: {
@@ -287,7 +316,7 @@ try {
       error: result.meta.error,
       stopReason: result.meta.stopReason,
     },
-    resultText: result.text || "",
+    resultText: responseText,
     resultKeys: Object.keys(result),
   });
 } catch (err) {

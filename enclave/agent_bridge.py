@@ -140,7 +140,7 @@ def run_agent_streaming(
 
         # Always yield stderr as diagnostic (visible through vsock)
         if stderr_output:
-            yield {"type": "bridge_stderr", "text": stderr_output[:2000]}
+            yield {"type": "bridge_stderr", "text": stderr_output[:5000]}
 
         if proc.returncode != 0:
             logger.error(
