@@ -284,26 +284,18 @@ try {
   // Emit the full result object for diagnostics
   process.stderr.write(`[Bridge] result keys=${Object.keys(result).join(",")}, meta keys=${result.meta ? Object.keys(result.meta).join(",") : "null"}\n`);
   process.stderr.write(`[Bridge] result.text length=${(result.text || "").length}, stopReason=${result.meta?.stopReason}, error=${JSON.stringify(result.meta?.error)}\n`);
-  process.stderr.write(`[Bridge] result.didSendViaMessages=${result.didSendViaMessages}\n`);
+  process.stderr.write(`[Bridge] result.didSendViaMessagingTool=${result.didSendViaMessagingTool}\n`);
 
   // Extract text from payloads if result.text is missing
+  // EmbeddedPiRunResult.payloads is Array<{ text?: string; isError?: boolean; ... }>
   let responseText = result.text || "";
   if (!responseText && Array.isArray(result.payloads)) {
     process.stderr.write(`[Bridge] payloads count=${result.payloads.length}\n`);
     for (const [i, p] of result.payloads.entries()) {
-      process.stderr.write(`[Bridge] payload[${i}] keys=${Object.keys(p).join(",")}, role=${p.role}, type=${typeof p.content}\n`);
-      if (typeof p.content === "string") {
-        process.stderr.write(`[Bridge] payload[${i}] content_len=${p.content.length}, preview=${p.content.slice(0, 200)}\n`);
-        if (p.role === "assistant" && p.content) {
-          responseText = p.content;
-        }
-      } else if (Array.isArray(p.content)) {
-        for (const [j, block] of p.content.entries()) {
-          process.stderr.write(`[Bridge] payload[${i}].content[${j}] type=${block.type}, text_len=${(block.text || "").length}\n`);
-          if (block.type === "text" && block.text && p.role === "assistant") {
-            responseText = block.text;
-          }
-        }
+      process.stderr.write(`[Bridge] payload[${i}] keys=${Object.keys(p).join(",")}, text_len=${(p.text || "").length}, isError=${p.isError}\n`);
+      if (p.text && !p.isError) {
+        process.stderr.write(`[Bridge] payload[${i}] text preview=${p.text.slice(0, 200)}\n`);
+        responseText = p.text;
       }
     }
   }
