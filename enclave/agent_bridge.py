@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 # Path to the bridge script, relative to this file
 _BRIDGE_SCRIPT = Path(__file__).parent / "run_agent.mjs"
 
+# CJS preload that monkey-patches net.connect for vsock bridge (Nitro Enclave)
+_NET_PATCH_SCRIPT = Path(__file__).parent / "net_vsock_patch.cjs"
+
 
 def run_agent_streaming(
     state_dir: str,
@@ -99,8 +102,16 @@ def run_agent_streaming(
         model or "default",
     )
 
+    # Build node command: optionally preload net_vsock_patch.cjs for Nitro
+    # Enclave networking (patches net.connect before ESM modules load)
+    net_patch = Path(bridge_script).parent / "net_vsock_patch.cjs" if bridge_script else _NET_PATCH_SCRIPT
+    cmd = [node_path]
+    if net_patch.exists():
+        cmd.extend(["--require", str(net_patch)])
+    cmd.append(str(script))
+
     proc = subprocess.Popen(
-        [node_path, str(script)],
+        cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

@@ -24,125 +24,14 @@
  *   - OPENCLAW_PATH: Path to OpenClaw dist directory (default: /opt/openclaw)
  *   - AWS_PROFILE:   Set to "default" to enable IMDS credential chain
  *   - AWS_REGION:    AWS region for Bedrock (default: us-east-1)
- *   - VSOCK_BRIDGE_PORT: TCP port for vsock bridge (default: 3128, 0 = disabled)
  */
 
 // ---------------------------------------------------------------------------
-// 0. Monkey-patch net.connect for Nitro Enclave networking
+// 0. Nitro Enclave networking (handled by CJS preload)
 // ---------------------------------------------------------------------------
-// The Nitro Enclave has NO network stack — no DNS, no outbound TCP.
-// All external traffic must go through the vsock-proxy on the parent instance.
-// Python code uses a custom VsockHttpClient, but Node.js (AWS SDK, pi-ai) uses
-// standard net.connect(). This patch intercepts connections to *.amazonaws.com
-// and routes them through a local TCP-to-vsock bridge (vsock_tcp_bridge.py)
-// running on 127.0.0.1:VSOCK_BRIDGE_PORT. The bridge forwards to the parent's
-// vsock-proxy via HTTP CONNECT, which establishes the real TCP connection.
-//
-// MUST be before any import that triggers network activity.
-import * as net from "node:net";
-
-const _BRIDGE_PORT = parseInt(process.env.VSOCK_BRIDGE_PORT || "3128", 10);
-const _BRIDGE_ENABLED = _BRIDGE_PORT > 0;
-
-if (_BRIDGE_ENABLED) {
-  const _origConnect = net.connect;
-
-  /**
-   * Wrap a connection attempt: if the target host matches *.amazonaws.com,
-   * connect to the local vsock bridge instead and send an HTTP CONNECT request.
-   */
-  function patchedConnect(...args) {
-    // Normalize arguments: net.connect(options), net.connect(port, host), etc.
-    let options = {};
-    let cb;
-    if (typeof args[0] === "object" && args[0] !== null) {
-      options = args[0];
-      cb = args[1];
-    } else if (typeof args[0] === "number") {
-      options = { port: args[0], host: args[1] };
-      cb = args[2];
-    } else {
-      // Fall through to original for anything unexpected
-      return _origConnect.apply(net, args);
-    }
-
-    const host = options.host || "localhost";
-    const port = options.port || 443;
-
-    // Only intercept *.amazonaws.com connections
-    if (!host.endsWith(".amazonaws.com")) {
-      return _origConnect.apply(net, args);
-    }
-
-    process.stderr.write(
-      `[Bridge:net-patch] Intercepting ${host}:${port} → 127.0.0.1:${_BRIDGE_PORT}\n`,
-    );
-
-    // Connect to local TCP-to-vsock bridge instead
-    const bridgeOpts = {
-      host: "127.0.0.1",
-      port: _BRIDGE_PORT,
-    };
-
-    const sock = _origConnect.call(net, bridgeOpts, () => {
-      // Send HTTP CONNECT to the bridge (which forwards to parent vsock-proxy)
-      const connectReq =
-        `CONNECT ${host}:${port} HTTP/1.1\r\n` +
-        `Host: ${host}\r\n` +
-        `\r\n`;
-      sock.write(connectReq);
-    });
-
-    // Wait for the 200 response from the bridge before signalling "connected"
-    let handshakeDone = false;
-    let buffered = Buffer.alloc(0);
-
-    sock.on("data", function onHandshake(chunk) {
-      if (handshakeDone) return;
-
-      buffered = Buffer.concat([buffered, chunk]);
-      const text = buffered.toString("utf-8");
-
-      // Look for end of HTTP response headers
-      const headerEnd = text.indexOf("\r\n\r\n");
-      if (headerEnd === -1) return; // Need more data
-
-      handshakeDone = true;
-      sock.removeListener("data", onHandshake);
-
-      if (!text.startsWith("HTTP/1.1 200")) {
-        process.stderr.write(
-          `[Bridge:net-patch] CONNECT failed: ${text.slice(0, 100)}\n`,
-        );
-        sock.destroy(new Error(`CONNECT to ${host}:${port} failed: ${text.slice(0, 100)}`));
-        return;
-      }
-
-      process.stderr.write(
-        `[Bridge:net-patch] Tunnel established to ${host}:${port}\n`,
-      );
-
-      // If there are bytes after the headers (unlikely but possible), push them back
-      const remainder = buffered.subarray(headerEnd + 4);
-      if (remainder.length > 0) {
-        sock.unshift(remainder);
-      }
-
-      // Signal to the caller that the connection is ready
-      if (cb) cb();
-      sock.emit("connect");
-    });
-
-    return sock;
-  }
-
-  net.connect = patchedConnect;
-  net.createConnection = patchedConnect;
-
-  process.stderr.write(
-    `[Bridge:net-patch] Enabled: *.amazonaws.com → 127.0.0.1:${_BRIDGE_PORT}\n`,
-  );
-}
+// The Nitro Enclave has NO network stack.  net.connect monkey-patching is done
+// via --require net_vsock_patch.cjs (a CJS preload script) so it takes effect
+// BEFORE the ESM loader freezes module namespaces.  See net_vsock_patch.cjs.
 
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
