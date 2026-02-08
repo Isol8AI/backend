@@ -25,6 +25,7 @@ WORKDIR /build
 COPY agent/ ./
 
 # Install all deps (need devDeps for build), build, then prune to prod only
+ENV CI=true
 RUN pnpm install --frozen-lockfile && \
     pnpm build && \
     pnpm prune --prod && \
