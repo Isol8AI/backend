@@ -806,6 +806,8 @@ You are {agent_name}, a personal AI companion.
             input_tokens = 0
             output_tokens = 0
             agent_error = None
+            event_types_seen = []  # Track all event types for diagnostics
+            last_block_text = ""  # Fallback: capture block text if no partials
 
             print("[Enclave] Starting OpenClaw agent bridge...", flush=True)
 
@@ -818,6 +820,7 @@ You are {agent_name}, a personal AI companion.
                     env=self._get_aws_env(),
                 ):
                     event_type = event.get("type")
+                    event_types_seen.append(event_type)
 
                     if event_type == "partial":
                         # Token-by-token streaming — encrypt and forward to client
@@ -830,6 +833,13 @@ You are {agent_name}, a personal AI companion.
                                 "enclave-to-client-transport",
                             )
                             self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
+
+                    elif event_type == "block":
+                        # Accumulated text block — capture as fallback if no partials sent
+                        block_text = event.get("text", "")
+                        if block_text:
+                            last_block_text = block_text
+                            print(f"[Enclave] Block event: {len(block_text)} chars", flush=True)
 
                     elif event_type == "tool_result":
                         # Tool execution results — encrypt and forward
@@ -870,7 +880,7 @@ You are {agent_name}, a personal AI companion.
                             flush=True,
                         )
 
-                    # Skip: block (partials already sent), assistant_start, agent_event, reasoning
+                    # Skip: assistant_start, agent_event, reasoning
 
             except (RuntimeError, FileNotFoundError) as e:
                 print(f"[Enclave] Bridge error: {e}", flush=True)
@@ -880,6 +890,36 @@ You are {agent_name}, a personal AI companion.
             if agent_error:
                 self._send_event(conn, {"error": agent_error, "is_final": True})
                 return
+
+            # Send diagnostic info through vsock so parent can log it
+            from collections import Counter
+
+            evt_counts = dict(Counter(event_types_seen))
+            self._send_event(
+                conn,
+                {
+                    "diagnostic": {
+                        "chunk_count": chunk_count,
+                        "event_types": evt_counts,
+                        "has_block_fallback": chunk_count == 0 and bool(last_block_text),
+                        "block_text_len": len(last_block_text),
+                    }
+                },
+            )
+
+            # Fallback: if no partial events were streamed but we got block text,
+            # send the block text as a single encrypted chunk
+            if chunk_count == 0 and last_block_text:
+                print(
+                    f"[Enclave] No partials streamed, using block fallback ({len(last_block_text)} chars)", flush=True
+                )
+                encrypted_chunk = encrypt_to_public_key(
+                    client_public_key,
+                    last_block_text.encode("utf-8"),
+                    "enclave-to-client-transport",
+                )
+                self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})
+                chunk_count = 1
 
             print(f"[Enclave] Stream complete: {chunk_count} chunks", flush=True)
 

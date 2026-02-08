@@ -670,6 +670,16 @@ class NitroEnclaveClient(EnclaveInterface):
                     break
 
                 event = item
+
+                # Log diagnostic info from enclave (not yielded to caller)
+                if event.get("diagnostic"):
+                    diag = event["diagnostic"]
+                    print(
+                        f"ENCLAVE_DIAG: chunk_count={diag.get('chunk_count')}, event_types={diag.get('event_types')}, block_fallback={diag.get('has_block_fallback')}, block_len={diag.get('block_text_len')}",
+                        flush=True,
+                    )
+                    continue
+
                 if event.get("error"):
                     logger.error(f"Enclave agent error: {event['error']}")
                     yield AgentStreamChunk(error=event["error"], is_final=True)

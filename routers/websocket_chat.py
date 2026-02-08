@@ -613,7 +613,7 @@ async def _process_agent_chat_background(
         print(f"AGENT_DEBUG: Starting stream loop for {agent_name}, connection={connection_id}", flush=True)
         async for chunk in handler.process_message_streaming(request):
             print(
-                f"AGENT_DEBUG: Received chunk - has_content={chunk.encrypted_content is not None}, is_final={chunk.is_final}, has_error={chunk.error is not None}",
+                f"AGENT_DEBUG: Received chunk - has_content={chunk.encrypted_content is not None}, is_final={chunk.is_final}, error={chunk.error!r}",
                 flush=True,
             )
             if chunk.error:
