@@ -21,24 +21,14 @@ RUN npm install -g pnpm
 
 WORKDIR /build
 
-# Copy only files needed for install and build
-COPY agent/package.json agent/pnpm-lock.yaml agent/pnpm-workspace.yaml agent/.npmrc ./
-COPY agent/openclaw.mjs ./
-COPY agent/scripts/ ./scripts/
-COPY agent/patches/ ./patches/
-COPY agent/src/ ./src/
-COPY agent/packages/ ./packages/
-COPY agent/extensions/ ./extensions/
-COPY agent/skills/ ./skills/
-COPY agent/assets/ ./assets/
-COPY agent/tsconfig.json ./
-COPY agent/ui/ ./ui/
+# Copy entire OpenClaw source for full build
+COPY agent/ ./
 
 # Install all deps (need devDeps for build), build, then prune to prod only
 RUN pnpm install --frozen-lockfile && \
     pnpm build && \
     pnpm prune --prod && \
-    rm -rf src/ ui/ .pnpm-store/ /root/.local/share/pnpm/store/
+    rm -rf src/ ui/ vendor/ apps/ docs/ test/ Swabble/ .pnpm-store/ /root/.local/share/pnpm/store/
 
 # =============================================================================
 # Stage 2: Final enclave image (slim)
