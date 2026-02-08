@@ -21,7 +21,6 @@ Node.js monkey-patch in run_agent.mjs intercepts net.connect() for
 import socket
 import select
 import threading
-import sys
 
 # Bridge configuration
 LISTEN_HOST = "127.0.0.1"

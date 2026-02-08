@@ -1337,6 +1337,7 @@ def _start_vsock_tcp_bridge():
     )
     # Read the "Ready" line to confirm it started
     import select as _sel
+
     if _sel.select([proc.stdout], [], [], 5.0)[0]:
         for _ in range(3):
             line = proc.stdout.readline().decode("utf-8", errors="replace").strip()
@@ -1346,11 +1347,13 @@ def _start_vsock_tcp_bridge():
                 break
     # Let remaining output go to /dev/null (daemon threads handle logging)
     import threading
+
     def _drain(pipe):
         for line in pipe:
             txt = line.decode("utf-8", errors="replace").strip()
             if txt:
                 print(f"[Enclave] bridge: {txt}", flush=True)
+
     threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
     print(f"[Enclave] TCP-to-vsock bridge started (PID {proc.pid})", flush=True)
     return proc
@@ -1366,7 +1369,7 @@ def main():
     print(f"AWS region: {region}", flush=True)
 
     # Start TCP-to-vsock bridge for Node.js (OpenClaw) networking
-    bridge_proc = _start_vsock_tcp_bridge()
+    _start_vsock_tcp_bridge()
 
     server = BedrockServer(region=region)
 
