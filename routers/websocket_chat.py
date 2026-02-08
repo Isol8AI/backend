@@ -610,9 +610,11 @@ async def _process_agent_chat_background(
 
         # Stream response chunks
         chunk_count = 0
+        print(f"AGENT_DEBUG: Starting stream loop for {agent_name}, connection={connection_id}", flush=True)
         async for chunk in handler.process_message_streaming(request):
+            print(f"AGENT_DEBUG: Received chunk - has_content={chunk.encrypted_content is not None}, is_final={chunk.is_final}, has_error={chunk.error is not None}", flush=True)
             if chunk.error:
-                logger.debug("Agent enclave error for %s: %s", agent_name, chunk.error)
+                print(f"AGENT_DEBUG: Chunk error: {chunk.error}", flush=True)
                 management_api.send_message(
                     connection_id,
                     {"type": "error", "message": chunk.error},
@@ -622,10 +624,12 @@ async def _process_agent_chat_background(
             if chunk.encrypted_content:
                 chunk_count += 1
                 api_payload = EncryptedPayload.from_crypto_payload(chunk.encrypted_content)
-                if not management_api.send_message(
+                push_ok = management_api.send_message(
                     connection_id,
                     {"type": "encrypted_chunk", "encrypted_content": api_payload.model_dump()},
-                ):
+                )
+                print(f"AGENT_DEBUG: Pushed chunk #{chunk_count} to {connection_id}, ok={push_ok}", flush=True)
+                if not push_ok:
                     logger.warning("Connection %s gone during agent streaming", connection_id)
                     return
 
@@ -658,13 +662,9 @@ async def _process_agent_chat_background(
 
                 logger.debug("Agent state updated for %s/%s", user_id, agent_name)
 
-        logger.debug(
-            "Agent stream complete for connection_id=%s, agent=%s, chunks=%d",
-            connection_id,
-            agent_name,
-            chunk_count,
-        )
-        management_api.send_message(connection_id, {"type": "done"})
+        print(f"AGENT_DEBUG: Stream loop done for {agent_name}, total chunks={chunk_count}", flush=True)
+        done_ok = management_api.send_message(connection_id, {"type": "done"})
+        print(f"AGENT_DEBUG: Pushed 'done' to {connection_id}, ok={done_ok}", flush=True)
 
     except ManagementApiClientError as e:
         logger.error("Management API error for connection %s: %s", connection_id, e)
