@@ -28,6 +28,11 @@ on:
         required: false
         type: boolean
         default: false
+      fast_enclave_deploy:
+        description: "Fast enclave deploy: rebuild EIF on instance, restart enclave + backend (dev only)"
+        required: false
+        type: boolean
+        default: false
 
 env:
   PYTHON_VERSION: "3.11"
@@ -192,10 +197,24 @@ jobs:
           echo "nitro-cli requires Nitro-enabled EC2 instance - skipping installation"
           echo "EIF will be built on EC2 during instance startup"
 
+      - name: Login to Amazon ECR
+        id: login-ecr-enclave
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build enclave Docker image
         run: |
           # Build context is repo root so we can access agent/ submodule
           docker build -t isol8-enclave:latest -f enclave/Dockerfile.enclave .
+
+      - name: Push enclave Docker image to ECR
+        run: |
+          REGISTRY="${{ steps.login-ecr-enclave.outputs.registry }}"
+          docker tag isol8-enclave:latest $REGISTRY/${{ env.ECR_REPOSITORY }}:enclave-latest
+          docker tag isol8-enclave:latest $REGISTRY/${{ env.ECR_REPOSITORY }}:enclave-${{ github.sha }}
+          docker push $REGISTRY/${{ env.ECR_REPOSITORY }}:enclave-latest
+          docker push $REGISTRY/${{ env.ECR_REPOSITORY }}:enclave-${{ github.sha }}
+          echo "Pushed enclave image: $REGISTRY/${{ env.ECR_REPOSITORY }}:enclave-latest"
+          echo "Pushed enclave image: $REGISTRY/${{ env.ECR_REPOSITORY }}:enclave-${{ github.sha }}"
 
       - name: Build EIF (or skip if nitro-cli unavailable)
         id: build-eif
@@ -273,6 +292,121 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # =====================================================================
+      # Fast Enclave Deploy: SSM rebuild EIF + restart enclave + backend (~3-4 min)
+      # Pulls pre-built enclave Docker image from ECR, builds EIF on instance,
+      # restarts enclave and backend. Dev only.
+      # =====================================================================
+      - name: "[Fast Enclave] SSM - rebuild EIF and restart enclave + backend"
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fast_enclave_deploy == 'true' }}
+        run: |
+          ASG_NAME="isol8-dev-asg"
+          INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names $ASG_NAME \
+            --query 'AutoScalingGroups[0].Instances[0].InstanceId' \
+            --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "No instances found in ASG $ASG_NAME"
+            exit 1
+          fi
+
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          ECR_IMAGE="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}"
+
+          echo "Fast enclave deploying to $INSTANCE_ID..."
+          echo "Enclave image: ${ECR_IMAGE}:enclave-latest"
+          echo "Backend image: ${ECR_IMAGE}:latest"
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --timeout-seconds 300 \
+            --parameters 'commands=[
+              "set -e",
+              "",
+              "echo \"=== [1/8] Pull enclave Docker image from ECR ===\"",
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin '"${ECR_REGISTRY}"'",
+              "docker pull '"${ECR_IMAGE}:enclave-latest"'",
+              "docker tag '"${ECR_IMAGE}:enclave-latest"' isol8-enclave:latest",
+              "echo \"Enclave image pulled: '"${ECR_IMAGE}:enclave-latest"'\"",
+              "echo \"Image digest: $(docker inspect --format={{.Id}} isol8-enclave:latest)\"",
+              "",
+              "echo \"=== [2/8] Pull backend Docker image from ECR ===\"",
+              "docker pull '"${ECR_IMAGE}:latest"'",
+              "echo \"Backend image pulled\"",
+              "",
+              "echo \"=== [3/8] Stop backend + enclave ===\"",
+              "systemctl stop isol8 || true",
+              "nitro-cli terminate-enclave --all 2>/dev/null || true",
+              "echo \"Backend and enclave stopped\"",
+              "",
+              "echo \"=== [4/8] Build EIF from Docker image ===\"",
+              "nitro-cli build-enclave --docker-uri isol8-enclave:latest --output-file /home/ec2-user/enclave/enclave/enclave.eif 2>&1 | tee /tmp/eif-build.log",
+              "EIF_EXIT=${PIPESTATUS[0]}",
+              "if [ \"$EIF_EXIT\" -ne 0 ]; then echo \"ERROR: EIF build failed with exit code $EIF_EXIT\"; cat /tmp/eif-build.log; exit 1; fi",
+              "echo \"EIF built successfully\"",
+              "sha256sum /home/ec2-user/enclave/enclave/enclave.eif",
+              "",
+              "echo \"=== [5/8] Restart vsock-proxy ===\"",
+              "systemctl restart vsock-proxy",
+              "echo \"vsock-proxy restarted\"",
+              "",
+              "echo \"=== [6/8] Restart enclave and wait for RUNNING ===\"",
+              "systemctl restart nitro-enclave",
+              "ENCLAVE_RUNNING=false",
+              "for i in $(seq 1 30); do STATE=$(nitro-cli describe-enclaves | jq -r \".[0].State // \\\"NONE\\\"\"); echo \"  Attempt $i: State=$STATE\"; if [ \"$STATE\" = \"RUNNING\" ]; then ENCLAVE_RUNNING=true; break; fi; if [ \"$STATE\" = \"NONE\" ] || [ \"$STATE\" = \"TERMINATED\" ]; then echo \"ERROR: Enclave failed to start (State=$STATE)\"; nitro-cli describe-enclaves; exit 1; fi; sleep 2; done",
+              "if [ \"$ENCLAVE_RUNNING\" != \"true\" ]; then echo \"ERROR: Enclave did not reach RUNNING state within 60s\"; nitro-cli describe-enclaves; exit 1; fi",
+              "CID=$(nitro-cli describe-enclaves | jq -r \".[0].EnclaveCID\")",
+              "sed -i \"s/ENCLAVE_CID=.*/ENCLAVE_CID=$CID/\" /home/ec2-user/.env",
+              "echo \"Enclave running with CID=$CID\"",
+              "",
+              "echo \"=== [7/8] Restart backend ===\"",
+              "systemctl restart isol8",
+              "CONTAINER_RUNNING=false",
+              "for i in $(seq 1 30); do if docker inspect isol8 --format={{.State.Running}} 2>/dev/null | grep -q true; then CONTAINER_RUNNING=true; break; fi; sleep 1; done",
+              "if [ \"$CONTAINER_RUNNING\" != \"true\" ]; then echo \"ERROR: Backend container did not start within 30s\"; docker logs isol8 --tail 20 2>&1 || true; exit 1; fi",
+              "echo \"Backend container running\"",
+              "",
+              "echo \"=== [8/8] Reset DB schema ===\"",
+              "docker exec isol8 python init_db.py --reset",
+              "echo \"=== Fast enclave deploy complete ===\"",
+              "echo \"Enclave image: '"${ECR_IMAGE}:enclave-latest"'\"",
+              "echo \"EIF hash: $(sha256sum /home/ec2-user/enclave/enclave/enclave.eif | cut -d\" \" -f1)\"",
+              "echo \"Enclave CID: $CID\"",
+              "docker ps --filter name=isol8",
+              "nitro-cli describe-enclaves | jq ."
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+          echo "Waiting for command to complete..."
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" || true
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'Status' --output text)
+
+          echo "=== Command Output ==="
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "=== Error Output ==="
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'StandardErrorContent' --output text
+            exit 1
+          fi
+
+      # =====================================================================
       # Fast Deploy: SSM pull + restart (skips ASG refresh, ~2 min)
       # WARNING: Fast deploy only restarts the parent container. It does NOT
       # rebuild or restart the Nitro Enclave. If enclave source changed,
@@ -347,7 +481,7 @@ jobs:
       # Normal Deploy: ASG Instance Refresh (full replacement, ~15 min)
       # =====================================================================
       - name: Upload Enclave EIF to S3
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.fast_deploy == 'true' || github.event.inputs.fast_enclave_deploy == 'true')) }}
         run: |
           echo "Checking if EIF exists in S3..."
           aws s3 ls "s3://${{ env.ENCLAVE_BUCKET }}/dev/enclave.eif" && \
@@ -355,7 +489,7 @@ jobs:
             echo "EIF not in S3 - instances will build from source"
 
       - name: Reset Database Schema
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.fast_deploy == 'true' || github.event.inputs.fast_enclave_deploy == 'true')) }}
         run: |
           ASG_NAME="isol8-dev-asg"
 
@@ -407,7 +541,7 @@ jobs:
           echo "Database migrations completed successfully on current instance"
 
       - name: Trigger ASG Instance Refresh
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.fast_deploy == 'true' || github.event.inputs.fast_enclave_deploy == 'true')) }}
         run: |
           ASG_NAME="isol8-dev-asg"
 
@@ -427,7 +561,7 @@ jobs:
           echo "REFRESH_ID=$REFRESH_ID" >> $GITHUB_ENV
 
       - name: Wait for Instance Refresh
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.fast_deploy == 'true' || github.event.inputs.fast_enclave_deploy == 'true')) }}
         run: |
           ASG_NAME="isol8-dev-asg"
           REFRESH_ID=${{ env.REFRESH_ID }}
@@ -472,7 +606,7 @@ jobs:
           exit 1
 
       - name: Verify Enclave Mode
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.fast_deploy == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.fast_deploy == 'true' || github.event.inputs.fast_enclave_deploy == 'true')) }}
         run: |
           ASG_NAME="isol8-dev-asg"
 
