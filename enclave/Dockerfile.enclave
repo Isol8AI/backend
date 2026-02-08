@@ -114,11 +114,12 @@ COPY enclave/run_agent.mjs .
 COPY enclave/net_vsock_patch.cjs .
 COPY enclave/vsock_tcp_bridge.py .
 
+# Entrypoint script (brings up loopback, drops to enclave user)
+COPY enclave/entrypoint.sh .
+RUN chmod +x /app/entrypoint.sh
+
 # Set ownership
 RUN chown -R enclave:enclave /app /opt/openclaw
-
-# Run as non-root
-USER enclave
 
 # Environment
 ENV AWS_REGION=us-east-1
@@ -126,5 +127,5 @@ ENV OPENCLAW_HOME=/tmp/openclaw
 ENV OPENCLAW_PATH=/opt/openclaw
 ENV PATH="/opt/openclaw/node_modules/.bin:$PATH"
 
-# Entrypoint - run the Bedrock server
-ENTRYPOINT ["python3", "/app/bedrock_server.py"]
+# Entrypoint runs as root to configure networking, then drops to enclave user
+ENTRYPOINT ["/app/entrypoint.sh"]
