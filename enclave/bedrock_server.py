@@ -808,6 +808,10 @@ You are {agent_name}, a personal AI companion.
             agent_error = None
             event_types_seen = []  # Track all event types for diagnostics
             last_block_text = ""  # Fallback: capture block text if no partials
+            done_meta_raw = {}  # Capture raw done metadata for diagnostics
+            done_result_text = ""  # Capture result text from done event
+            agent_events_data = []  # Capture agent_event payloads
+            bridge_stderr = ""  # Capture bridge stderr output
 
             print("[Enclave] Starting OpenClaw agent bridge...", flush=True)
 
@@ -875,12 +879,34 @@ You are {agent_name}, a personal AI companion.
                                 agent_error = meta_error.get("message", str(meta_error))
                             else:
                                 agent_error = str(meta_error)
+                        # Capture raw meta and result text for diagnostics
+                        done_meta_raw = {
+                            "durationMs": duration_ms,
+                            "stopReason": stop_reason,
+                            "error": str(meta_error) if meta_error else None,
+                            "inputTokens": input_tokens,
+                            "outputTokens": output_tokens,
+                            "agentMetaKeys": list((agent_meta or {}).keys()),
+                        }
+                        done_result_text = event.get("resultText", "")
+                        result_keys = event.get("resultKeys", [])
                         print(
-                            f"[Enclave] Agent done: {duration_ms}ms, stop={stop_reason}, tokens={input_tokens}/{output_tokens}",
+                            f"[Enclave] Agent done: {duration_ms}ms, stop={stop_reason}, tokens={input_tokens}/{output_tokens}, resultText_len={len(done_result_text)}, resultKeys={result_keys}",
                             flush=True,
                         )
 
-                    # Skip: assistant_start, agent_event, reasoning
+                    elif event_type == "agent_event":
+                        # Capture agent lifecycle events for diagnostics
+                        agent_events_data.append(
+                            {"stream": event.get("stream"), "data_keys": list((event.get("data") or {}).keys())}
+                        )
+
+                    elif event_type == "bridge_stderr":
+                        # Capture bridge stderr output
+                        bridge_stderr = event.get("text", "")
+                        print(f"[Enclave] Bridge stderr: {bridge_stderr[:500]}", flush=True)
+
+                    # Skip: assistant_start, partial_empty, block_empty, reasoning
 
             except (RuntimeError, FileNotFoundError) as e:
                 print(f"[Enclave] Bridge error: {e}", flush=True)
@@ -903,19 +929,28 @@ You are {agent_name}, a personal AI companion.
                         "event_types": evt_counts,
                         "has_block_fallback": chunk_count == 0 and bool(last_block_text),
                         "block_text_len": len(last_block_text),
+                        "done_meta": done_meta_raw,
+                        "done_result_text_len": len(done_result_text),
+                        "done_result_text_preview": done_result_text[:200] if done_result_text else "",
+                        "agent_events": agent_events_data,
+                        "bridge_stderr": bridge_stderr[:1000] if bridge_stderr else "",
                     }
                 },
             )
 
-            # Fallback: if no partial events were streamed but we got block text,
-            # send the block text as a single encrypted chunk
-            if chunk_count == 0 and last_block_text:
+            # Fallback chain: try block text, then done result text
+            fallback_text = last_block_text or done_result_text
+
+            # Fallback: if no partial events were streamed but we have text from
+            # block events or the done result, send it as a single encrypted chunk
+            if chunk_count == 0 and fallback_text:
+                source = "block" if last_block_text else "done_result"
                 print(
-                    f"[Enclave] No partials streamed, using block fallback ({len(last_block_text)} chars)", flush=True
+                    f"[Enclave] No partials streamed, using {source} fallback ({len(fallback_text)} chars)", flush=True
                 )
                 encrypted_chunk = encrypt_to_public_key(
                     client_public_key,
-                    last_block_text.encode("utf-8"),
+                    fallback_text.encode("utf-8"),
                     "enclave-to-client-transport",
                 )
                 self._send_event(conn, {"encrypted_content": encrypted_chunk.to_dict()})

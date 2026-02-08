@@ -675,9 +675,33 @@ class NitroEnclaveClient(EnclaveInterface):
                 if event.get("diagnostic"):
                     diag = event["diagnostic"]
                     print(
-                        f"ENCLAVE_DIAG: chunk_count={diag.get('chunk_count')}, event_types={diag.get('event_types')}, block_fallback={diag.get('has_block_fallback')}, block_len={diag.get('block_text_len')}",
+                        f"ENCLAVE_DIAG: chunk_count={diag.get('chunk_count')}, "
+                        f"event_types={diag.get('event_types')}, "
+                        f"block_fallback={diag.get('has_block_fallback')}, "
+                        f"block_len={diag.get('block_text_len')}",
                         flush=True,
                     )
+                    done_meta = diag.get("done_meta", {})
+                    print(
+                        f"ENCLAVE_DIAG_META: stop={done_meta.get('stopReason')}, "
+                        f"duration={done_meta.get('durationMs')}ms, "
+                        f"tokens_in={done_meta.get('inputTokens')}, "
+                        f"tokens_out={done_meta.get('outputTokens')}, "
+                        f"error={done_meta.get('error')}, "
+                        f"result_text_len={diag.get('done_result_text_len')}, "
+                        f"result_preview={diag.get('done_result_text_preview', '')[:100]!r}",
+                        flush=True,
+                    )
+                    if diag.get("agent_events"):
+                        print(
+                            f"ENCLAVE_DIAG_EVENTS: {diag.get('agent_events')}",
+                            flush=True,
+                        )
+                    if diag.get("bridge_stderr"):
+                        print(
+                            f"ENCLAVE_DIAG_STDERR: {diag.get('bridge_stderr')[:500]}",
+                            flush=True,
+                        )
                     continue
 
                 if event.get("error"):

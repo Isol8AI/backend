@@ -227,8 +227,12 @@ try {
 
     // Streaming callbacks → NDJSON events
     onPartialReply: (payload) => {
+      process.stderr.write(`[Bridge] onPartialReply called, text_len=${(payload.text || "").length}, keys=${Object.keys(payload).join(",")}\n`);
       if (payload.text) {
         emit({ type: "partial", text: payload.text });
+      } else {
+        // Emit even with empty text so we know the callback fired
+        emit({ type: "partial_empty", keys: Object.keys(payload) });
       }
       if (payload.mediaUrls?.length) {
         emit({ type: "media", urls: payload.mediaUrls });
@@ -236,34 +240,45 @@ try {
     },
 
     onBlockReply: (payload) => {
+      process.stderr.write(`[Bridge] onBlockReply called, text_len=${(payload.text || "").length}, keys=${Object.keys(payload).join(",")}\n`);
       if (payload.text) {
         emit({ type: "block", text: payload.text });
+      } else {
+        emit({ type: "block_empty", keys: Object.keys(payload) });
       }
     },
 
     onToolResult: (payload) => {
+      process.stderr.write(`[Bridge] onToolResult called, text_len=${(payload.text || "").length}\n`);
       if (payload.text) {
         emit({ type: "tool_result", text: payload.text });
       }
     },
 
     onReasoningStream: (payload) => {
+      process.stderr.write(`[Bridge] onReasoningStream called\n`);
       if (payload.text) {
         emit({ type: "reasoning", text: payload.text });
       }
     },
 
     onAssistantMessageStart: () => {
+      process.stderr.write("[Bridge] onAssistantMessageStart called\n");
       emit({ type: "assistant_start" });
     },
 
     onAgentEvent: (evt) => {
+      process.stderr.write(`[Bridge] onAgentEvent: stream=${evt.stream}, data_keys=${evt.data ? Object.keys(evt.data).join(",") : "null"}\n`);
       // Forward low-level agent lifecycle events for diagnostics
       emit({ type: "agent_event", stream: evt.stream, data: evt.data });
     },
   });
 
-  // Emit completion with metadata
+  // Emit the full result object for diagnostics (text, meta, everything)
+  process.stderr.write(`[Bridge] result keys=${Object.keys(result).join(",")}, meta keys=${result.meta ? Object.keys(result.meta).join(",") : "null"}\n`);
+  process.stderr.write(`[Bridge] result.text length=${(result.text || "").length}, stopReason=${result.meta?.stopReason}, error=${JSON.stringify(result.meta?.error)}\n`);
+
+  // Emit completion with metadata + result text
   emit({
     type: "done",
     meta: {
@@ -272,6 +287,8 @@ try {
       error: result.meta.error,
       stopReason: result.meta.stopReason,
     },
+    resultText: result.text || "",
+    resultKeys: Object.keys(result),
   });
 } catch (err) {
   emit({ type: "error", message: err.message || String(err) });

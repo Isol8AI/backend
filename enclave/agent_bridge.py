@@ -138,6 +138,10 @@ def run_agent_streaming(
         # Read stderr for diagnostics
         stderr_output = proc.stderr.read() if proc.stderr else ""
 
+        # Always yield stderr as diagnostic (visible through vsock)
+        if stderr_output:
+            yield {"type": "bridge_stderr", "text": stderr_output[:2000]}
+
         if proc.returncode != 0:
             logger.error(
                 "Agent bridge failed (exit %d): %s",
