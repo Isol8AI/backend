@@ -991,7 +991,9 @@ class TestHandleAgentChatStreamBridge:
             send_calls = mock_conn.sendall.call_args_list
             # Find the tool_result event
             tool_events = [
-                json.loads(call[0][0].decode("utf-8").strip()) for call in send_calls if b"event_type" in call[0][0]
+                json.loads(call[0][0].decode("utf-8").strip())
+                for call in send_calls
+                if b'"event_type"' in call[0][0]
             ]
             assert len(tool_events) == 1
             assert tool_events[0].get("event_type") == "tool_result"
