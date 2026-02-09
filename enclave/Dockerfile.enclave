@@ -48,6 +48,7 @@ RUN dnf install -y \
     shadow-utils \
     tar \
     gzip \
+    iproute \
     && dnf clean all
 
 # Install Node.js 22 (required for OpenClaw) - must happen before Python symlink change
