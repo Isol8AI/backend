@@ -69,28 +69,41 @@ def handle_client(client: socket.socket, addr: tuple):
         # Read the HTTP CONNECT request from Node.js
         data = client.recv(4096)
         if not data:
+            print(f"[vsock-tcp-bridge] No data from client {addr}", flush=True)
             return
 
+        request_line = data.split(b"\r\n")[0].decode("utf-8", errors="replace")
+        print(f"[vsock-tcp-bridge] Received: {request_line} from {addr}", flush=True)
+
         # Open vsock to parent's proxy
+        print(f"[vsock-tcp-bridge] Creating vsock socket (AF_VSOCK={AF_VSOCK})...", flush=True)
         vsock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
+        print(f"[vsock-tcp-bridge] Connecting to CID={PARENT_CID} port={VSOCK_PROXY_PORT}...", flush=True)
         vsock.settimeout(30.0)
         vsock.connect((PARENT_CID, VSOCK_PROXY_PORT))
         vsock.settimeout(None)
+        print("[vsock-tcp-bridge] Connected to parent vsock-proxy", flush=True)
 
         # Forward the CONNECT request to parent's vsock-proxy
         vsock.sendall(data)
+        print("[vsock-tcp-bridge] Forwarded CONNECT to proxy, waiting for response...", flush=True)
 
         # Read response from vsock-proxy (200 Connection Established or error)
         response = vsock.recv(4096)
         if not response:
+            print("[vsock-tcp-bridge] Empty response from proxy", flush=True)
             client.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
             return
+
+        response_line = response.split(b"\r\n")[0].decode("utf-8", errors="replace")
+        print(f"[vsock-tcp-bridge] Proxy response: {response_line}", flush=True)
 
         # Forward vsock-proxy's response to Node.js
         client.sendall(response)
 
         # If it was a success, tunnel bytes bidirectionally
         if b"200" in response:
+            print("[vsock-tcp-bridge] Tunnel established, relaying bytes", flush=True)
             tunnel_bidirectional(client, vsock)
 
     except Exception as e:
