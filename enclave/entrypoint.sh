@@ -11,9 +11,18 @@
 
 set -e
 
-# Bring up loopback interface
-ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 netmask 255.0.0.0 up 2>/dev/null || true
-echo "[entrypoint] Loopback interface up"
+# Bring up loopback interface with full configuration.
+# On the Nitro Enclave kernel (4.14), `ip link set lo up` assigns the address
+# but does NOT add the local route. bind() works without a route, but connect()
+# returns ENETUNREACH. We must explicitly add the address and route.
+ip link set lo up 2>/dev/null || true
+ip addr add 127.0.0.1/8 dev lo 2>/dev/null || true
+ip route add local 127.0.0.0/8 dev lo 2>/dev/null || true
+
+# Verify loopback is fully configured (address + route)
+echo "[entrypoint] Loopback config:"
+ip addr show lo 2>/dev/null || true
+ip route show table local 2>/dev/null | grep 127 || true
 
 # Run server (enclave VM is already hardware-isolated)
 exec python3 /app/bedrock_server.py
