@@ -904,12 +904,23 @@ You are {agent_name}, a personal AI companion.
                     elif event_type == "bridge_stderr":
                         # Capture bridge stderr output
                         bridge_stderr = event.get("text", "")
-                        print(f"[Enclave] Bridge stderr: {bridge_stderr[:500]}", flush=True)
+                        print(f"[Enclave] Bridge stderr: {bridge_stderr[:5000]}", flush=True)
 
                     # Skip: assistant_start, partial_empty, block_empty, reasoning
 
             except (RuntimeError, FileNotFoundError) as e:
                 print(f"[Enclave] Bridge error: {e}", flush=True)
+                # Send diagnostic info even on error path
+                if bridge_stderr:
+                    self._send_event(
+                        conn,
+                        {
+                            "diagnostic": {
+                                "bridge_stderr": bridge_stderr[:5000],
+                                "error": str(e),
+                            }
+                        },
+                    )
                 self._send_event(conn, {"error": str(e), "is_final": True})
                 return
 

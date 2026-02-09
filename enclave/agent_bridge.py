@@ -157,9 +157,9 @@ def run_agent_streaming(
             logger.error(
                 "Agent bridge failed (exit %d): %s",
                 proc.returncode,
-                stderr_output[:500],
+                stderr_output[:5000],
             )
-            raise RuntimeError(f"Agent bridge failed (exit {proc.returncode}): {stderr_output[:500]}")
+            raise RuntimeError(f"Agent bridge failed (exit {proc.returncode}): {stderr_output[:5000]}")
 
         logger.info(
             "Agent bridge completed: %d events, exit %d",

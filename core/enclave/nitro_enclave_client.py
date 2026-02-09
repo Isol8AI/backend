@@ -699,7 +699,7 @@ class NitroEnclaveClient(EnclaveInterface):
                         )
                     if diag.get("bridge_stderr"):
                         print(
-                            f"ENCLAVE_DIAG_STDERR: {diag.get('bridge_stderr')[:2000]}",
+                            f"ENCLAVE_DIAG_STDERR: {diag.get('bridge_stderr')}",
                             flush=True,
                         )
                     continue
