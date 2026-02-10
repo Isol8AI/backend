@@ -28,7 +28,7 @@ COPY agent/ ./
 ENV CI=true
 RUN pnpm install --frozen-lockfile && \
     pnpm build && \
-    cd node_modules/.pnpm/global-agent@4.1.2/node_modules/global-agent && npx tsc --skipLibCheck && cd /build && \
+    (cd node_modules/.pnpm/global-agent@4.1.2/node_modules/global-agent && npx tsc --skipLibCheck; ls dist/index.js) && \
     pnpm prune --prod && \
     rm -rf src/ ui/ vendor/ apps/ docs/ test/ Swabble/ .pnpm-store/ /root/.local/share/pnpm/store/
 
