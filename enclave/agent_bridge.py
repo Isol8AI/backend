@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 # Path to the bridge script, relative to this file
 _BRIDGE_SCRIPT = Path(__file__).parent / "run_agent.mjs"
 
-# CJS preload that monkey-patches net.connect for vsock bridge (Nitro Enclave)
-_NET_PATCH_SCRIPT = Path(__file__).parent / "net_vsock_patch.cjs"
+# CJS preload that enables HTTP proxy via global-agent (Nitro Enclave networking)
+_PROXY_BOOTSTRAP = Path(__file__).parent / "proxy_bootstrap.cjs"
 
 
 def run_agent_streaming(
@@ -102,12 +102,12 @@ def run_agent_streaming(
         model or "default",
     )
 
-    # Build node command: optionally preload net_vsock_patch.cjs for Nitro
-    # Enclave networking (patches net.connect before ESM modules load)
-    net_patch = Path(bridge_script).parent / "net_vsock_patch.cjs" if bridge_script else _NET_PATCH_SCRIPT
+    # Build node command: optionally preload proxy_bootstrap.cjs for Nitro
+    # Enclave networking (enables HTTPS proxy via global-agent before ESM loads)
+    proxy_boot = Path(bridge_script).parent / "proxy_bootstrap.cjs" if bridge_script else _PROXY_BOOTSTRAP
     cmd = [node_path]
-    if net_patch.exists():
-        cmd.extend(["--require", str(net_patch)])
+    if proxy_boot.exists():
+        cmd.extend(["--require", str(proxy_boot)])
     cmd.append(str(script))
 
     proc = subprocess.Popen(

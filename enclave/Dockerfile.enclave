@@ -86,6 +86,9 @@ COPY --from=openclaw-builder /build/patches/ ./patches/
 # Link globally so 'openclaw' CLI is available (skip postinstall, scripts/ not in final image)
 RUN npm link --ignore-scripts
 
+# HTTP proxy for enclave networking (patches https.request to use CONNECT proxy)
+RUN npm install --save global-agent
+
 # Verify installation (fail the build if openclaw CLI is not available)
 RUN openclaw --version
 
@@ -112,7 +115,7 @@ COPY enclave/kms_encryption.py .
 # OpenClaw bridge (Python ↔ Node.js bridge for runEmbeddedPiAgent)
 COPY enclave/agent_bridge.py .
 COPY enclave/run_agent.mjs .
-COPY enclave/net_vsock_patch.cjs .
+COPY enclave/proxy_bootstrap.cjs .
 COPY enclave/vsock_tcp_bridge.py .
 
 # Entrypoint script (brings up loopback, drops to enclave user)

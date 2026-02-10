@@ -29,9 +29,9 @@
 // ---------------------------------------------------------------------------
 // 0. Nitro Enclave networking (handled by CJS preload)
 // ---------------------------------------------------------------------------
-// The Nitro Enclave has NO network stack.  net.connect monkey-patching is done
-// via --require net_vsock_patch.cjs (a CJS preload script) so it takes effect
-// BEFORE the ESM loader freezes module namespaces.  See net_vsock_patch.cjs.
+// The Nitro Enclave has NO network stack. HTTPS proxying is enabled via
+// --require proxy_bootstrap.cjs (a CJS preload) which uses global-agent to
+// route all https.request() calls through the vsock TCP bridge on 127.0.0.1:3128.
 
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
