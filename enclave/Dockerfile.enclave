@@ -87,7 +87,8 @@ COPY --from=openclaw-builder /build/patches/ ./patches/
 RUN npm link --ignore-scripts
 
 # HTTP proxy for enclave networking (patches https.request to use CONNECT proxy)
-RUN npm install --save global-agent
+# --no-save --no-package-lock: OpenClaw uses pnpm; avoid touching its package.json/lockfile
+RUN npm install --no-save --no-package-lock global-agent
 
 # Verify installation (fail the build if openclaw CLI is not available)
 RUN openclaw --version
