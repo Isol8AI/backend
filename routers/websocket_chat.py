@@ -330,8 +330,10 @@ async def _process_chat_message_background(
                     )
                     return
             else:
-                # Create new session (deferred - not committed yet)
-                session = await service.create_session_deferred(
+                # Create and commit session immediately.
+                # The streaming phase uses a separate DB session, so the
+                # session must already be persisted for foreign key refs.
+                session = await service.create_session(
                     user_id=user_id,
                     name="New Chat",
                     org_id=org_id,

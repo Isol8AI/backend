@@ -134,6 +134,15 @@ if (BRIDGE_ENABLED) {
           "[net-vsock-patch] CONNECT " + targetHost + ":" + targetPort + "\n"
         );
 
+        // CRITICAL FIX: When tls.connect() calls socket.connect(), `self`
+        // is a TLSSocket. Before TLS _start(), TLSSocket._write() buffers
+        // data because TLS isn't initialized — the CONNECT bytes never
+        // reach the bridge. Bypass by temporarily swapping in
+        // net.Socket's raw TCP _write, which writes directly to the
+        // underlying TCP handle.
+        var origWriteFn = self._write;
+        self._write = net.Socket.prototype._write;
+
         self.write(
           "CONNECT " + targetHost + ":" + targetPort + " HTTP/1.1\r\n" +
           "Host: " + targetHost + "\r\n" +
@@ -155,6 +164,11 @@ if (BRIDGE_ENABLED) {
 
           handshakeDone = true;
           self.removeListener("data", onHandshake);
+
+          // Restore TLS _write BEFORE re-emitting 'connect'.
+          // The 'connect' event triggers _start() which initializes
+          // the TLS layer — subsequent writes must go through TLS.
+          self._write = origWriteFn;
 
           if (!text.startsWith("HTTP/1.1 200")) {
             process.stderr.write(
