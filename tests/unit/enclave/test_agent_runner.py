@@ -89,7 +89,7 @@ class TestAgentRunner:
         config = AgentConfig(
             agent_name="rex",
             soul_content="# Rex\nA loyal AI companion.",
-            model="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model="anthropic.claude-3-5-sonnet-20241022-v2:0",
         )
 
         runner.create_fresh_agent(agent_dir, config)
@@ -144,7 +144,7 @@ class TestAgentRunner:
             agent_dir=tmp_path,
             message="Hello!",
             agent_name="luna",
-            model="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model="anthropic.claude-3-5-sonnet-20241022-v2:0",
         )
 
         assert result.success is True
@@ -186,7 +186,7 @@ class TestAgentRunner:
             agent_dir=tmp_path,
             message="Hello!",
             agent_name="luna",
-            model="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model="anthropic.claude-3-5-sonnet-20241022-v2:0",
         )
 
         assert result.success is False

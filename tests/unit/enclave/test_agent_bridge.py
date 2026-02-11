@@ -116,7 +116,7 @@ class TestRunAgentStreaming:
                 state_dir="/tmp/test_state",
                 agent_name="rex",
                 message="How are you?",
-                model="us.anthropic.claude-3-5-sonnet-v2",
+                model="anthropic.claude-3-5-sonnet-v2",
                 provider="amazon-bedrock",
                 timeout_ms=60000,
                 session_id="sess-123",
@@ -131,7 +131,7 @@ class TestRunAgentStreaming:
         assert request["stateDir"] == "/tmp/test_state"
         assert request["agentName"] == "rex"
         assert request["message"] == "How are you?"
-        assert request["model"] == "us.anthropic.claude-3-5-sonnet-v2"
+        assert request["model"] == "anthropic.claude-3-5-sonnet-v2"
         assert request["provider"] == "amazon-bedrock"
         assert request["timeoutMs"] == 60000
         assert request["sessionId"] == "sess-123"

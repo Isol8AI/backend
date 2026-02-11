@@ -46,7 +46,7 @@ DEFAULT_OPENCLAW_CONFIG = {
     "version": "1.0",
     "agents": {},
     "defaults": {
-        "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
     },
 }
 
@@ -57,7 +57,7 @@ class AgentConfig:
 
     agent_name: str
     soul_content: Optional[str] = None
-    model: str = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    model: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 
     def __post_init__(self):
         if self.soul_content is None:

@@ -23,7 +23,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Response
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.config import AVAILABLE_MODELS, settings
+from core.config import get_available_models, settings
 from core.database import get_session_factory as db_get_session_factory
 from core.services.chat_service import ChatService
 from core.services.connection_service import ConnectionService, ConnectionServiceError
@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
 
-# Build set of valid model IDs for fast validation
-VALID_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
+def _get_valid_model_ids() -> set[str]:
+    return {model["id"] for model in get_available_models()}
 
 # Singleton instances (created lazily)
 _connection_service: Optional[ConnectionService] = None
@@ -262,8 +262,8 @@ def _validate_and_process_chat(
         raise ValueError(f"Invalid message format: {e}")
 
     # Validate model
-    if request.model not in VALID_MODEL_IDS:
-        raise ValueError(f"Invalid model. Available models: {list(VALID_MODEL_IDS)}")
+    if request.model not in _get_valid_model_ids():
+        raise ValueError(f"Invalid model. Available models: {list(_get_valid_model_ids())}")
 
     # Allow org_id from message to override connection org
     msg_org_id = body.get("org_id") or conn_org_id

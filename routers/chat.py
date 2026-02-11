@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth import AuthContext, get_current_user
-from core.config import AVAILABLE_MODELS, settings
+from core.config import get_available_models, settings
 from core.database import get_db, get_session_factory
 from core.services.chat_service import ChatService
 from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
@@ -35,8 +35,8 @@ from schemas.encryption import EncryptedMessageResponse
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Build set of valid model IDs for fast validation
-VALID_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
+def _get_valid_model_ids() -> set[str]:
+    return {model["id"] for model in get_available_models()}
 
 
 # =============================================================================
@@ -129,9 +129,9 @@ async def get_enclave_health(
 
 
 @router.get("/models", response_model=list[ModelOut])
-async def get_available_models() -> list[ModelOut]:
-    """Get list of available LLM models."""
-    return AVAILABLE_MODELS
+async def list_models() -> list[ModelOut]:
+    """Get list of available LLM models via Bedrock discovery."""
+    return get_available_models()
 
 
 # =============================================================================
@@ -324,8 +324,8 @@ async def chat_stream_encrypted(
     )
 
     # Validate model
-    if request.model not in VALID_MODEL_IDS:
-        raise HTTPException(status_code=400, detail=f"Invalid model. Available models: {list(VALID_MODEL_IDS)}")
+    if request.model not in _get_valid_model_ids():
+        raise HTTPException(status_code=400, detail=f"Invalid model. Available models: {list(_get_valid_model_ids())}")
 
     async with session_factory() as service_db:
         service = ChatService(service_db)

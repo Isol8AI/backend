@@ -75,23 +75,22 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Available models for the frontend selector
-# AWS Bedrock inference profiles (required for on-demand invocation)
-# See: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
-# Using US inference profiles - change prefix for other regions (eu., apac., etc.)
-AVAILABLE_MODELS = [
-    # Anthropic Claude (may require use case submission on first use)
-    {"id": "us.anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet"},
-    {"id": "us.anthropic.claude-3-5-haiku-20241022-v1:0", "name": "Claude 3.5 Haiku"},
-    {"id": "us.anthropic.claude-3-opus-20240229-v1:0", "name": "Claude 3 Opus"},
-    # Meta Llama
-    {"id": "us.meta.llama3-3-70b-instruct-v1:0", "name": "Llama 3.3 70B"},
-    {"id": "us.meta.llama3-2-90b-instruct-v1:0", "name": "Llama 3.2 90B"},
-    {"id": "us.meta.llama3-2-11b-instruct-v1:0", "name": "Llama 3.2 11B"},
-    {"id": "us.meta.llama3-1-70b-instruct-v1:0", "name": "Llama 3.1 70B"},
-    {"id": "us.meta.llama3-1-8b-instruct-v1:0", "name": "Llama 3.1 8B"},
-    # Amazon Nova
-    {"id": "us.amazon.nova-pro-v1:0", "name": "Amazon Nova Pro"},
-    {"id": "us.amazon.nova-lite-v1:0", "name": "Amazon Nova Lite"},
-    {"id": "us.amazon.nova-micro-v1:0", "name": "Amazon Nova Micro"},
+# Fallback models used when Bedrock discovery is unavailable (e.g., local dev without AWS creds).
+# IDs use base foundation model format (matching ListFoundationModels API output).
+FALLBACK_MODELS = [
+    {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet"},
+    {"id": "anthropic.claude-3-5-haiku-20241022-v1:0", "name": "Claude 3.5 Haiku"},
+    {"id": "anthropic.claude-3-opus-20240229-v1:0", "name": "Claude 3 Opus"},
+    {"id": "meta.llama3-3-70b-instruct-v1:0", "name": "Llama 3.3 70B"},
+    {"id": "meta.llama3-1-70b-instruct-v1:0", "name": "Llama 3.1 70B"},
+    {"id": "amazon.nova-pro-v1:0", "name": "Amazon Nova Pro"},
+    {"id": "amazon.nova-lite-v1:0", "name": "Amazon Nova Lite"},
 ]
+
+
+def get_available_models() -> list[dict[str, str]]:
+    """Get available models via Bedrock discovery, falling back to hardcoded list."""
+    from core.services.bedrock_discovery import discover_models
+
+    models = discover_models(region=settings.AWS_REGION)
+    return models if models else FALLBACK_MODELS

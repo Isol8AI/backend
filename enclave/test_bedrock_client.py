@@ -220,7 +220,7 @@ def main():
 
     cid = int(sys.argv[1])
     # Use Llama 3.1 8B for testing (smallest/cheapest Llama model)
-    model_id = "us.meta.llama3-1-8b-instruct-v1:0"
+    model_id = "meta.llama3-1-8b-instruct-v1:0"
 
     print("=" * 60)
     print("ENCLAVE BEDROCK TEST CLIENT (M4)")
