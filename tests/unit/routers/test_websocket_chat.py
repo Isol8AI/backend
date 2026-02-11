@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core.config import AVAILABLE_MODELS
-from routers.websocket_chat import router, VALID_MODEL_IDS
+from core.config import FALLBACK_MODELS
+from routers.websocket_chat import router, _get_valid_model_ids
 
 
 @pytest.fixture
@@ -291,7 +291,7 @@ class TestChatMessageProcessing:
                 "hkdf_salt": "e" * 64,
             },
             "client_transport_public_key": "f" * 64,
-            "model": AVAILABLE_MODELS[0]["id"],
+            "model": FALLBACK_MODELS[0]["id"],
         }
 
     @pytest.mark.asyncio
@@ -377,13 +377,14 @@ class TestValidModelIds:
     """Tests for model validation."""
 
     def test_valid_model_ids_populated(self):
-        """VALID_MODEL_IDS set should contain all available model IDs."""
-        for model in AVAILABLE_MODELS:
-            assert model["id"] in VALID_MODEL_IDS
+        """_get_valid_model_ids() should contain all fallback model IDs."""
+        valid_ids = _get_valid_model_ids()
+        for model in FALLBACK_MODELS:
+            assert model["id"] in valid_ids
 
     def test_valid_model_ids_is_set(self):
-        """VALID_MODEL_IDS should be a set for O(1) lookup."""
-        assert isinstance(VALID_MODEL_IDS, set)
+        """_get_valid_model_ids() should return a set for O(1) lookup."""
+        assert isinstance(_get_valid_model_ids(), set)
 
 
 class TestEncryptedPayloadValidation:
@@ -439,7 +440,7 @@ class TestSendEncryptedMessageRequestValidation:
         from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
 
         request = SendEncryptedMessageRequest(
-            model=AVAILABLE_MODELS[0]["id"],
+            model=FALLBACK_MODELS[0]["id"],
             encrypted_message=EncryptedPayload(
                 ephemeral_public_key="a" * 64,
                 iv="b" * 32,
@@ -449,7 +450,7 @@ class TestSendEncryptedMessageRequestValidation:
             ),
             client_transport_public_key="f" * 64,
         )
-        assert request.model == AVAILABLE_MODELS[0]["id"]
+        assert request.model == FALLBACK_MODELS[0]["id"]
 
     def test_optional_session_id_accepted(self):
         """Request with optional session_id should be accepted."""
@@ -457,7 +458,7 @@ class TestSendEncryptedMessageRequestValidation:
 
         request = SendEncryptedMessageRequest(
             session_id="test-session-id",
-            model=AVAILABLE_MODELS[0]["id"],
+            model=FALLBACK_MODELS[0]["id"],
             encrypted_message=EncryptedPayload(
                 ephemeral_public_key="a" * 64,
                 iv="b" * 32,
@@ -476,7 +477,7 @@ class TestSendEncryptedMessageRequestValidation:
 
         with pytest.raises(ValidationError):
             SendEncryptedMessageRequest(
-                model=AVAILABLE_MODELS[0]["id"],
+                model=FALLBACK_MODELS[0]["id"],
                 encrypted_message=EncryptedPayload(
                     ephemeral_public_key="a" * 64,
                     iv="b" * 32,

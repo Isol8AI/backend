@@ -1,6 +1,6 @@
 """Unit tests for configuration module."""
 
-from core.config import AVAILABLE_MODELS, settings
+from core.config import FALLBACK_MODELS, settings
 
 
 class TestSettings:
@@ -28,21 +28,21 @@ class TestSettings:
 
 
 class TestAvailableModels:
-    """Tests for AVAILABLE_MODELS configuration."""
+    """Tests for FALLBACK_MODELS configuration."""
 
     def test_available_models_not_empty(self):
-        """AVAILABLE_MODELS contains at least one model."""
-        assert isinstance(AVAILABLE_MODELS, list)
-        assert len(AVAILABLE_MODELS) > 0
+        """FALLBACK_MODELS contains at least one model."""
+        assert isinstance(FALLBACK_MODELS, list)
+        assert len(FALLBACK_MODELS) > 0
 
     def test_models_have_required_fields(self):
         """Each model has non-empty id and name fields."""
-        for model in AVAILABLE_MODELS:
+        for model in FALLBACK_MODELS:
             assert model.get("id"), f"Model missing or empty 'id': {model}"
             assert model.get("name"), f"Model missing or empty 'name': {model}"
 
     def test_expected_models_available(self):
         """Expected model families are represented (AWS Bedrock models)."""
-        model_ids = [m["id"].lower() for m in AVAILABLE_MODELS]
+        model_ids = [m["id"].lower() for m in FALLBACK_MODELS]
         assert any("llama" in mid for mid in model_ids), "Llama model expected"
         assert any("claude" in mid or "anthropic" in mid for mid in model_ids), "Claude model expected"

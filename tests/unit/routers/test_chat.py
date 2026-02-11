@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from core.config import AVAILABLE_MODELS
+from core.config import FALLBACK_MODELS
 from models.session import Session
 
 
@@ -20,7 +20,7 @@ class TestGetAvailableModels:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        assert len(data) == len(AVAILABLE_MODELS)
+        assert len(data) == len(FALLBACK_MODELS)
 
     @pytest.mark.asyncio
     async def test_models_have_id_and_name(self, async_client):
@@ -179,7 +179,7 @@ class TestEncryptedChatStream:
         response = await async_client.post(
             "/api/v1/chat/encrypted/stream",
             json={
-                "model": AVAILABLE_MODELS[0]["id"],
+                "model": FALLBACK_MODELS[0]["id"],
                 "encrypted_message": encrypted_message,
                 "client_transport_public_key": "ff" * 32,  # 32 bytes as hex
             },
@@ -217,7 +217,7 @@ class TestEncryptedChatStream:
         response = await async_client.post(
             "/api/v1/chat/encrypted/stream",
             json={
-                "model": AVAILABLE_MODELS[0]["id"],
+                "model": FALLBACK_MODELS[0]["id"],
             },
         )
         assert response.status_code == 422
