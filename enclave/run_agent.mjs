@@ -235,8 +235,13 @@ process.stderr.write(
 // 7. Run the agent
 // ---------------------------------------------------------------------------
 
+// agentDir controls where models.json is written/read by OpenClaw.
+// Without this, OpenClaw falls back to ~/.openclaw/agents/{id}/agent which
+// is disconnected from our workspace. Pass workspaceDir so everything is colocated.
+const agentDir = workspaceDir;
+
 // Diagnostic: dump models.json after ensureOpenClawModelsJson runs
-const modelsJsonPath = `${workspaceDir}/models.json`;
+const modelsJsonPath = `${agentDir}/models.json`;
 
 try {
   const result = await runEmbeddedPiAgent({
@@ -244,6 +249,7 @@ try {
     sessionId: resolvedSessionId,
     sessionFile,
     workspaceDir,
+    agentDir,
     prompt: message,
     timeoutMs: timeoutMs || 90_000,
     runId: randomUUID(),
