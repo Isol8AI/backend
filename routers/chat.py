@@ -35,6 +35,7 @@ from schemas.encryption import EncryptedMessageResponse
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 def _get_valid_model_ids() -> set[str]:
     return {model["id"] for model in get_available_models()}
 

@@ -35,8 +35,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
 
+
 def _get_valid_model_ids() -> set[str]:
     return {model["id"] for model in get_available_models()}
+
 
 # Singleton instances (created lazily)
 _connection_service: Optional[ConnectionService] = None
