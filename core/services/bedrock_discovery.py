@@ -1,11 +1,15 @@
 """
-Discover available Bedrock foundation models via ListFoundationModels API.
+Discover available Bedrock models via ListFoundationModels + ListInferenceProfiles.
 
-Replaces the hardcoded AVAILABLE_MODELS list in config.py with dynamic discovery.
-Uses the same filtering logic as the OpenClaw TypeScript bedrock-discovery:
-  - Active models only
-  - Streaming supported
-  - Text output modality
+Some Bedrock models (e.g., Claude 3.5 Sonnet, DeepSeek R1) require inference
+profile IDs (us.anthropic.claude-...) for invocation and don't support
+on-demand throughput with base model IDs (anthropic.claude-...).
+
+This module:
+  1. Calls ListFoundationModels for model metadata (name, capabilities)
+  2. Calls ListInferenceProfiles to map base IDs → inference profile IDs
+  3. Returns models with the correct invocation ID (inference profile if
+     available, otherwise base model ID)
 
 Results are cached for 1 hour to avoid repeated API calls.
 """
@@ -57,9 +61,40 @@ def _should_include(summary: dict) -> bool:
     return True
 
 
+def _build_inference_profile_map(client) -> dict[str, str]:
+    """
+    Call ListInferenceProfiles and build a mapping from base model ID
+    to inference profile ID.
+
+    Example mapping:
+      "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        -> "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    """
+    mapping: dict[str, str] = {}
+    try:
+        paginator = client.get_paginator("list_inference_profiles")
+        for page in paginator.paginate():
+            for profile in page.get("inferenceProfileSummaries", []):
+                profile_id = (profile.get("inferenceProfileId") or "").strip()
+                if not profile_id:
+                    continue
+                for model_ref in profile.get("models", []):
+                    model_arn = model_ref.get("modelArn") or ""
+                    # ARN: arn:aws:bedrock:region::foundation-model/base-model-id
+                    if "foundation-model/" in model_arn:
+                        base_id = model_arn.split("foundation-model/")[-1].strip()
+                        if base_id:
+                            mapping[base_id] = profile_id
+    except (ClientError, Exception) as e:
+        logger.debug(f"ListInferenceProfiles unavailable (non-fatal): {e}")
+    return mapping
+
+
 def discover_models(region: str = "us-east-1") -> list[DiscoveredModel]:
     """
-    Call ListFoundationModels and return filtered, sorted model list.
+    Call ListFoundationModels + ListInferenceProfiles, return filtered,
+    sorted model list with correct invocation IDs.
+
     Results are cached for 1 hour. Returns empty list on error.
     """
     global _cache_expires_at, _has_logged_error
@@ -71,21 +106,29 @@ def discover_models(region: str = "us-east-1") -> list[DiscoveredModel]:
 
     try:
         client = boto3.client("bedrock", region_name=region)
+
+        # Get model metadata
         response = client.list_foundation_models()
         summaries = response.get("modelSummaries", [])
+
+        # Get base-ID → inference-profile-ID mapping
+        profile_map = _build_inference_profile_map(client)
 
         models: list[DiscoveredModel] = []
         for summary in summaries:
             if not _should_include(summary):
                 continue
-            model_id = summary["modelId"].strip()
-            model_name = summary.get("modelName", "").strip() or model_id
-            models.append({"id": model_id, "name": model_name})
+            base_id = summary["modelId"].strip()
+            model_name = summary.get("modelName", "").strip() or base_id
+            # Use inference profile ID for invocation if available
+            invocation_id = profile_map.get(base_id, base_id)
+            models.append({"id": invocation_id, "name": model_name})
 
         models.sort(key=lambda m: m["name"])
 
         _cache[cache_key] = models
         _cache_expires_at = now + _CACHE_TTL_SECONDS
+        _has_logged_error = False
         return models
 
     except (ClientError, Exception) as e:

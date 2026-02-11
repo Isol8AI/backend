@@ -76,15 +76,15 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Fallback models used when Bedrock discovery is unavailable (e.g., local dev without AWS creds).
-# IDs use base foundation model format (matching ListFoundationModels API output).
+# IDs use inference profile format (us. prefix) for models that require it.
 FALLBACK_MODELS = [
-    {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet"},
-    {"id": "anthropic.claude-3-5-haiku-20241022-v1:0", "name": "Claude 3.5 Haiku"},
-    {"id": "anthropic.claude-3-opus-20240229-v1:0", "name": "Claude 3 Opus"},
-    {"id": "meta.llama3-3-70b-instruct-v1:0", "name": "Llama 3.3 70B"},
-    {"id": "meta.llama3-1-70b-instruct-v1:0", "name": "Llama 3.1 70B"},
-    {"id": "amazon.nova-pro-v1:0", "name": "Amazon Nova Pro"},
-    {"id": "amazon.nova-lite-v1:0", "name": "Amazon Nova Lite"},
+    {"id": "us.anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet"},
+    {"id": "us.anthropic.claude-3-5-haiku-20241022-v1:0", "name": "Claude 3.5 Haiku"},
+    {"id": "us.anthropic.claude-3-opus-20240229-v1:0", "name": "Claude 3 Opus"},
+    {"id": "us.meta.llama3-3-70b-instruct-v1:0", "name": "Llama 3.3 70B"},
+    {"id": "us.meta.llama3-1-70b-instruct-v1:0", "name": "Llama 3.1 70B"},
+    {"id": "us.amazon.nova-pro-v1:0", "name": "Amazon Nova Pro"},
+    {"id": "us.amazon.nova-lite-v1:0", "name": "Amazon Nova Lite"},
 ]
 
 

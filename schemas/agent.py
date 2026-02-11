@@ -13,7 +13,7 @@ class CreateAgentRequest(BaseModel):
 
     agent_name: str = Field(..., min_length=1, max_length=50, pattern="^[a-zA-Z0-9_-]+$")
     soul_content: Optional[str] = Field(None, max_length=10000)
-    model: str = Field(default="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    model: str = Field(default="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
     encryption_mode: Literal["zero_trust", "background"] = Field(
         default="zero_trust",
         description="Encryption mode: zero_trust (user key, default) or background (KMS, opt-in)",
@@ -47,7 +47,7 @@ class SendAgentMessageRequest(BaseModel):
     """Request to send a message to an agent."""
 
     encrypted_message: EncryptedPayload
-    model: str = Field(default="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    model: str = Field(default="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
     # For zero_trust mode: client decrypts state, re-encrypts to enclave transport key
     encrypted_state: Optional[EncryptedPayload] = Field(
         default=None,

@@ -142,7 +142,7 @@ class BedrockClient:
         This unified API works with ALL Bedrock models.
 
         Args:
-            model_id: Model identifier (e.g., "anthropic.claude-3-5-haiku-20241022-v1:0")
+            model_id: Model identifier (e.g., "us.anthropic.claude-3-5-haiku-20241022-v1:0")
             messages: List of messages in Converse format:
                 [{"role": "user", "content": [{"text": "Hello"}]}]
             system: Optional system prompts: [{"text": "You are helpful."}]
