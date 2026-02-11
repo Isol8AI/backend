@@ -210,7 +210,7 @@ class TestReadAgentStateModel:
 
         result = server._read_agent_state(agent_dir, "luna")
 
-        assert result["model"] == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        assert result["model"] == "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
     def test_falls_back_on_malformed_json(self, tmp_path):
         """Malformed openclaw.json does not crash; uses default model."""
@@ -220,7 +220,7 @@ class TestReadAgentStateModel:
 
         result = server._read_agent_state(agent_dir, "luna")
 
-        assert result["model"] == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        assert result["model"] == "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
     def test_falls_back_when_agent_not_in_config(self, tmp_path):
         """When the requested agent name is not in the config's agents dict."""
