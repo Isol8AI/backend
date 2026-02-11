@@ -210,10 +210,34 @@ const resolvedProvider = provider || "amazon-bedrock";
 process.stderr.write(
   `[Bridge] agent=${agentName} model=${resolvedModel} session=${sessionFile}\n`,
 );
+process.stderr.write(
+  `[Bridge] config.models.providers keys=${Object.keys(config.models?.providers || {}).join(",")}\n`,
+);
+const bedrockCfg = config.models?.providers?.["amazon-bedrock"];
+if (bedrockCfg) {
+  process.stderr.write(
+    `[Bridge] bedrock provider: models=${(bedrockCfg.models || []).length}, api=${bedrockCfg.api}, auth=${bedrockCfg.auth}\n`,
+  );
+  for (const m of bedrockCfg.models || []) {
+    process.stderr.write(
+      `[Bridge]   model: id=${m.id}, maxTokens=${m.maxTokens}, contextWindow=${m.contextWindow}, reasoning=${m.reasoning}\n`,
+    );
+  }
+}
+process.stderr.write(
+  `[Bridge] bedrockDiscovery: enabled=${config.models?.bedrockDiscovery?.enabled}, region=${config.models?.bedrockDiscovery?.region}, filter=${JSON.stringify(config.models?.bedrockDiscovery?.providerFilter)}\n`,
+);
+process.stderr.write(
+  `[Bridge] env: AWS_ACCESS_KEY_ID=${process.env.AWS_ACCESS_KEY_ID ? "set" : "unset"}, AWS_REGION=${process.env.AWS_REGION}, HTTP_PROXY=${process.env.HTTP_PROXY}, AWS_PROFILE=${process.env.AWS_PROFILE || "unset"}\n`,
+);
 
 // ---------------------------------------------------------------------------
 // 7. Run the agent
 // ---------------------------------------------------------------------------
+
+// Diagnostic: dump models.json after ensureOpenClawModelsJson runs
+const modelsJsonPath = `${workspaceDir}/models.json`;
+
 try {
   const result = await runEmbeddedPiAgent({
     // Required
@@ -321,6 +345,18 @@ try {
 } catch (err) {
   emit({ type: "error", message: err.message || String(err) });
   // Exit 0 even on agent errors — the error is communicated via NDJSON
+}
+
+// Diagnostic: dump models.json to see what discovery produced
+try {
+  if (fs.existsSync(modelsJsonPath)) {
+    const raw = fs.readFileSync(modelsJsonPath, "utf-8");
+    process.stderr.write(`[Bridge] models.json (${raw.length} bytes): ${raw.slice(0, 3000)}\n`);
+  } else {
+    process.stderr.write(`[Bridge] models.json NOT FOUND at ${modelsJsonPath}\n`);
+  }
+} catch (err) {
+  process.stderr.write(`[Bridge] models.json read error: ${err.message}\n`);
 }
 
 process.stderr.write("[Bridge] Done\n");
