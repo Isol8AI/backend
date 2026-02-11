@@ -48,9 +48,21 @@ def _supports_streaming(summary: dict) -> bool:
     return summary.get("responseStreamingSupported", False) is True
 
 
+def _is_throughput_variant(model_id: str) -> bool:
+    """Provisioned throughput variants have a throughput suffix after the version.
+
+    e.g. "anthropic.claude-3-haiku-20240307-v1:0:48k" has 3 colon segments.
+    Normal models have at most 2: "anthropic.claude-3-haiku-20240307-v1:0".
+    These variants require purchased provisioned throughput and 404 on on-demand.
+    """
+    return len(model_id.split(":")) > 2
+
+
 def _should_include(summary: dict) -> bool:
     model_id = summary.get("modelId", "").strip()
     if not model_id:
+        return False
+    if _is_throughput_variant(model_id):
         return False
     if not _supports_streaming(summary):
         return False
