@@ -135,19 +135,22 @@ if (!config.models.providers["amazon-bedrock"]) {
     baseUrl: `https://bedrock-runtime.${region}.amazonaws.com`,
     api: "bedrock-converse-stream",
     auth: "aws-sdk",
-    models: [],
+    models: [
+      {
+        id: "us.anthropic.claude-opus-4-5-20251101-v1:0",
+        name: "Claude Opus 4.5",
+        contextWindow: 200000,
+        maxTokens: 16384,
+        reasoning: false,
+        input: ["text", "image"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
   };
 }
 
-// Enable Bedrock auto-discovery
-if (!config.models.bedrockDiscovery) {
-  config.models.bedrockDiscovery = {
-    enabled: true,
-    region: process.env.AWS_REGION || "us-east-1",
-    providerFilter: ["anthropic"],
-    refreshInterval: 3600,
-  };
-}
+// No discovery needed — model is defined explicitly above
+config.models.bedrockDiscovery = { enabled: false };
 
 // Configure local embeddings for vector memory (no external API needed)
 if (!config.agents) {
@@ -204,7 +207,7 @@ if (sessionId) {
 // ---------------------------------------------------------------------------
 // Default model — can be overridden by the request or openclaw.json
 const resolvedModel =
-  model || "us.anthropic.claude-3-5-sonnet-20241022-v2:0";
+  model || "us.anthropic.claude-opus-4-5-20251101-v1:0";
 const resolvedProvider = provider || "amazon-bedrock";
 
 process.stderr.write(
