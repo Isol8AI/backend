@@ -248,6 +248,9 @@ const modelsJsonPath = `${agentDir}/models.json`;
 // Also check the default fallback path in case agentDir param isn't respected
 const defaultModelsJsonPath = `${process.env.HOME || "/root"}/.openclaw/agents/default/agent/models.json`;
 
+// Track accumulated text so we can emit only deltas for streaming
+let lastPartialText = "";
+
 try {
   const result = await runEmbeddedPiAgent({
     // Required
@@ -271,9 +274,14 @@ try {
     onPartialReply: (payload) => {
       process.stderr.write(`[Bridge] onPartialReply called, text_len=${(payload.text || "").length}, keys=${Object.keys(payload).join(",")}\n`);
       if (payload.text) {
-        emit({ type: "partial", text: payload.text });
+        // OpenClaw emits accumulated text (full response so far), not deltas.
+        // Extract only the new text since last emit to avoid duplication.
+        const delta = payload.text.slice(lastPartialText.length);
+        lastPartialText = payload.text;
+        if (delta) {
+          emit({ type: "partial", text: delta });
+        }
       } else {
-        // Emit even with empty text so we know the callback fired
         emit({ type: "partial_empty", keys: Object.keys(payload) });
       }
       if (payload.mediaUrls?.length) {
