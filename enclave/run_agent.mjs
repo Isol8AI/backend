@@ -240,8 +240,10 @@ process.stderr.write(
 // is disconnected from our workspace. Pass workspaceDir so everything is colocated.
 const agentDir = workspaceDir;
 
-// Diagnostic: dump models.json after ensureOpenClawModelsJson runs
+// Diagnostic paths for models.json
 const modelsJsonPath = `${agentDir}/models.json`;
+// Also check the default fallback path in case agentDir param isn't respected
+const defaultModelsJsonPath = `${process.env.HOME || "/root"}/.openclaw/agents/default/agent/models.json`;
 
 try {
   const result = await runEmbeddedPiAgent({
@@ -353,16 +355,57 @@ try {
   // Exit 0 even on agent errors — the error is communicated via NDJSON
 }
 
-// Diagnostic: dump models.json to see what discovery produced
+// Diagnostic: dump models.json and check for both known failure modes
 try {
   if (fs.existsSync(modelsJsonPath)) {
     const raw = fs.readFileSync(modelsJsonPath, "utf-8");
     process.stderr.write(`[Bridge] models.json (${raw.length} bytes): ${raw.slice(0, 3000)}\n`);
+
+    // Failure mode 1: Discovery returned 0 models
+    // If models.json has "amazon-bedrock" with models:[] or no models key,
+    // it means discoverBedrockModels() returned empty (API error or filter mismatch).
+    // resolveModel() then falls to fallback with DEFAULT_CONTEXT_TOKENS=200000 → error.
+    try {
+      const parsed = JSON.parse(raw);
+      const bedrockProvider = parsed?.providers?.["amazon-bedrock"];
+      const modelCount = Array.isArray(bedrockProvider?.models) ? bedrockProvider.models.length : 0;
+      process.stderr.write(`[Bridge] DIAG: amazon-bedrock models count=${modelCount}\n`);
+      if (modelCount === 0) {
+        process.stderr.write(`[Bridge] DIAG: *** DISCOVERY RETURNED 0 MODELS — resolveModel will use fallback with maxTokens=200000 ***\n`);
+      }
+
+      // Failure mode 2: Model ID mismatch
+      // Discovery may register models with base IDs (anthropic.claude-...) instead of
+      // inference profile IDs (us.anthropic.claude-...). If run_agent.mjs requests a
+      // profile ID but the registry only has the base ID, resolveModel fails.
+      if (modelCount > 0) {
+        const modelIds = bedrockProvider.models.map((m) => m.id);
+        const hasRequestedModel = modelIds.includes(resolvedModel);
+        process.stderr.write(`[Bridge] DIAG: requested model="${resolvedModel}", found in models.json=${hasRequestedModel}\n`);
+        if (!hasRequestedModel) {
+          process.stderr.write(`[Bridge] DIAG: *** MODEL ID MISMATCH — available IDs: ${modelIds.join(", ")} ***\n`);
+        }
+      }
+    } catch (parseErr) {
+      process.stderr.write(`[Bridge] DIAG: Failed to parse models.json: ${parseErr.message}\n`);
+    }
   } else {
     process.stderr.write(`[Bridge] models.json NOT FOUND at ${modelsJsonPath}\n`);
+    process.stderr.write(`[Bridge] DIAG: *** NO models.json — ensureOpenClawModelsJson may have failed or written to a different path ***\n`);
   }
 } catch (err) {
   process.stderr.write(`[Bridge] models.json read error: ${err.message}\n`);
+}
+
+// Also check the default fallback path (in case agentDir param wasn't respected)
+if (defaultModelsJsonPath !== modelsJsonPath) {
+  try {
+    if (fs.existsSync(defaultModelsJsonPath)) {
+      const raw = fs.readFileSync(defaultModelsJsonPath, "utf-8");
+      process.stderr.write(`[Bridge] DIAG: default models.json EXISTS at ${defaultModelsJsonPath} (${raw.length} bytes)\n`);
+      process.stderr.write(`[Bridge] DIAG: This means OpenClaw ignored our agentDir and used the default path!\n`);
+    }
+  } catch {}
 }
 
 process.stderr.write("[Bridge] Done\n");
