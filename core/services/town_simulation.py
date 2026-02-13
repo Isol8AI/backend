@@ -128,9 +128,7 @@ class TownSimulation:
                 elif agent_state["current_activity"] == "idle":
                     last_decision = agent_state.get("last_decision_at")
                     if not last_decision or (now - last_decision).total_seconds() > DECISION_COOLDOWN:
-                        target_loc = self._pick_random_location(
-                            exclude=agent_state["current_location"]
-                        )
+                        target_loc = self._pick_random_location(exclude=agent_state["current_location"])
                         await service.update_agent_state(
                             agent_id,
                             target_location=target_loc,
@@ -149,11 +147,14 @@ class TownSimulation:
         """Send state update to all connected viewers."""
         import json
 
-        message = json.dumps({
-            "type": "state_update",
-            "agents": states,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }, default=str)
+        message = json.dumps(
+            {
+                "type": "state_update",
+                "agents": states,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            default=str,
+        )
 
         dead_viewers = []
         for queue in self._viewers:

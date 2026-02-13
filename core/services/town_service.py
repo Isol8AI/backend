@@ -93,7 +93,7 @@ class TownService:
     async def get_active_agents(self) -> List[TownAgent]:
         """Get all active town agents."""
         result = await self.db.execute(
-            select(TownAgent).where(TownAgent.is_active == True).order_by(TownAgent.joined_at)
+            select(TownAgent).where(TownAgent.is_active.is_(True)).order_by(TownAgent.joined_at)
         )
         return list(result.scalars().all())
 
@@ -102,7 +102,7 @@ class TownService:
         result = await self.db.execute(
             select(TownAgent, TownState)
             .join(TownState, TownState.agent_id == TownAgent.id)
-            .where(TownAgent.is_active == True)
+            .where(TownAgent.is_active.is_(True))
         )
         rows = result.all()
 
@@ -124,9 +124,7 @@ class TownService:
             for agent, state in rows
         ]
 
-    async def get_or_create_relationship(
-        self, agent_a_id: UUID, agent_b_id: UUID
-    ) -> Tuple[TownRelationship, bool]:
+    async def get_or_create_relationship(self, agent_a_id: UUID, agent_b_id: UUID) -> Tuple[TownRelationship, bool]:
         """Get or create a relationship between two agents."""
         a_id, b_id = sorted([agent_a_id, agent_b_id], key=str)
 
@@ -153,9 +151,7 @@ class TownService:
         new_type: Optional[str] = None,
     ) -> TownRelationship:
         """Update relationship after an interaction."""
-        result = await self.db.execute(
-            select(TownRelationship).where(TownRelationship.id == relationship_id)
-        )
+        result = await self.db.execute(select(TownRelationship).where(TownRelationship.id == relationship_id))
         rel = result.scalar_one()
 
         rel.affinity_score = max(-100, min(100, rel.affinity_score + affinity_delta))
@@ -192,15 +188,11 @@ class TownService:
     async def get_recent_conversations(self, limit: int = 20) -> List[TownConversation]:
         """Get recent town conversations."""
         result = await self.db.execute(
-            select(TownConversation)
-            .order_by(TownConversation.started_at.desc())
-            .limit(limit)
+            select(TownConversation).order_by(TownConversation.started_at.desc()).limit(limit)
         )
         return list(result.scalars().all())
 
-    async def _get_town_agent(
-        self, user_id: str, agent_name: str
-    ) -> Optional[TownAgent]:
+    async def _get_town_agent(self, user_id: str, agent_name: str) -> Optional[TownAgent]:
         """Get a town agent by user_id and agent_name."""
         result = await self.db.execute(
             select(TownAgent).where(
@@ -212,9 +204,7 @@ class TownService:
 
     async def get_town_agent_by_id(self, agent_id: UUID) -> Optional[TownAgent]:
         """Get a town agent by its UUID."""
-        result = await self.db.execute(
-            select(TownAgent).where(TownAgent.id == agent_id)
-        )
+        result = await self.db.execute(select(TownAgent).where(TownAgent.id == agent_id))
         return result.scalar_one_or_none()
 
     async def update_agent_state(
@@ -223,9 +213,7 @@ class TownService:
         **kwargs,
     ) -> Optional[TownState]:
         """Update an agent's town state."""
-        result = await self.db.execute(
-            select(TownState).where(TownState.agent_id == agent_id)
-        )
+        result = await self.db.execute(select(TownState).where(TownState.agent_id == agent_id))
         state = result.scalar_one_or_none()
         if not state:
             return None

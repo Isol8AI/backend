@@ -135,10 +135,7 @@ async def get_conversations(
                 ended_at=c.ended_at,
                 turn_count=c.turn_count,
                 topic_summary=c.topic_summary,
-                public_log=[
-                    ConversationTurn(speaker=t["speaker"], text=t["text"])
-                    for t in (c.public_log or [])
-                ],
+                public_log=[ConversationTurn(speaker=t["speaker"], text=t["text"]) for t in (c.public_log or [])],
             )
         )
 
@@ -151,6 +148,7 @@ async def town_stream(websocket: WebSocket):
     await websocket.accept()
 
     from main import get_town_simulation
+
     sim = get_town_simulation()
     if not sim:
         await websocket.close(code=1011, reason="Simulation not running")

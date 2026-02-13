@@ -1,7 +1,5 @@
 """Tests for TownSimulation engine."""
 
-import pytest
-
 from core.services.town_simulation import TownSimulation, TOWN_LOCATIONS
 
 

@@ -185,9 +185,7 @@ class TestTownServiceRelationships:
         agents = await service.get_active_agents()
         rel, _ = await service.get_or_create_relationship(agents[0].id, agents[1].id)
 
-        updated = await service.update_relationship(
-            rel.id, affinity_delta=10, new_type="acquaintance"
-        )
+        updated = await service.update_relationship(rel.id, affinity_delta=10, new_type="acquaintance")
 
         assert updated.affinity_score == 10
         assert updated.interaction_count == 1

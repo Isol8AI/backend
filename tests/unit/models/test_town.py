@@ -1,7 +1,6 @@
 """Tests for GooseTown database models."""
 
 import pytest
-from sqlalchemy import select
 
 from models.town import TownAgent, TownState, TownConversation, TownRelationship
 
