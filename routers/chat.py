@@ -21,7 +21,7 @@ from core.auth import AuthContext, get_current_user
 from core.config import get_available_models, settings
 from core.database import get_db, get_session_factory
 from core.services.chat_service import ChatService
-from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
+from schemas.encryption import EncryptedPayloadSchema, SendEncryptedMessageRequest
 from schemas.chat import (
     CreateSessionRequest,
     SessionResponse,
@@ -234,7 +234,7 @@ async def get_session_messages(
                     id=m.id,
                     session_id=m.session_id,
                     role=m.role,
-                    encrypted_content=EncryptedPayload(**m.encrypted_payload),
+                    encrypted_content=EncryptedPayloadSchema(**m.encrypted_payload),
                     model_used=m.model_used,
                     created_at=m.created_at,
                 )
@@ -361,12 +361,12 @@ async def chat_stream_encrypted(
             is_new_session = True
 
     # Convert hex-encoded API payloads to bytes-based crypto payloads
-    encrypted_msg = request.encrypted_message.to_crypto_payload()
+    encrypted_msg = request.encrypted_message.to_crypto()
 
     encrypted_history = []
     if request.encrypted_history:
         for h in request.encrypted_history:
-            encrypted_history.append(h.to_crypto_payload())
+            encrypted_history.append(h.to_crypto())
 
     # Fetch user/org metadata from Clerk for AWS credential resolution
     user_metadata = None
@@ -416,12 +416,12 @@ async def chat_stream_encrypted(
                     if chunk.encrypted_content:
                         chunk_count += 1
                         # Convert bytes-based crypto payload to hex-encoded API payload
-                        api_payload = EncryptedPayload.from_crypto_payload(chunk.encrypted_content)
+                        api_payload = EncryptedPayloadSchema.from_crypto(chunk.encrypted_content)
                         yield f"data: {json.dumps({'type': 'encrypted_chunk', 'encrypted_content': api_payload.model_dump()})}\n\n"
 
                     if chunk.encrypted_thinking:
                         # Send thinking chunk
-                        api_payload = EncryptedPayload.from_crypto_payload(chunk.encrypted_thinking)
+                        api_payload = EncryptedPayloadSchema.from_crypto(chunk.encrypted_thinking)
                         yield f"data: {json.dumps({'type': 'thinking', 'encrypted_content': api_payload.model_dump()})}\n\n"
 
                     if chunk.is_final and chunk.stored_user_message and chunk.stored_assistant_message:

@@ -221,11 +221,11 @@ class TestAgentChatWSRequestValidation:
     def test_valid_request(self):
         """All fields present and valid should create a valid request."""
         from schemas.agent import AgentChatWSRequest
-        from schemas.encryption import EncryptedPayload
+        from schemas.encryption import EncryptedPayloadSchema
 
         request = AgentChatWSRequest(
             agent_name="my-agent",
-            encrypted_message=EncryptedPayload(
+            encrypted_message=EncryptedPayloadSchema(
                 ephemeral_public_key="a" * 64,
                 iv="b" * 32,
                 ciphertext="c" * 64,
@@ -243,12 +243,12 @@ class TestAgentChatWSRequestValidation:
         """agent_name > 50 chars should be rejected."""
         from pydantic import ValidationError
         from schemas.agent import AgentChatWSRequest
-        from schemas.encryption import EncryptedPayload
+        from schemas.encryption import EncryptedPayloadSchema
 
         with pytest.raises(ValidationError) as exc_info:
             AgentChatWSRequest(
                 agent_name="a" * 51,
-                encrypted_message=EncryptedPayload(
+                encrypted_message=EncryptedPayloadSchema(
                     ephemeral_public_key="a" * 64,
                     iv="b" * 32,
                     ciphertext="c" * 64,
@@ -265,12 +265,12 @@ class TestAgentChatWSRequestValidation:
         """Empty agent_name should be rejected."""
         from pydantic import ValidationError
         from schemas.agent import AgentChatWSRequest
-        from schemas.encryption import EncryptedPayload
+        from schemas.encryption import EncryptedPayloadSchema
 
         with pytest.raises(ValidationError) as exc_info:
             AgentChatWSRequest(
                 agent_name="",
-                encrypted_message=EncryptedPayload(
+                encrypted_message=EncryptedPayloadSchema(
                     ephemeral_public_key="a" * 64,
                     iv="b" * 32,
                     ciphertext="c" * 64,

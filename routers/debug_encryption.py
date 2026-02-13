@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from core.auth import get_current_user, AuthContext
 from core.database import get_db
-from core.enclave import get_enclave, EncryptionContext
+from core.enclave import get_enclave, HkdfContext
 from models.user import User
 from models.organization_membership import OrganizationMembership
 from models.session import Session
@@ -210,11 +210,11 @@ async def get_encryption_report(
 
     # 4. Encryption contexts
     contexts = EncryptionContexts(
-        client_to_enclave=EncryptionContext.CLIENT_TO_ENCLAVE.value,
-        enclave_to_client=EncryptionContext.ENCLAVE_TO_CLIENT.value,
-        user_message_storage=EncryptionContext.USER_MESSAGE_STORAGE.value,
-        assistant_message_storage=EncryptionContext.ASSISTANT_MESSAGE_STORAGE.value,
-        org_key_distribution=EncryptionContext.ORG_KEY_DISTRIBUTION.value,
+        client_to_enclave=HkdfContext.CLIENT_TO_ENCLAVE.value,
+        enclave_to_client=HkdfContext.ENCLAVE_TO_CLIENT.value,
+        user_message_storage=HkdfContext.USER_MESSAGE_STORAGE.value,
+        assistant_message_storage=HkdfContext.ASSISTANT_MESSAGE_STORAGE.value,
+        org_key_distribution=HkdfContext.ORG_KEY_DISTRIBUTION.value,
     )
 
     # 5. Static algorithm info
@@ -284,9 +284,9 @@ async def get_encryption_report(
         for msg in messages:
             # Determine storage context based on role
             storage_context = (
-                EncryptionContext.ASSISTANT_MESSAGE_STORAGE.value
+                HkdfContext.ASSISTANT_MESSAGE_STORAGE.value
                 if msg.role == "assistant"
-                else EncryptionContext.USER_MESSAGE_STORAGE.value
+                else HkdfContext.USER_MESSAGE_STORAGE.value
             )
 
             sample_messages.append(

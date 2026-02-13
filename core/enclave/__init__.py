@@ -15,7 +15,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-class EncryptionContext(str, Enum):
+class HkdfContext(str, Enum):
     """
     HKDF context strings for domain separation.
 
@@ -163,7 +163,7 @@ from .agent_runner import AgentRunner, AgentConfig, AgentRunResult
 from .agent_handler import AgentHandler, AgentMessageRequest, AgentMessageResponse, AgentStreamRequest
 
 __all__ = [
-    "EncryptionContext",
+    "HkdfContext",
     "EnclaveInterface",
     "ProcessedMessage",
     "StreamChunk",

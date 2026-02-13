@@ -28,7 +28,7 @@ def validate_hex_string(value: str, expected_length: Optional[int] = None) -> st
     return value.lower()
 
 
-class EncryptedPayload(BaseModel):
+class EncryptedPayloadSchema(BaseModel):
     """
     Standard encrypted payload structure.
     All fields are hex-encoded strings.
@@ -69,12 +69,8 @@ class EncryptedPayload(BaseModel):
     def validate_hkdf_salt(cls, v: str) -> str:
         return validate_hex_string(v, 64)
 
-    def to_crypto_payload(self) -> "CryptoEncryptedPayload":
-        """
-        Convert hex-encoded API payload to bytes-based crypto payload.
-
-        Use this when passing encrypted data to crypto operations.
-        """
+    def to_crypto(self) -> "CryptoEncryptedPayload":
+        """Convert hex-encoded API payload to bytes-based crypto payload."""
         from core.crypto import EncryptedPayload as CryptoEncryptedPayload
 
         return CryptoEncryptedPayload(
@@ -86,12 +82,8 @@ class EncryptedPayload(BaseModel):
         )
 
     @classmethod
-    def from_crypto_payload(cls, crypto_payload: "CryptoEncryptedPayload") -> "EncryptedPayload":
-        """
-        Convert bytes-based crypto payload to hex-encoded API payload.
-
-        Use this when returning encrypted data from crypto operations to the API.
-        """
+    def from_crypto(cls, crypto_payload: "CryptoEncryptedPayload") -> "EncryptedPayloadSchema":
+        """Convert bytes-based crypto payload to hex-encoded API payload."""
         return cls(
             ephemeral_public_key=crypto_payload.ephemeral_public_key.hex(),
             iv=crypto_payload.iv.hex(),
@@ -205,7 +197,7 @@ class EncryptedMessageResponse(BaseModel):
     role: str
     model_used: Optional[str] = None
     created_at: datetime
-    encrypted_content: EncryptedPayload
+    encrypted_content: EncryptedPayloadSchema
 
     model_config = {"from_attributes": True}
 
@@ -220,8 +212,8 @@ class SendEncryptedMessageRequest(BaseModel):
 
     session_id: Optional[str] = Field(None, description="Session ID. If None, creates new session.")
     model: str = Field(..., description="Model ID to use for response")
-    encrypted_message: EncryptedPayload = Field(..., description="Message encrypted to enclave's public key")
-    encrypted_history: Optional[list[EncryptedPayload]] = Field(
+    encrypted_message: EncryptedPayloadSchema = Field(..., description="Message encrypted to enclave's public key")
+    encrypted_history: Optional[list[EncryptedPayloadSchema]] = Field(
         None, description="Previous messages re-encrypted to enclave for context"
     )
     facts_context: Optional[str] = Field(
@@ -245,7 +237,7 @@ class EncryptedChatResponse(BaseModel):
 
     session_id: str
     message_id: str
-    encrypted_response: EncryptedPayload = Field(..., description="Assistant response encrypted to user's public key")
+    encrypted_response: EncryptedPayloadSchema = Field(..., description="Assistant response encrypted to user's public key")
     model_used: str
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None

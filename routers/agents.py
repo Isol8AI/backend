@@ -16,7 +16,7 @@ from core.auth import AuthContext, get_current_user
 from core.database import get_db
 from core.enclave import get_enclave
 from core.enclave.agent_handler import AgentHandler, AgentMessageRequest
-from core.crypto import EncryptedPayload as CryptoEncryptedPayload
+from core.crypto import EncryptedPayload
 from core.services.agent_service import AgentService
 from models.user import User
 from schemas.agent import (
@@ -26,7 +26,7 @@ from schemas.agent import (
     SendAgentMessageRequest,
     AgentMessageResponse,
 )
-from schemas.encryption import EncryptedPayload
+from schemas.encryption import EncryptedPayloadSchema
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -195,33 +195,11 @@ async def get_agent_state(
     )
 
     if not state or not state.encrypted_tarball:
-        print(f"AGENT_DEBUG: GET state for {auth.user_id}/{agent_name}: no state (new agent)", flush=True)
         return {"encrypted_state": None, "encryption_mode": "zero_trust"}
 
     # Deserialize and return as API payload
     encrypted_payload = _deserialize_encrypted_payload(state.encrypted_tarball)
-    api_payload = EncryptedPayload.from_crypto_payload(encrypted_payload)
-
-    print(
-        f"AGENT_DEBUG: GET state for {auth.user_id}/{agent_name}: mode={state.encryption_mode}, ephemeral_key={api_payload.ephemeral_public_key[:16]}..., ciphertext_len={len(api_payload.ciphertext)}, hkdf_salt={api_payload.hkdf_salt[:16]}...",
-        flush=True,
-    )
-    # TRACE_CRYPTO: Full field values at API serve boundary
-    import hashlib as _hl
-
-    print(f"TRACE_CRYPTO:API_SERVE eph_pub={api_payload.ephemeral_public_key}", flush=True)
-    print(f"TRACE_CRYPTO:API_SERVE iv={api_payload.iv}", flush=True)
-    print(
-        f"TRACE_CRYPTO:API_SERVE ct_sha256={_hl.sha256(bytes.fromhex(api_payload.ciphertext)).hexdigest()} ct_hex_len={len(api_payload.ciphertext)}",
-        flush=True,
-    )
-    print(f"TRACE_CRYPTO:API_SERVE auth_tag={api_payload.auth_tag}", flush=True)
-    print(f"TRACE_CRYPTO:API_SERVE hkdf_salt={api_payload.hkdf_salt}", flush=True)
-    # Also log raw DB bytes hash for comparison
-    print(
-        f"TRACE_CRYPTO:API_SERVE raw_db_sha256={_hl.sha256(state.encrypted_tarball).hexdigest()} raw_db_len={len(state.encrypted_tarball)}",
-        flush=True,
-    )
+    api_payload = EncryptedPayloadSchema.from_crypto(encrypted_payload)
 
     return {
         "encrypted_state": api_payload,
@@ -295,7 +273,7 @@ async def send_agent_message(
 
     if encryption_mode == "zero_trust" and request.encrypted_state:
         # Client decrypted and re-encrypted state to enclave transport key
-        encrypted_state = request.encrypted_state.to_crypto_payload()
+        encrypted_state = request.encrypted_state.to_crypto()
     elif encryption_mode == "background" and existing_state and existing_state.encrypted_tarball:
         # Background mode: load KMS envelope from DB
         kms_envelope = json.loads(existing_state.encrypted_tarball.decode())
@@ -308,7 +286,7 @@ async def send_agent_message(
         }
 
     # Convert API payload to crypto payload
-    encrypted_message = request.encrypted_message.to_crypto_payload()
+    encrypted_message = request.encrypted_message.to_crypto()
 
     # Process through enclave
     handler = AgentHandler(enclave=enclave)
@@ -370,7 +348,7 @@ async def send_agent_message(
     await db.commit()
 
     # Convert crypto payload to API payload
-    api_response = EncryptedPayload.from_crypto_payload(response.encrypted_response)
+    api_response = EncryptedPayloadSchema.from_crypto(response.encrypted_response)
 
     return AgentMessageResponse(
         success=True,
@@ -383,7 +361,7 @@ async def send_agent_message(
 # =============================================================================
 
 
-def _serialize_encrypted_payload(payload: CryptoEncryptedPayload) -> bytes:
+def _serialize_encrypted_payload(payload: EncryptedPayload) -> bytes:
     """Serialize encrypted payload to bytes for storage."""
     return json.dumps(
         {
@@ -396,10 +374,10 @@ def _serialize_encrypted_payload(payload: CryptoEncryptedPayload) -> bytes:
     ).encode()
 
 
-def _deserialize_encrypted_payload(data: bytes) -> CryptoEncryptedPayload:
+def _deserialize_encrypted_payload(data: bytes) -> EncryptedPayload:
     """Deserialize encrypted payload from storage."""
     obj = json.loads(data.decode())
-    return CryptoEncryptedPayload(
+    return EncryptedPayload(
         ephemeral_public_key=bytes.fromhex(obj["ephemeral_public_key"]),
         iv=bytes.fromhex(obj["iv"]),
         ciphertext=bytes.fromhex(obj["ciphertext"]),

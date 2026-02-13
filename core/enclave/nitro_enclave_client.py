@@ -280,16 +280,10 @@ class NitroEnclaveClient(EnclaveInterface):
         def stream_in_thread():
             """Run sync generator in thread, put events in async queue."""
             try:
-                event_num = 0
                 for event in self._send_command_stream(command):
-                    event_num += 1
-                    print(f"[Parent] Thread: received event #{event_num} at {time.time():.3f}", flush=True)
-                    # Thread-safe way to put into asyncio.Queue
                     loop.call_soon_threadsafe(event_queue.put_nowait, ("event", event))
                 loop.call_soon_threadsafe(event_queue.put_nowait, ("done", None))
-                print(f"[Parent] Thread: done, total events={event_num}", flush=True)
             except Exception as e:
-                print(f"[Parent] Thread: error {e}", flush=True)
                 loop.call_soon_threadsafe(event_queue.put_nowait, ("error", e))
 
         # Start the sync generator in a thread pool
@@ -323,11 +317,9 @@ class NitroEnclaveClient(EnclaveInterface):
                     break
 
                 if event.get("encrypted_content"):
-                    print(f"[Parent] Async: yielding encrypted_content at {time.time():.3f}", flush=True)
                     yield StreamChunk(encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"]))
 
                 if event.get("is_final"):
-                    print(f"[Parent] Async: yielding is_final at {time.time():.3f}", flush=True)
                     yield StreamChunk(
                         stored_user_message=EncryptedPayload.from_dict(event["stored_user_message"]),
                         stored_assistant_message=EncryptedPayload.from_dict(event["stored_assistant_message"]),
@@ -517,18 +509,13 @@ class NitroEnclaveClient(EnclaveInterface):
             logger.info("Credentials expiring soon, refreshing...")
             await self._push_credentials_async()
 
-        # For background mode, use kms_envelope instead of encrypted_state
-        encrypted_state_dict = None
-        if encryption_mode == "background" and kms_envelope:
-            # Serialize bytes to hex strings for JSON transmission
-            encrypted_state_dict = {
-                "encrypted_dek": kms_envelope["encrypted_dek"].hex(),
-                "iv": kms_envelope["iv"].hex(),
-                "ciphertext": kms_envelope["ciphertext"].hex(),
-                "auth_tag": kms_envelope["auth_tag"].hex(),
-            }
-        elif encrypted_state:
-            encrypted_state_dict = encrypted_state.to_dict()
+        from .encryption_strategies import get_strategy
+
+        strategy = get_strategy(encryption_mode)
+        encrypted_state_dict = strategy.prepare_state_for_vsock(
+            encrypted_state=encrypted_state,
+            kms_envelope=kms_envelope,
+        )
 
         command = {
             "command": "RUN_AGENT",
@@ -558,31 +545,19 @@ class NitroEnclaveClient(EnclaveInterface):
                     error=error_msg,
                 )
 
-            # Parse encrypted payloads from response
+            # Parse encrypted response
             encrypted_response = None
             if response.get("encrypted_response"):
                 encrypted_response = EncryptedPayload.from_dict(response["encrypted_response"])
 
-            # Handle encrypted_state based on encryption_mode
-            encrypted_state_result = None
-            kms_envelope_result = None
-
-            if response.get("encrypted_state"):
-                if encryption_mode == "background":
-                    # Background mode: encrypted_state is a raw KMS envelope dict
-                    kms_envelope_result = response["encrypted_state"]
-                else:
-                    # Zero trust mode: encrypted_state is an EncryptedPayload
-                    encrypted_state_result = EncryptedPayload.from_dict(response["encrypted_state"])
-
-            encrypted_dek = response.get("encrypted_dek")  # Deprecated, kms_envelope contains it
+            # Extract state using strategy
+            state_result = strategy.extract_state_from_response(response)
 
             return AgentRunResponse(
                 success=True,
                 encrypted_response=encrypted_response,
-                encrypted_state=encrypted_state_result,
-                encrypted_dek=encrypted_dek,
-                kms_envelope=kms_envelope_result,
+                encrypted_state=state_result["encrypted_state"],
+                kms_envelope=state_result["kms_envelope"],
             )
 
         except EnclaveConnectionError as e:
@@ -671,37 +646,8 @@ class NitroEnclaveClient(EnclaveInterface):
 
                 event = item
 
-                # Log diagnostic info from enclave (not yielded to caller)
+                # Skip diagnostic info from enclave (not yielded to caller)
                 if event.get("diagnostic"):
-                    diag = event["diagnostic"]
-                    print(
-                        f"ENCLAVE_DIAG: chunk_count={diag.get('chunk_count')}, "
-                        f"event_types={diag.get('event_types')}, "
-                        f"block_fallback={diag.get('has_block_fallback')}, "
-                        f"block_len={diag.get('block_text_len')}",
-                        flush=True,
-                    )
-                    done_meta = diag.get("done_meta", {})
-                    print(
-                        f"ENCLAVE_DIAG_META: stop={done_meta.get('stopReason')}, "
-                        f"duration={done_meta.get('durationMs')}ms, "
-                        f"tokens_in={done_meta.get('inputTokens')}, "
-                        f"tokens_out={done_meta.get('outputTokens')}, "
-                        f"error={done_meta.get('error')}, "
-                        f"result_text_len={diag.get('done_result_text_len')}, "
-                        f"result_preview={diag.get('done_result_text_preview', '')[:100]!r}",
-                        flush=True,
-                    )
-                    if diag.get("agent_events"):
-                        print(
-                            f"ENCLAVE_DIAG_EVENTS: {diag.get('agent_events')}",
-                            flush=True,
-                        )
-                    if diag.get("bridge_stderr"):
-                        print(
-                            f"ENCLAVE_DIAG_STDERR: {diag.get('bridge_stderr')}",
-                            flush=True,
-                        )
                     continue
 
                 if event.get("error"):
@@ -716,20 +662,8 @@ class NitroEnclaveClient(EnclaveInterface):
                     encrypted_state_result = None
                     if event.get("encrypted_state"):
                         encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
-                        # TRACE_CRYPTO: Log what we received from vsock
-                        import hashlib as _hl
 
-                        _rd = event["encrypted_state"]
-                        print(f"TRACE_CRYPTO:VSOCK_RECV eph_pub={_rd['ephemeral_public_key']}", flush=True)
-                        print(f"TRACE_CRYPTO:VSOCK_RECV iv={_rd['iv']}", flush=True)
-                        print(
-                            f"TRACE_CRYPTO:VSOCK_RECV ct_sha256={_hl.sha256(bytes.fromhex(_rd['ciphertext'])).hexdigest()} ct_hex_len={len(_rd['ciphertext'])}",
-                            flush=True,
-                        )
-                        print(f"TRACE_CRYPTO:VSOCK_RECV auth_tag={_rd['auth_tag']}", flush=True)
-                        print(f"TRACE_CRYPTO:VSOCK_RECV hkdf_salt={_rd['hkdf_salt']}", flush=True)
-
-                    encrypted_dek = event.get("encrypted_dek")  # None for zero_trust, KMS-encrypted DEK for background
+                    encrypted_dek = event.get("encrypted_dek")
 
                     yield AgentStreamChunk(
                         encrypted_state=encrypted_state_result,

@@ -377,10 +377,13 @@ class TestValidModelIds:
     """Tests for model validation."""
 
     def test_valid_model_ids_populated(self):
-        """_get_valid_model_ids() should contain all fallback model IDs."""
-        valid_ids = _get_valid_model_ids()
-        for model in FALLBACK_MODELS:
-            assert model["id"] in valid_ids
+        """_get_valid_model_ids() should contain all fallback model IDs when discovery returns fallbacks."""
+        from unittest.mock import patch
+
+        with patch("routers.websocket_chat.get_available_models", return_value=FALLBACK_MODELS):
+            valid_ids = _get_valid_model_ids()
+            for model in FALLBACK_MODELS:
+                assert model["id"] in valid_ids
 
     def test_valid_model_ids_is_set(self):
         """_get_valid_model_ids() should return a set for O(1) lookup."""
@@ -392,9 +395,9 @@ class TestEncryptedPayloadValidation:
 
     def test_valid_payload_accepted(self):
         """Valid encrypted payload should be accepted."""
-        from schemas.encryption import EncryptedPayload
+        from schemas.encryption import EncryptedPayloadSchema
 
-        payload = EncryptedPayload(
+        payload = EncryptedPayloadSchema(
             ephemeral_public_key="a" * 64,
             iv="b" * 32,
             ciphertext="c" * 64,
@@ -406,10 +409,10 @@ class TestEncryptedPayloadValidation:
     def test_invalid_hex_rejected(self):
         """Invalid hex characters should be rejected."""
         from pydantic import ValidationError
-        from schemas.encryption import EncryptedPayload
+        from schemas.encryption import EncryptedPayloadSchema
 
         with pytest.raises(ValidationError):
-            EncryptedPayload(
+            EncryptedPayloadSchema(
                 ephemeral_public_key="g" * 64,  # 'g' is not valid hex
                 iv="b" * 32,
                 ciphertext="c" * 64,
@@ -420,10 +423,10 @@ class TestEncryptedPayloadValidation:
     def test_wrong_length_rejected(self):
         """Fields with wrong length should be rejected."""
         from pydantic import ValidationError
-        from schemas.encryption import EncryptedPayload
+        from schemas.encryption import EncryptedPayloadSchema
 
         with pytest.raises(ValidationError):
-            EncryptedPayload(
+            EncryptedPayloadSchema(
                 ephemeral_public_key="a" * 32,  # Should be 64 hex chars
                 iv="b" * 32,
                 ciphertext="c" * 64,
@@ -437,11 +440,11 @@ class TestSendEncryptedMessageRequestValidation:
 
     def test_valid_request_accepted(self):
         """Valid request should be accepted."""
-        from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
+        from schemas.encryption import EncryptedPayloadSchema, SendEncryptedMessageRequest
 
         request = SendEncryptedMessageRequest(
             model=FALLBACK_MODELS[0]["id"],
-            encrypted_message=EncryptedPayload(
+            encrypted_message=EncryptedPayloadSchema(
                 ephemeral_public_key="a" * 64,
                 iv="b" * 32,
                 ciphertext="c" * 64,
@@ -454,12 +457,12 @@ class TestSendEncryptedMessageRequestValidation:
 
     def test_optional_session_id_accepted(self):
         """Request with optional session_id should be accepted."""
-        from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
+        from schemas.encryption import EncryptedPayloadSchema, SendEncryptedMessageRequest
 
         request = SendEncryptedMessageRequest(
             session_id="test-session-id",
             model=FALLBACK_MODELS[0]["id"],
-            encrypted_message=EncryptedPayload(
+            encrypted_message=EncryptedPayloadSchema(
                 ephemeral_public_key="a" * 64,
                 iv="b" * 32,
                 ciphertext="c" * 64,
@@ -473,12 +476,12 @@ class TestSendEncryptedMessageRequestValidation:
     def test_invalid_client_transport_key_rejected(self):
         """Invalid client_transport_public_key should be rejected."""
         from pydantic import ValidationError
-        from schemas.encryption import EncryptedPayload, SendEncryptedMessageRequest
+        from schemas.encryption import EncryptedPayloadSchema, SendEncryptedMessageRequest
 
         with pytest.raises(ValidationError):
             SendEncryptedMessageRequest(
                 model=FALLBACK_MODELS[0]["id"],
-                encrypted_message=EncryptedPayload(
+                encrypted_message=EncryptedPayloadSchema(
                     ephemeral_public_key="a" * 64,
                     iv="b" * 32,
                     ciphertext="c" * 64,

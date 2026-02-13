@@ -11,7 +11,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field, field_validator
 
-from .encryption import EncryptedPayload, validate_hex_string
+from .encryption import EncryptedPayloadSchema, validate_hex_string
 
 
 class CreateOrgKeysRequest(BaseModel):
@@ -34,7 +34,7 @@ class CreateOrgKeysRequest(BaseModel):
 
     # Admin's copy of org key encrypted to their personal public key
     # (so admin can use org encryption immediately)
-    admin_member_encrypted_key: EncryptedPayload = Field(
+    admin_member_encrypted_key: EncryptedPayloadSchema = Field(
         ..., description="Org private key encrypted to admin's personal public key"
     )
 
@@ -91,7 +91,7 @@ class DistributeOrgKeyRequest(BaseModel):
     """Request to distribute org key to a member."""
 
     membership_id: str = Field(..., description="Membership ID of the member to receive the key")
-    encrypted_org_key: EncryptedPayload = Field(..., description="Org private key encrypted to member's public key")
+    encrypted_org_key: EncryptedPayloadSchema = Field(..., description="Org private key encrypted to member's public key")
 
 
 class BatchDistributeOrgKeyRequest(BaseModel):
@@ -151,7 +151,7 @@ class MembershipResponse(BaseModel):
 class MembershipWithKeyResponse(MembershipResponse):
     """Member's membership including their encrypted org key."""
 
-    encrypted_org_key: Optional[EncryptedPayload] = None
+    encrypted_org_key: Optional[EncryptedPayloadSchema] = None
 
     model_config = {"from_attributes": True}
 

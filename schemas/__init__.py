@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response validation."""
 
 from .encryption import (
-    EncryptedPayload,
+    EncryptedPayloadSchema,
     CreateUserKeysRequest,
     UserKeysResponse,
     EncryptionStatusResponse,
@@ -29,7 +29,7 @@ from .organization_encryption import (
 
 __all__ = [
     # User encryption
-    "EncryptedPayload",
+    "EncryptedPayloadSchema",
     "CreateUserKeysRequest",
     "UserKeysResponse",
     "EncryptionStatusResponse",

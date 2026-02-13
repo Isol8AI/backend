@@ -110,6 +110,18 @@ class EncryptedPayload:
             hkdf_salt=bytes.fromhex(data["hkdf_salt"]),
         )
 
+    def to_schema(self) -> "EncryptedPayloadSchema":
+        """Convert bytes-based crypto payload to hex-encoded API schema."""
+        from schemas.encryption import EncryptedPayloadSchema
+
+        return EncryptedPayloadSchema(
+            ephemeral_public_key=self.ephemeral_public_key.hex(),
+            iv=self.iv.hex(),
+            ciphertext=self.ciphertext.hex(),
+            auth_tag=self.auth_tag.hex(),
+            hkdf_salt=self.hkdf_salt.hex(),
+        )
+
 
 # =============================================================================
 # Key Generation

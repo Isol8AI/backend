@@ -5,7 +5,7 @@ from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
-from schemas.encryption import EncryptedPayload
+from schemas.encryption import EncryptedPayloadSchema
 
 
 class CreateAgentRequest(BaseModel):
@@ -46,10 +46,10 @@ class AgentListResponse(BaseModel):
 class SendAgentMessageRequest(BaseModel):
     """Request to send a message to an agent."""
 
-    encrypted_message: EncryptedPayload
+    encrypted_message: EncryptedPayloadSchema
     model: str = Field(default="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
     # For zero_trust mode: client decrypts state, re-encrypts to enclave transport key
-    encrypted_state: Optional[EncryptedPayload] = Field(
+    encrypted_state: Optional[EncryptedPayloadSchema] = Field(
         default=None,
         description="Agent state encrypted to enclave transport key (zero_trust mode only)",
     )
@@ -59,7 +59,7 @@ class AgentMessageResponse(BaseModel):
     """Response from agent message."""
 
     success: bool
-    encrypted_response: Optional[EncryptedPayload] = None
+    encrypted_response: Optional[EncryptedPayloadSchema] = None
     error: Optional[str] = None
 
 
@@ -67,14 +67,14 @@ class AgentChatWSRequest(BaseModel):
     """WebSocket request for streaming agent chat."""
 
     agent_name: str = Field(..., min_length=1, max_length=50, pattern="^[a-zA-Z0-9_-]+$")
-    encrypted_message: EncryptedPayload
+    encrypted_message: EncryptedPayloadSchema
     client_transport_public_key: str
     user_public_key: str = Field(..., description="User's long-term public key for state encryption (zero_trust mode)")
     # Optional: encrypted soul/personality content for first message (new agent)
     # Encrypted to enclave's public key so server cannot read it
-    encrypted_soul_content: Optional[EncryptedPayload] = None
+    encrypted_soul_content: Optional[EncryptedPayloadSchema] = None
     # For zero_trust mode: client provides decrypted state re-encrypted to enclave
-    encrypted_state: Optional[EncryptedPayload] = Field(
+    encrypted_state: Optional[EncryptedPayloadSchema] = Field(
         default=None,
         description="Agent state encrypted to enclave transport key (zero_trust mode only)",
     )

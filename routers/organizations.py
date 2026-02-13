@@ -22,7 +22,7 @@ from core.services.org_key_service import (
 from models.context_store import ContextStore
 from models.organization import Organization
 from models.organization_membership import MemberRole, OrganizationMembership
-from schemas.encryption import EncryptedPayload
+from schemas.encryption import EncryptedPayloadSchema
 from schemas.organization_encryption import (
     CreateOrgKeysRequest,
     OrgEncryptionStatusResponse,
@@ -471,7 +471,7 @@ async def get_my_membership(
         encrypted_key = None
         if membership.has_org_key:
             payload = membership.encrypted_org_key_payload
-            encrypted_key = EncryptedPayload(**payload)
+            encrypted_key = EncryptedPayloadSchema(**payload)
 
         return MembershipWithKeyResponse(
             id=membership.id,

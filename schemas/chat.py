@@ -11,7 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from schemas.encryption import EncryptedPayload, EncryptedMessageResponse
+from schemas.encryption import EncryptedPayloadSchema, EncryptedMessageResponse
 
 
 class CreateSessionRequest(BaseModel):
@@ -63,7 +63,7 @@ class StreamingChunkResponse(BaseModel):
     """A chunk of streaming encrypted response."""
 
     chunk_index: int
-    encrypted_chunk: EncryptedPayload
+    encrypted_chunk: EncryptedPayloadSchema
     is_final: bool = False
 
 
