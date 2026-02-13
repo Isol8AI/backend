@@ -70,13 +70,13 @@ class AgentStreamChunk:
     Key difference from StreamChunk: no stored_user_message/stored_assistant_message
     (agent state IS the storage). Instead has encrypted_state (the updated tarball).
 
-    For background mode, encrypted_dek contains the KMS-encrypted data encryption key.
-    For zero_trust mode, encrypted_dek is None.
+    For zero_trust mode: encrypted_state contains the EncryptedPayload (ECDH to user key).
+    For background mode: kms_envelope contains the KMS envelope dict (hex strings).
     """
 
     encrypted_content: Optional[EncryptedPayload] = None  # streaming text chunk
-    encrypted_state: Optional[EncryptedPayload] = None  # updated tarball (final)
-    encrypted_dek: Optional[dict] = None  # KMS-encrypted DEK (background mode only)
+    encrypted_state: Optional[EncryptedPayload] = None  # updated tarball - zero_trust only
+    kms_envelope: Optional[Dict[str, str]] = None  # KMS envelope - background only
     is_final: bool = False
     error: str = ""
     input_tokens: int = 0
@@ -317,6 +317,7 @@ class EnclaveInterface(ABC):
         agent_name: str,
         encrypted_soul_content: Optional[EncryptedPayload] = None,
         encryption_mode: str = "zero_trust",
+        kms_envelope: Optional[Dict[str, bytes]] = None,
     ) -> AsyncGenerator[AgentStreamChunk, None]:
         """
         Process an agent chat message with streaming response.

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, Optional
 
 from core.crypto import EncryptedPayload
+from core.enclave.enclave_types import AgentStreamChunk
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class AgentStreamRequest:
     user_public_key: bytes
     encrypted_soul_content: Optional[EncryptedPayload] = None
     encryption_mode: str = "zero_trust"  # "zero_trust" or "background"
+    kms_envelope: Optional[Dict[str, bytes]] = None  # KMS envelope for background mode
 
 
 @dataclass
@@ -152,8 +154,6 @@ class AgentHandler:
         Yields:
             AgentStreamChunk objects with encrypted content or final state
         """
-        from .enclave_types import AgentStreamChunk
-
         if self.enclave is None:
             yield AgentStreamChunk(error="Enclave not configured", is_final=True)
             return
@@ -169,6 +169,7 @@ class AgentHandler:
                 agent_name=request.agent_name,
                 encrypted_soul_content=request.encrypted_soul_content,
                 encryption_mode=request.encryption_mode,
+                kms_envelope=request.kms_envelope,
             ):
                 yield chunk
 

@@ -15,6 +15,7 @@ Security Note:
 - Management API delivers encrypted chunks to client
 """
 
+import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -28,6 +29,8 @@ from core.database import get_session_factory as db_get_session_factory
 from core.services.chat_service import ChatService
 from core.services.connection_service import ConnectionService, ConnectionServiceError
 from core.services.management_api_client import ManagementApiClient, ManagementApiClientError
+from core.enclave import get_enclave, AgentHandler, AgentStreamRequest
+from core.services.agent_service import AgentService
 from schemas.agent import AgentChatWSRequest
 from schemas.encryption import EncryptedPayloadSchema, SendEncryptedMessageRequest
 
@@ -517,13 +520,8 @@ async def _process_agent_chat_background(
     Process agent chat message in background task with streaming.
 
     For zero_trust mode: client provides encrypted_state_from_client (re-encrypted to enclave)
-    For background mode: server loads encrypted_dek from DB
+    For background mode: server loads KMS envelope from DB
     """
-    import json as json_module
-
-    from core.enclave import get_enclave, AgentHandler, AgentStreamRequest
-    from core.services.agent_service import AgentService
-
     logger.debug(
         "Processing agent chat - connection_id=%s, user_id=%s, agent=%s",
         connection_id,
@@ -549,24 +547,21 @@ async def _process_agent_chat_background(
 
         encryption_mode = agent_state.encryption_mode
 
-        # For zero_trust mode: client provides re-encrypted state in request
-        # For background mode: server loads encrypted_dek from DB (not implemented)
-
+        # Prepare state based on encryption mode
         encrypted_state_for_enclave = None
+        kms_envelope = None
+
         if encryption_mode == "zero_trust":
-            # For zero_trust mode: client provides re-encrypted state in the request
+            # Client provides re-encrypted state in the request
             if encrypted_state_from_client:
-                # Client already decrypted (with user key) and re-encrypted (to enclave transport key)
                 encrypted_state_for_enclave = encrypted_state_from_client.to_crypto()
-            # else: no state (new agent or first message)
         elif encryption_mode == "background":
-            # Background mode: would load encrypted_dek from DB and pass to enclave
-            # Not yet implemented
-            management_api.send_message(
-                connection_id,
-                {"type": "error", "message": "Background mode not yet implemented"},
-            )
-            return
+            # Server loads KMS envelope from DB and passes to enclave
+            # encrypted_tarball stores JSON: {encrypted_dek, iv, ciphertext, auth_tag} (hex strings)
+            if agent_state.encrypted_tarball:
+                kms_dict = json.loads(agent_state.encrypted_tarball)
+                kms_envelope = {k: bytes.fromhex(v) for k, v in kms_dict.items()}
+            # else: no state yet (new agent, first message)
 
         # Convert API encrypted_message to crypto payload
         encrypted_msg = encrypted_message.to_crypto()
@@ -590,6 +585,7 @@ async def _process_agent_chat_background(
             user_public_key=user_pub_key,
             encrypted_soul_content=encrypted_soul,
             encryption_mode=encryption_mode,
+            kms_envelope=kms_envelope,
         )
 
         # Stream response chunks
@@ -613,17 +609,25 @@ async def _process_agent_chat_background(
                     logger.warning("Connection %s gone during agent streaming", connection_id)
                     return
 
-            if chunk.is_final and chunk.encrypted_state:
-                # Serialize updated state and store in DB
-                state_dict = chunk.encrypted_state.to_dict()
-                state_json = json_module.dumps(state_dict).encode("utf-8")
-
+            if chunk.is_final:
                 async with session_factory() as db:
                     service = AgentService(db)
-                    await service.update_agent_state(user_id, agent_name, state_json)
+
+                    if encryption_mode == "zero_trust" and chunk.encrypted_state:
+                        # Zero trust: store encrypted state as JSON blob
+                        state_dict = chunk.encrypted_state.to_dict()
+                        state_json = json.dumps(state_dict).encode("utf-8")
+                        await service.update_agent_state(user_id, agent_name, state_json)
+
+                    elif encryption_mode == "background" and chunk.kms_envelope:
+                        # Background: kms_envelope is a dict with hex strings
+                        # Store entire envelope as JSON in encrypted_tarball
+                        kms_json = json.dumps(chunk.kms_envelope).encode("utf-8")
+                        await service.update_agent_state(user_id, agent_name, kms_json)
+
                     await db.commit()
 
-                logger.debug("Agent state updated for %s/%s", user_id, agent_name)
+                logger.debug("Agent state updated for %s/%s (mode=%s)", user_id, agent_name, encryption_mode)
 
         management_api.send_message(connection_id, {"type": "done"})
 

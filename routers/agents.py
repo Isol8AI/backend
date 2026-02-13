@@ -195,9 +195,13 @@ async def get_agent_state(
     )
 
     if not state or not state.encrypted_tarball:
-        return {"encrypted_state": None, "encryption_mode": "zero_trust"}
+        return {"encrypted_state": None, "encryption_mode": state.encryption_mode if state else "zero_trust"}
 
-    # Deserialize and return as API payload
+    if state.encryption_mode == "background":
+        # Background mode: client doesn't need state (server loads it directly)
+        return {"encrypted_state": None, "encryption_mode": "background"}
+
+    # Zero trust: deserialize and return so client can decrypt/re-encrypt
     encrypted_payload = _deserialize_encrypted_payload(state.encrypted_tarball)
     api_payload = EncryptedPayloadSchema.from_crypto(encrypted_payload)
 

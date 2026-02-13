@@ -40,6 +40,8 @@ ALLOWED_HOSTS = [
     "bedrock.us-east-1.amazonaws.com",
     "sts.amazonaws.com",
     "sts.us-east-1.amazonaws.com",
+    "kms.us-east-1.amazonaws.com",
+    "kms.us-west-2.amazonaws.com",
 ]
 
 

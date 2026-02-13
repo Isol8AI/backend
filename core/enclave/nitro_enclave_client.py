@@ -11,7 +11,7 @@ import logging
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import AsyncGenerator, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional
 
 from core.config import settings
 from core.crypto import EncryptedPayload
@@ -22,6 +22,7 @@ from .enclave_types import (
     AgentStreamChunk,
     AgentRunResponse,
 )
+from .encryption_strategies import get_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -508,8 +509,6 @@ class NitroEnclaveClient(EnclaveInterface):
             logger.info("Credentials expiring soon, refreshing...")
             await self._push_credentials_async()
 
-        from .encryption_strategies import get_strategy
-
         strategy = get_strategy(encryption_mode)
         encrypted_state_dict = strategy.prepare_state_for_vsock(
             encrypted_state=encrypted_state,
@@ -582,6 +581,7 @@ class NitroEnclaveClient(EnclaveInterface):
         agent_name: str,
         encrypted_soul_content: Optional[EncryptedPayload] = None,
         encryption_mode: str = "zero_trust",
+        kms_envelope: Optional[Dict[str, bytes]] = None,
     ) -> AsyncGenerator[AgentStreamChunk, None]:
         """
         Process agent chat through Nitro Enclave with streaming.
@@ -597,16 +597,23 @@ class NitroEnclaveClient(EnclaveInterface):
             agent_name: Name of the agent
             encrypted_soul_content: Optional SOUL.md content for new agents
             encryption_mode: "zero_trust" (default) or "background"
+            kms_envelope: KMS envelope for background mode (encrypted_dek + encrypted state)
         """
         # Check if credentials need refresh
         if self._credentials_expiring_soon():
             logger.info("Credentials expiring soon, refreshing...")
             await self._push_credentials_async()
 
+        strategy = get_strategy(encryption_mode)
+        encrypted_state_dict = strategy.prepare_state_for_vsock(
+            encrypted_state=encrypted_state,
+            kms_envelope=kms_envelope,
+        )
+
         command = {
             "command": "AGENT_CHAT_STREAM",
             "encrypted_message": encrypted_message.to_dict(),
-            "encrypted_state": encrypted_state.to_dict() if encrypted_state else None,
+            "encrypted_state": encrypted_state_dict,
             "client_public_key": client_public_key.hex(),
             "user_public_key": user_public_key.hex(),
             "agent_name": agent_name,
@@ -659,14 +666,18 @@ class NitroEnclaveClient(EnclaveInterface):
 
                 if event.get("is_final"):
                     encrypted_state_result = None
-                    if event.get("encrypted_state"):
-                        encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
+                    kms_envelope_result = None
 
-                    encrypted_dek = event.get("encrypted_dek")
+                    if event.get("encrypted_state"):
+                        if encryption_mode == "zero_trust":
+                            encrypted_state_result = EncryptedPayload.from_dict(event["encrypted_state"])
+                        else:
+                            # Background mode: encrypted_state is a KMS envelope dict (hex strings)
+                            kms_envelope_result = event["encrypted_state"]
 
                     yield AgentStreamChunk(
                         encrypted_state=encrypted_state_result,
-                        encrypted_dek=encrypted_dek,
+                        kms_envelope=kms_envelope_result,
                         is_final=True,
                         input_tokens=event.get("input_tokens", 0),
                         output_tokens=event.get("output_tokens", 0),

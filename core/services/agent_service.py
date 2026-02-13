@@ -94,6 +94,7 @@ class AgentService:
         user_id: str,
         agent_name: str,
         encrypted_tarball: bytes,
+        encrypted_dek: Optional[bytes] = None,
     ) -> Optional[AgentState]:
         """
         Update existing agent state.
@@ -102,6 +103,7 @@ class AgentService:
             user_id: Clerk user ID
             agent_name: Agent name/identifier
             encrypted_tarball: New encrypted tarball bytes
+            encrypted_dek: KMS-encrypted data encryption key (background mode only)
 
         Returns:
             Updated AgentState if found, None otherwise
@@ -112,6 +114,8 @@ class AgentService:
 
         state.encrypted_tarball = encrypted_tarball
         state.tarball_size_bytes = len(encrypted_tarball)
+        if encrypted_dek is not None:
+            state.encrypted_dek = encrypted_dek
         await self.db.flush()
         logger.info(f"Updated agent state for user={user_id}, agent={agent_name}")
         return state
