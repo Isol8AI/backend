@@ -69,7 +69,6 @@ def _kms_request(action: str, payload: dict) -> dict:
     headers = {
         "Content-Type": "application/x-amz-json-1.1",
         "X-Amz-Target": f"TrentService.{action}",
-        "Host": host,
     }
 
     # Sign request with SigV4
