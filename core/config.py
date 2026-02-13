@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     CREDENTIAL_ENCRYPTION_KEY: Optional[str] = os.getenv("CREDENTIAL_ENCRYPTION_KEY")
 
     # CORS Configuration (comma-separated origins)
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://town.isol8.co"
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -95,8 +95,23 @@ class TestTownOptOut:
         assert response.status_code == 404
 
 
+class TestTownStatus:
+    """Test GET /api/v1/town/status (AI Town worldStatus)."""
+
+    @pytest.mark.asyncio
+    async def test_get_status(self, async_client):
+        response = await async_client.get("/api/v1/town/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["worldId"] == "world_default"
+        assert data["engineId"] == "engine_default"
+        assert data["status"] == "running"
+        assert data["isDefault"] is True
+
+
 class TestTownState:
-    """Test GET /api/v1/town/state."""
+    """Test GET /api/v1/town/state (AI Town worldState format)."""
 
     @pytest.mark.asyncio
     async def test_get_state_empty(self, async_client):
@@ -104,7 +119,10 @@ class TestTownState:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["agents"] == []
+        assert data["world"]["players"] == []
+        assert data["world"]["agents"] == []
+        assert data["world"]["conversations"] == []
+        assert "currentTime" in data["engine"]
 
     @pytest.mark.asyncio
     async def test_get_state_with_agents(self, async_client, db_session, test_user):
@@ -125,8 +143,56 @@ class TestTownState:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data["agents"]) == 1
-        assert data["agents"][0]["display_name"] == "Luna"
+        assert len(data["world"]["players"]) == 1
+        assert data["world"]["players"][0]["id"] == "p:0"
+        assert "position" in data["world"]["players"][0]
+        assert len(data["world"]["agents"]) == 1
+        assert data["world"]["agents"][0]["id"] == "a:0"
+        assert data["world"]["agents"][0]["playerId"] == "p:0"
+
+
+class TestTownDescriptions:
+    """Test GET /api/v1/town/descriptions (AI Town gameDescriptions)."""
+
+    @pytest.mark.asyncio
+    async def test_get_descriptions_empty(self, async_client):
+        response = await async_client.get("/api/v1/town/descriptions")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "worldMap" in data
+        assert data["worldMap"]["width"] > 0
+        assert data["playerDescriptions"] == []
+        assert data["agentDescriptions"] == []
+
+    @pytest.mark.asyncio
+    async def test_get_descriptions_with_agents(self, async_client, db_session, test_user):
+        agent_state = AgentState(
+            user_id=test_user.id,
+            agent_name="luna",
+            encryption_mode="background",
+        )
+        db_session.add(agent_state)
+        await db_session.flush()
+
+        await async_client.post(
+            "/api/v1/town/opt-in",
+            json={
+                "agent_name": "luna",
+                "display_name": "Luna",
+                "personality_summary": "A dreamer",
+            },
+        )
+
+        response = await async_client.get("/api/v1/town/descriptions")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["playerDescriptions"]) == 1
+        assert data["playerDescriptions"][0]["name"] == "Luna"
+        assert data["playerDescriptions"][0]["playerId"] == "p:0"
+        assert len(data["agentDescriptions"]) == 1
+        assert data["agentDescriptions"][0]["agentId"] == "a:0"
 
 
 class TestTownConversations:
@@ -139,3 +205,27 @@ class TestTownConversations:
         assert response.status_code == 200
         data = response.json()
         assert data["conversations"] == []
+
+
+class TestTownStubs:
+    """Test stub endpoints return without error."""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat(self, async_client):
+        response = await async_client.post("/api/v1/town/heartbeat", json={})
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_music(self, async_client):
+        response = await async_client.get("/api/v1/town/music")
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_user_status(self, async_client):
+        response = await async_client.get("/api/v1/town/user-status")
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_input_status(self, async_client):
+        response = await async_client.get("/api/v1/town/input-status")
+        assert response.status_code == 200
