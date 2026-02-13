@@ -37,16 +37,20 @@ router = APIRouter()
 # =============================================================================
 
 
-@router.get("", response_model=AgentListResponse)
+@router.get(
+    "",
+    response_model=AgentListResponse,
+    summary="List agents",
+    description="List all agents for the current user. Returns basic metadata - actual agent content is encrypted.",
+    operation_id="list_agents",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def list_agents(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    List all agents for the current user.
-
-    Returns basic metadata - actual agent content is encrypted.
-    """
     service = AgentService(db)
     agents = await service.list_user_agents(user_id=auth.user_id)
 
@@ -65,22 +69,23 @@ async def list_agents(
     )
 
 
-@router.post("", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=AgentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create agent",
+    description="Create a new agent. Stores metadata only - actual agent state is created inside the enclave on first message.",
+    operation_id="create_agent",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        409: {"description": "Agent with this name already exists"},
+    },
+)
 async def create_agent(
     request: CreateAgentRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Create a new agent.
-
-    Stores metadata only. The actual agent state (SOUL.md, config, memory)
-    is created inside the enclave on first message, preserving zero-trust:
-    the server never sees the personality content.
-
-    The client passes soul_content encrypted to the enclave in the first
-    AGENT_CHAT_STREAM message.
-    """
     service = AgentService(db)
 
     # Check if agent already exists
@@ -113,17 +118,22 @@ async def create_agent(
     )
 
 
-@router.get("/{agent_name}", response_model=AgentResponse)
+@router.get(
+    "/{agent_name}",
+    response_model=AgentResponse,
+    summary="Get agent details",
+    description="Get agent metadata. Returns metadata only - actual content is encrypted.",
+    operation_id="get_agent",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Agent not found"},
+    },
+)
 async def get_agent(
     agent_name: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get agent details.
-
-    Returns metadata only - actual content is encrypted.
-    """
     service = AgentService(db)
     state = await service.get_agent_state(
         user_id=auth.user_id,
@@ -146,17 +156,22 @@ async def get_agent(
     )
 
 
-@router.delete("/{agent_name}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{agent_name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete agent",
+    description="Delete an agent and all its data permanently. The agent's memory and history cannot be recovered.",
+    operation_id="delete_agent",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Agent not found"},
+    },
+)
 async def delete_agent(
     agent_name: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Delete an agent and all its data.
-
-    This is permanent - the agent's memory and history cannot be recovered.
-    """
     service = AgentService(db)
     deleted = await service.delete_agent_state(
         user_id=auth.user_id,
@@ -172,22 +187,20 @@ async def delete_agent(
     await db.commit()
 
 
-@router.get("/{agent_name}/state")
+@router.get(
+    "/{agent_name}/state",
+    summary="Get agent state",
+    description="Get encrypted agent state for zero_trust mode. Client decrypts with user's private key, re-encrypts to enclave transport key.",
+    operation_id="get_agent_state",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def get_agent_state(
     agent_name: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get encrypted agent state for zero_trust mode.
-
-    The client needs this to:
-    1. Decrypt state with user's private key
-    2. Re-encrypt to enclave transport key
-    3. Send in message request
-
-    Returns null if agent has no state yet (new agent).
-    """
     service = AgentService(db)
     state = await service.get_agent_state(
         user_id=auth.user_id,
@@ -216,34 +229,23 @@ async def get_agent_state(
 # =============================================================================
 
 
-@router.post("/{agent_name}/message", response_model=AgentMessageResponse)
+@router.post(
+    "/{agent_name}/message",
+    response_model=AgentMessageResponse,
+    summary="Send agent message",
+    description="Send an encrypted message to an agent. Auto-creates agent if it doesn't exist. Supports zero_trust and background encryption modes.",
+    operation_id="send_agent_message",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        400: {"description": "User encryption keys not set up"},
+    },
+)
 async def send_agent_message(
     agent_name: str,
     request: SendAgentMessageRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Send a message to an agent.
-
-    If the agent doesn't exist, it's created automatically.
-    The message and response are end-to-end encrypted.
-
-    Flow (zero_trust mode - default):
-    1. Client fetches encrypted state from GET /agents/{name}/state
-    2. Client decrypts state with user's private key (passcode-protected)
-    3. Client re-encrypts state to enclave transport key
-    4. Client encrypts message to enclave transport key
-    5. Client sends both in request
-    6. Enclave decrypts, processes, re-encrypts to user's key
-    7. Server stores encrypted state, returns encrypted response
-
-    Flow (background mode - opt-in):
-    1. Client encrypts message to enclave transport key
-    2. Server loads KMS-encrypted state from DB
-    3. Enclave decrypts with KMS, processes, re-encrypts with KMS
-    4. Server stores encrypted state + encrypted DEK
-    """
     service = AgentService(db)
     enclave = get_enclave()
 

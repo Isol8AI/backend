@@ -69,31 +69,22 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return db_get_session_factory()
 
 
-@router.post("/connect", status_code=200)
+@router.post(
+    "/connect",
+    status_code=200,
+    summary="Handle WebSocket connect",
+    description="Handle WebSocket $connect event from API Gateway. Stores connection in DynamoDB. Lambda authorizer validates JWT.",
+    operation_id="ws_connect",
+    responses={
+        400: {"description": "Missing x-connection-id header"},
+        401: {"description": "Missing x-user-id header (unauthorized)"},
+    },
+)
 async def ws_connect(
     x_connection_id: Optional[str] = Header(None, alias="x-connection-id"),
     x_user_id: Optional[str] = Header(None, alias="x-user-id"),
     x_org_id: Optional[str] = Header(None, alias="x-org-id"),
 ) -> Response:
-    """
-    Handle WebSocket $connect event from API Gateway.
-
-    Called when a client establishes a WebSocket connection. The Lambda authorizer
-    has already validated the JWT and extracted user identity into headers.
-
-    Headers (set by Lambda authorizer):
-    - x-connection-id: API Gateway connection ID (required)
-    - x-user-id: Authenticated user ID from Clerk JWT (required)
-    - x-org-id: Organization ID from Clerk JWT (optional)
-
-    Returns:
-        200: Connection stored successfully (empty body to avoid forwarding)
-        400: Missing connection-id header
-        401: Missing user-id header (unauthorized)
-
-    Note: Returns empty body because API Gateway may forward HTTP response body
-    as WebSocket message when route responses are configured.
-    """
     if not x_connection_id:
         raise HTTPException(status_code=400, detail="Missing x-connection-id header")
 
@@ -118,23 +109,16 @@ async def ws_connect(
     return Response(status_code=200)
 
 
-@router.post("/disconnect", status_code=200)
+@router.post(
+    "/disconnect",
+    status_code=200,
+    summary="Handle WebSocket disconnect",
+    description="Handle WebSocket $disconnect event from API Gateway. Best-effort cleanup of connection state in DynamoDB.",
+    operation_id="ws_disconnect",
+)
 async def ws_disconnect(
     x_connection_id: Optional[str] = Header(None, alias="x-connection-id"),
 ) -> Response:
-    """
-    Handle WebSocket $disconnect event from API Gateway.
-
-    Called when a client's WebSocket connection is closed. This is a best-effort
-    cleanup - we always return 200 even if the connection wasn't found or deletion
-    fails. This prevents API Gateway from retrying disconnect events.
-
-    Headers:
-    - x-connection-id: API Gateway connection ID (optional for best-effort)
-
-    Returns:
-        200: Always (best-effort cleanup, empty body)
-    """
     if not x_connection_id:
         logger.debug("Disconnect without connection_id, ignoring")
         return Response(status_code=200)
@@ -154,34 +138,22 @@ async def ws_disconnect(
     return Response(status_code=200)
 
 
-@router.post("/message", status_code=200)
+@router.post(
+    "/message",
+    status_code=200,
+    summary="Handle WebSocket message",
+    description="Handle WebSocket $default (message) event from API Gateway. Routes by type: ping, pong, chat, agent_chat_stream.",
+    operation_id="ws_message",
+    responses={
+        400: {"description": "Missing connection ID or invalid message"},
+        401: {"description": "Connection not found"},
+    },
+)
 async def ws_message(
     body: Dict[str, Any],
     background_tasks: BackgroundTasks,
     x_connection_id: Optional[str] = Header(None, alias="x-connection-id"),
 ) -> Response:
-    """
-    Handle WebSocket $default (message) event from API Gateway.
-
-    Processes incoming WebSocket messages from clients. The message body is
-    JSON parsed and routed based on message type:
-    - ping: Responds with pong (keepalive)
-    - pong: Acknowledges silently (client keepalive response)
-    - chat: Validates and queues for background processing
-
-    Headers:
-    - x-connection-id: API Gateway connection ID (required)
-
-    Body: JSON message from client
-
-    Returns:
-        200: Message received and being processed (empty body)
-        400: Missing connection-id header
-        401: Unknown connection (not in DynamoDB)
-
-    Note: All responses (pong, errors, chat) are sent via Management API,
-    not HTTP response. Returns empty body to avoid forwarding to WebSocket.
-    """
     if not x_connection_id:
         raise HTTPException(status_code=400, detail="Missing x-connection-id header")
 

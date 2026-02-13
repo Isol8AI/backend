@@ -163,18 +163,26 @@ class EncryptionReport(BaseModel):
 # =============================================================================
 
 
-@router.get("/report", response_model=EncryptionReport)
+@router.get(
+    "/report",
+    response_model=EncryptionReport,
+    summary="Get encryption debug report",
+    description=(
+        "Returns all encryption data for the current user in a format suitable for manual verification "
+        "with online crypto tools (Argon2id, AES-GCM via CyberChef, X25519, HKDF). "
+        "Includes user keys, enclave transport key, org membership keys, sample messages, and step-by-step "
+        "decryption instructions. DEVELOPMENT ONLY - must not be exposed in production."
+    ),
+    operation_id="get_encryption_report",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "User not found"},
+    },
+)
 async def get_encryption_report(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Returns all encryption data for the current user.
-
-    Designed for manual verification with online crypto tools.
-
-    DEVELOPMENT ONLY - Do not expose in production.
-    """
     # 1. Get user with encryption keys
     user_query = select(User).where(User.id == auth.user_id)
     result = await db.execute(user_query)

@@ -89,3 +89,18 @@ class DeleteSessionsResponse(BaseModel):
     """Response for bulk session deletion."""
 
     deleted_count: int
+
+
+class EnclaveHealthResponse(BaseModel):
+    """Response from GET /chat/enclave/health."""
+    status: str = Field(..., description="'healthy' or 'unhealthy'")
+    enclave_type: str = Field(..., description="'nitro' or 'mock'")
+    enclave_public_key: Optional[str] = Field(None, description="Enclave public key if available")
+
+
+class EncryptionCheckResponse(BaseModel):
+    """Response from GET /chat/encryption-status."""
+    can_send_encrypted: bool = Field(..., description="Whether user can send encrypted messages")
+    error: Optional[str] = Field(None, description="Error reason if cannot send")
+    context: str = Field(..., description="'personal' or 'organization'")
+    org_id: Optional[str] = Field(None, description="Current org context if any")

@@ -78,3 +78,11 @@ class AgentChatWSRequest(BaseModel):
         default=None,
         description="Agent state encrypted to enclave transport key (zero_trust mode only)",
     )
+
+
+class AgentStateResponse(BaseModel):
+    """Response from GET /agents/{agent_name}/state."""
+    agent_name: str = Field(..., description="Agent name")
+    encryption_mode: str = Field(..., description="'zero_trust' or 'background'")
+    has_state: bool = Field(..., description="Whether agent has saved state")
+    encrypted_tarball: Optional[str] = Field(None, description="JSON-serialized encrypted state (hex)")

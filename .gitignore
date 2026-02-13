@@ -81,6 +81,16 @@ Thumbs.db
 *.eif
 
 # ========================
+# Generated API specs
+# ========================
+openapi.json
+
+# ========================
+# Hypothesis (schemathesis test data)
+# ========================
+.hypothesis/
+
+# ========================
 # Misc
 # ========================
 .ruff_cache/

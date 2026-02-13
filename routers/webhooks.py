@@ -56,7 +56,15 @@ async def verify_webhook(
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
 
-@router.post("/clerk")
+@router.post(
+    "/clerk",
+    summary="Handle Clerk webhook",
+    description="Handle Clerk webhooks for user, organization, and membership lifecycle events. Verified via Svix signature.",
+    operation_id="handle_clerk_webhook",
+    responses={
+        400: {"description": "Missing svix headers"},
+    },
+)
 async def handle_clerk_webhook(
     request: Request,
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
@@ -64,14 +72,6 @@ async def handle_clerk_webhook(
     svix_timestamp: Optional[str] = Header(None, alias="svix-timestamp"),
     svix_signature: Optional[str] = Header(None, alias="svix-signature"),
 ):
-    """
-    Handle Clerk webhooks.
-
-    Events:
-    - user.* - User lifecycle
-    - organization.* - Org lifecycle
-    - organizationMembership.* - Membership lifecycle (key revocation)
-    """
     payload = await verify_webhook(request, svix_id, svix_timestamp, svix_signature)
 
     event_type = payload.get("type")

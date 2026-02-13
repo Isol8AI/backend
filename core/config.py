@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     # Environment mode
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "")
 
     # Clerk Auth
     CLERK_ISSUER: str = os.getenv("CLERK_ISSUER", "https://your-clerk-domain.clerk.accounts.dev")

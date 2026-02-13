@@ -36,15 +36,20 @@ def _resolve_owner(auth: AuthContext) -> tuple[str, str]:
     return "user", auth.user_id
 
 
-@router.get("/", response_model=ContextResponse)
+@router.get(
+    "/",
+    response_model=ContextResponse,
+    summary="Get context",
+    description="Get context for the current auth context. Returns personal context in personal mode, org context in org mode.",
+    operation_id="get_context",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def get_context(
     auth: AuthContext = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ContextResponse:
-    """Get context for the current auth context.
-
-    Returns personal context in personal mode, org context in org mode.
-    """
     owner_type, owner_id = _resolve_owner(auth)
 
     async with session_factory() as session:
@@ -62,17 +67,22 @@ async def get_context(
         )
 
 
-@router.put("/", response_model=ContextResponse)
+@router.put(
+    "/",
+    response_model=ContextResponse,
+    summary="Update context",
+    description="Update context for the current auth context. In org mode, requires admin role.",
+    operation_id="update_context",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin role required for org context"},
+    },
+)
 async def update_context(
     request: ContextRequest,
     auth: AuthContext = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ContextResponse:
-    """Update context for the current auth context.
-
-    In personal mode: Updates personal context.
-    In org mode: Requires admin role to update org context.
-    """
     # Org context requires admin privileges
     if auth.is_org_context and not auth.is_org_admin:
         raise HTTPException(

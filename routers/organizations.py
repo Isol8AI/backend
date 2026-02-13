@@ -34,6 +34,9 @@ from schemas.organization_encryption import (
     MembershipWithKeyResponse,
     BulkDistributionResponse,
     BulkDistributionResultResponse,
+    CreateOrgKeysResponse,
+    DistributeOrgKeyResponse,
+    AdminRecoveryKeyResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,20 +96,22 @@ class OrgContextResponse(BaseModel):
     context_data: dict | None
 
 
-@router.post("/sync", response_model=SyncOrgResponse)
+@router.post(
+    "/sync",
+    response_model=SyncOrgResponse,
+    summary="Sync organization from Clerk",
+    description="Creates or updates the organization record and membership. Validates org membership via JWT claim or database record.",
+    operation_id="sync_organization",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Not a member of this organization"},
+    },
+)
 async def sync_organization(
     request: SyncOrgRequest,
     auth: AuthContext = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> SyncOrgResponse:
-    """Sync organization from Clerk to database.
-
-    Creates the organization if it doesn't exist, updates it if it does.
-    Also creates or updates the user's membership.
-
-    Security: Validates org membership via JWT claim or database record.
-    Database fallback handles first-time access when JWT hasn't refreshed yet.
-    """
     org_id = request.org_id
 
     async with session_factory() as session:
@@ -170,15 +175,20 @@ async def sync_organization(
         return SyncOrgResponse(status=sync_status, org_id=org_id)
 
 
-@router.get("/current", response_model=CurrentOrgResponse)
+@router.get(
+    "/current",
+    response_model=CurrentOrgResponse,
+    summary="Get current organization context",
+    description="Get current organization context. Returns None for org fields when in personal mode.",
+    operation_id="get_current_org",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def get_current_org(
     auth: AuthContext = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> CurrentOrgResponse:
-    """Get current organization context.
-
-    Returns None for org fields when in personal mode.
-    """
     if auth.is_personal_context:
         return CurrentOrgResponse(org_id=None, is_personal_context=True, is_org_admin=False)
 
@@ -197,12 +207,20 @@ async def get_current_org(
         )
 
 
-@router.get("/", response_model=ListOrgsResponse)
+@router.get(
+    "/",
+    response_model=ListOrgsResponse,
+    summary="List user organizations",
+    description="List all organizations the user is a member of.",
+    operation_id="list_organizations",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def list_organizations(
     auth: AuthContext = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ListOrgsResponse:
-    """List all organizations the user is a member of."""
     async with session_factory() as session:
         result = await session.execute(
             select(OrganizationMembership, Organization)
@@ -218,16 +236,21 @@ async def list_organizations(
         return ListOrgsResponse(organizations=organizations)
 
 
-@router.get("/context", response_model=OrgContextResponse)
+@router.get(
+    "/context",
+    response_model=OrgContextResponse,
+    summary="Get organization context",
+    description="Get shared organization context data used for RAG or shared settings.",
+    operation_id="get_org_context",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Organization context required"},
+    },
+)
 async def get_org_context(
     auth: AuthContext = Depends(require_org_context),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> OrgContextResponse:
-    """Get shared organization context.
-
-    Returns the context data stored for the organization,
-    which can be used for RAG or shared settings.
-    """
     async with session_factory() as session:
         result = await session.execute(
             select(ContextStore).where(ContextStore.owner_type == "org", ContextStore.owner_id == auth.org_id)
@@ -237,16 +260,22 @@ async def get_org_context(
         return OrgContextResponse(context_data=context_store.context_data if context_store else None)
 
 
-@router.put("/context", response_model=OrgContextResponse)
+@router.put(
+    "/context",
+    response_model=OrgContextResponse,
+    summary="Update organization context",
+    description="Update shared organization context. Only organization admins can update the shared context.",
+    operation_id="update_org_context",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+    },
+)
 async def update_org_context(
     request: OrgContextRequest,
     auth: AuthContext = Depends(require_org_admin),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> OrgContextResponse:
-    """Update shared organization context.
-
-    Only organization admins can update the shared context.
-    """
     async with session_factory() as session:
         result = await session.execute(
             select(ContextStore).where(ContextStore.owner_type == "org", ContextStore.owner_id == auth.org_id)
@@ -288,17 +317,22 @@ def _handle_org_key_service_error(e: OrgKeyServiceError):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/{org_id}/encryption-status", response_model=OrgEncryptionStatusResponse)
+@router.get(
+    "/{org_id}/encryption-status",
+    response_model=OrgEncryptionStatusResponse,
+    summary="Get org encryption status",
+    description="Get organization's encryption status. Any authenticated user can check status, but only members see full details.",
+    operation_id="get_org_encryption_status",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Organization not found"},
+    },
+)
 async def get_encryption_status(
     org_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get organization's encryption status.
-
-    Any authenticated user can check status, but only members see full details.
-    """
     service = OrgKeyService(db)
     try:
         status_data = await service.get_org_encryption_status(org_id)
@@ -307,19 +341,25 @@ async def get_encryption_status(
         _handle_org_key_service_error(e)
 
 
-@router.post("/{org_id}/keys", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{org_id}/keys",
+    response_model=CreateOrgKeysResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create org encryption keys",
+    description="Create organization encryption keys (admin only). The admin creates the org keypair client-side and sends the encrypted blobs.",
+    operation_id="create_org_keys",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+        409: {"description": "Organization already has encryption keys"},
+    },
+)
 async def create_org_keys(
     org_id: str,
     request: CreateOrgKeysRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Create organization encryption keys (admin only).
-
-    The admin creates the org keypair client-side, encrypts the private key
-    with the org passcode, and sends the encrypted blobs to the server.
-    """
     service = OrgKeyService(db)
     try:
         await service.create_org_keys(
@@ -341,19 +381,23 @@ async def create_org_keys(
         _handle_org_key_service_error(e)
 
 
-@router.get("/{org_id}/pending-distributions", response_model=PendingDistributionsResponse)
+@router.get(
+    "/{org_id}/pending-distributions",
+    response_model=PendingDistributionsResponse,
+    summary="Get pending key distributions",
+    description="Get members needing org key distribution (admin only). Returns members ready for distribution and those needing personal key setup.",
+    operation_id="get_pending_distributions",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+        404: {"description": "Organization not found"},
+    },
+)
 async def get_pending_distributions(
     org_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get members needing org key distribution (admin only).
-
-    Returns two categories:
-    - ready_for_distribution: Members with personal keys who can receive org key
-    - needs_personal_setup: Members who must set up personal encryption first
-    """
     service = OrgKeyService(db)
     try:
         result = await service.get_pending_distributions(org_id, auth.user_id)
@@ -368,19 +412,25 @@ async def get_pending_distributions(
         _handle_org_key_service_error(e)
 
 
-@router.post("/{org_id}/distribute-key")
+@router.post(
+    "/{org_id}/distribute-key",
+    response_model=DistributeOrgKeyResponse,
+    summary="Distribute org key to member",
+    description="Distribute org key to a member (admin only). The admin re-encrypts the org key to the member's public key.",
+    operation_id="distribute_org_key",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        400: {"description": "Member not ready for key distribution"},
+        403: {"description": "Admin access required"},
+        404: {"description": "Membership not found"},
+    },
+)
 async def distribute_org_key(
     org_id: str,
     request: DistributeOrgKeyRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Distribute org key to a member (admin only).
-
-    The admin decrypts their copy of the org key, re-encrypts it to
-    the member's public key, and sends it here for storage.
-    """
     service = OrgKeyService(db)
     try:
         membership = await service.distribute_org_key(
@@ -398,19 +448,23 @@ async def distribute_org_key(
         _handle_org_key_service_error(e)
 
 
-@router.post("/{org_id}/distribute-keys-bulk", response_model=BulkDistributionResponse)
+@router.post(
+    "/{org_id}/distribute-keys-bulk",
+    response_model=BulkDistributionResponse,
+    summary="Bulk distribute org keys",
+    description="Distribute org key to multiple members at once (admin only). Supports partial failure with per-member status.",
+    operation_id="distribute_org_keys_bulk",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+    },
+)
 async def distribute_org_keys_bulk(
     org_id: str,
     request: BatchDistributeOrgKeyRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Distribute org key to multiple members at once (admin only).
-
-    Performs bulk distribution with partial failure support.
-    Returns success/failure status for each distribution.
-    """
     service = OrgKeyService(db)
     try:
         # Convert request to service format
@@ -450,18 +504,22 @@ async def distribute_org_keys_bulk(
         _handle_org_key_service_error(e)
 
 
-@router.get("/{org_id}/membership", response_model=MembershipWithKeyResponse)
+@router.get(
+    "/{org_id}/membership",
+    response_model=MembershipWithKeyResponse,
+    summary="Get my membership",
+    description="Get current user's membership with encrypted org key for client-side decryption.",
+    operation_id="get_my_membership",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Not a member of this organization"},
+    },
+)
 async def get_my_membership(
     org_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get current user's membership with encrypted org key.
-
-    Used by members to retrieve their encrypted copy of the org key
-    for client-side decryption.
-    """
     service = OrgKeyService(db)
     try:
         membership = await service.get_membership(auth.user_id, org_id)
@@ -487,7 +545,18 @@ async def get_my_membership(
         _handle_org_key_service_error(e)
 
 
-@router.post("/{org_id}/revoke-key/{member_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/{org_id}/revoke-key/{member_user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke member org key",
+    description="Revoke a member's org key (admin only). The member will no longer be able to decrypt org messages.",
+    operation_id="revoke_member_key",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+        404: {"description": "Membership not found"},
+    },
+)
 async def revoke_member_key(
     org_id: str,
     member_user_id: str,
@@ -495,11 +564,6 @@ async def revoke_member_key(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Revoke a member's org key (admin only).
-
-    The member will no longer be able to decrypt org messages.
-    """
     service = OrgKeyService(db)
     try:
         await service.revoke_member_org_key(
@@ -512,17 +576,23 @@ async def revoke_member_key(
         _handle_org_key_service_error(e)
 
 
-@router.get("/{org_id}/admin-recovery-key")
+@router.get(
+    "/{org_id}/admin-recovery-key",
+    response_model=AdminRecoveryKeyResponse,
+    summary="Get admin recovery key",
+    description="Get admin-encrypted org key for recovery (admin only). Used when admin needs to recover org key using org passcode.",
+    operation_id="get_admin_recovery_key",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+        404: {"description": "Organization keys not found"},
+    },
+)
 async def get_admin_recovery_key(
     org_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get admin-encrypted org key for recovery (admin only).
-
-    Used when admin needs to recover org key using org passcode.
-    """
     service = OrgKeyService(db)
     try:
         return await service.get_admin_recovery_key(auth.user_id, org_id)
@@ -530,17 +600,21 @@ async def get_admin_recovery_key(
         _handle_org_key_service_error(e)
 
 
-@router.get("/{org_id}/members")
+@router.get(
+    "/{org_id}/members",
+    summary="List org members",
+    description="List all organization members with key distribution status (admin only).",
+    operation_id="list_org_members",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        403: {"description": "Admin access required"},
+    },
+)
 async def list_org_members(
     org_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    List all organization members (admin only).
-
-    Returns all members with their key distribution status.
-    """
     service = OrgKeyService(db)
 
     # Verify user is admin

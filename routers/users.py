@@ -25,14 +25,24 @@ from schemas.encryption import (
     UserKeysResponse,
     EncryptionStatusResponse,
 )
+from schemas.user_schemas import SyncUserResponse, UserPublicKeyResponse, CreateKeysResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/sync")
+@router.post(
+    "/sync",
+    response_model=SyncUserResponse,
+    summary="Sync user from Clerk",
+    description="Creates or returns the user record based on the authenticated Clerk user. Idempotent.",
+    operation_id="sync_user",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        500: {"description": "Database error"},
+    },
+)
 async def sync_user(auth: AuthContext = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Ensures the logged-in user exists in the database."""
     user_id = auth.user_id
 
     result = await db.execute(select(User).filter(User.id == user_id))
@@ -66,16 +76,21 @@ async def sync_user(auth: AuthContext = Depends(get_current_user), db: AsyncSess
 # =============================================================================
 
 
-@router.get("/me/encryption-status", response_model=EncryptionStatusResponse)
+@router.get(
+    "/me/encryption-status",
+    response_model=EncryptionStatusResponse,
+    summary="Get encryption status",
+    description="Returns whether the user has set up encryption keys.",
+    operation_id="get_user_encryption_status",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "User not found"},
+    },
+)
 async def get_encryption_status(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get current user's encryption status.
-
-    Returns whether the user has set up encryption keys.
-    """
     service = UserKeyService(db)
     try:
         status_data = await service.get_encryption_status(auth.user_id)
@@ -84,19 +99,23 @@ async def get_encryption_status(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/me/keys", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/me/keys",
+    response_model=CreateKeysResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Store encryption keys",
+    description="Store user's encryption keys (already encrypted client-side). Server never sees plaintext.",
+    operation_id="create_encryption_keys",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        409: {"description": "User already has encryption keys"},
+    },
+)
 async def create_encryption_keys(
     request: CreateUserKeysRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Store user's encryption keys (already encrypted client-side).
-
-    The client generates a keypair, encrypts the private key with the user's
-    passcode, and sends the encrypted blob to the server. The server never
-    sees the plaintext private key.
-    """
     service = UserKeyService(db)
     try:
         await service.store_encryption_keys(
@@ -118,16 +137,21 @@ async def create_encryption_keys(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/me/keys", response_model=UserKeysResponse)
+@router.get(
+    "/me/keys",
+    response_model=UserKeysResponse,
+    summary="Get encrypted keys",
+    description="Get user's encrypted keys for client-side decryption with passcode.",
+    operation_id="get_encryption_keys",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "User has no encryption keys"},
+    },
+)
 async def get_encryption_keys(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get user's encrypted keys for client-side decryption.
-
-    The client uses these with the user's passcode to decrypt the private key.
-    """
     service = UserKeyService(db)
     try:
         keys = await service.get_encryption_keys(auth.user_id)
@@ -138,17 +162,21 @@ async def get_encryption_keys(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/me/keys/recovery", response_model=UserKeysResponse)
+@router.get(
+    "/me/keys/recovery",
+    response_model=UserKeysResponse,
+    summary="Get recovery keys",
+    description="Get recovery-encrypted keys for passcode recovery.",
+    operation_id="get_recovery_keys",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "User has no encryption keys"},
+    },
+)
 async def get_recovery_keys(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get user's recovery-encrypted keys.
-
-    Used when the user has lost their passcode and needs to recover
-    using their recovery code. This action is logged for audit purposes.
-    """
     service = UserKeyService(db)
     try:
         keys = await service.get_recovery_keys(auth.user_id)
@@ -165,17 +193,21 @@ async def get_recovery_keys(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.delete("/me/keys", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/me/keys",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete encryption keys",
+    description="Delete user's encryption keys. WARNING: Makes all encrypted messages unrecoverable.",
+    operation_id="delete_encryption_keys",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        400: {"description": "Bad request"},
+    },
+)
 async def delete_encryption_keys(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Delete user's encryption keys.
-
-    WARNING: This makes all encrypted messages unrecoverable!
-    The client should confirm this action with the user first.
-    """
     service = UserKeyService(db)
     try:
         await service.delete_encryption_keys(auth.user_id)
@@ -183,18 +215,22 @@ async def delete_encryption_keys(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/{user_id}/public-key")
+@router.get(
+    "/{user_id}/public-key",
+    response_model=UserPublicKeyResponse,
+    summary="Get user public key",
+    description="Get another user's public key for org key distribution.",
+    operation_id="get_user_public_key",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "User has no public key"},
+    },
+)
 async def get_user_public_key(
     user_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get another user's public key (for key distribution).
-
-    Used when distributing org keys to members - the admin needs
-    the member's public key to encrypt the org key for them.
-    """
     service = UserKeyService(db)
     public_key = await service.get_public_key(user_id)
     if not public_key:
@@ -225,17 +261,20 @@ class MembershipsResponse(BaseModel):
     memberships: List[MembershipItem]
 
 
-@router.get("/me/memberships", response_model=MembershipsResponse)
+@router.get(
+    "/me/memberships",
+    response_model=MembershipsResponse,
+    summary="Get my memberships",
+    description="Get all organizations the user is a member of with role and key status.",
+    operation_id="get_my_memberships",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def get_my_memberships(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get current user's organization memberships.
-
-    Returns all organizations the user is a member of, including
-    their role and org key distribution status.
-    """
     result = await db.execute(
         select(OrganizationMembership, Organization)
         .outerjoin(Organization, OrganizationMembership.org_id == Organization.id)

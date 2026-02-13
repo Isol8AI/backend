@@ -28,7 +28,9 @@ from schemas.chat import (
     SessionListResponse,
     SessionMessagesResponse,
     EnclaveInfoResponse,
+    EnclaveHealthResponse,
     DeleteSessionsResponse,
+    EncryptionCheckResponse,
 )
 from schemas.encryption import EncryptedMessageResponse
 
@@ -70,17 +72,21 @@ class ModelOut(BaseModel):
 # =============================================================================
 
 
-@router.get("/enclave/info", response_model=EnclaveInfoResponse)
+@router.get(
+    "/enclave/info",
+    response_model=EnclaveInfoResponse,
+    summary="Get enclave info",
+    description="Get enclave's public key for message encryption. Client MUST encrypt messages to this key.",
+    operation_id="get_enclave_info",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        503: {"description": "Enclave not available"},
+    },
+)
 async def get_enclave_info(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get enclave's public key for message encryption.
-
-    Client MUST encrypt messages to this key before sending.
-    The enclave is the only entity that can decrypt and process them.
-    """
     service = ChatService(db)
     info = service.get_enclave_info()
     return EnclaveInfoResponse(
@@ -89,16 +95,20 @@ async def get_enclave_info(
     )
 
 
-@router.get("/enclave/health")
+@router.get(
+    "/enclave/health",
+    summary="Check enclave health",
+    description="Check enclave health and connectivity. Returns enclave status, mode (mock/nitro), and credential status.",
+    operation_id="get_enclave_health",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        503: {"description": "Enclave not available"},
+    },
+)
 async def get_enclave_health(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Check enclave health and connectivity.
-
-    Returns enclave status, mode (mock/nitro), and credential status.
-    """
     from core.enclave import get_enclave
 
     try:
@@ -129,9 +139,14 @@ async def get_enclave_health(
 # =============================================================================
 
 
-@router.get("/models", response_model=list[ModelOut])
+@router.get(
+    "/models",
+    response_model=list[ModelOut],
+    summary="List available models",
+    description="Get list of available LLM models via Bedrock discovery.",
+    operation_id="list_models",
+)
 async def list_models() -> list[ModelOut]:
-    """Get list of available LLM models via Bedrock discovery."""
     return get_available_models()
 
 
@@ -140,17 +155,22 @@ async def list_models() -> list[ModelOut]:
 # =============================================================================
 
 
-@router.post("/sessions", response_model=SessionResponse)
+@router.post(
+    "/sessions",
+    response_model=SessionResponse,
+    summary="Create chat session",
+    description="Create a new chat session. Creates in current context (personal or org based on auth).",
+    operation_id="create_session",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        400: {"description": "Invalid request data"},
+    },
+)
 async def create_session(
     request: CreateSessionRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Create a new chat session.
-
-    Creates in current context (personal or org based on auth).
-    """
     service = ChatService(db)
 
     # Use org_id from request or auth context
@@ -167,20 +187,22 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/sessions", response_model=SessionListResponse)
+@router.get(
+    "/sessions",
+    response_model=SessionListResponse,
+    summary="List chat sessions",
+    description="Get all chat sessions for the current user in current context with pagination. Sessions are scoped to personal or org context.",
+    operation_id="list_sessions",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def get_sessions(
     limit: int = Query(default=50, ge=1, le=100, description="Max sessions to return"),
     offset: int = Query(default=0, ge=0, description="Number of sessions to skip"),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get all chat sessions for the current user in current context with pagination.
-
-    Sessions are scoped to the current context:
-    - Personal mode: Only sessions with org_id=None
-    - Org mode: Only sessions with matching org_id
-    """
     service = ChatService(db)
     sessions, total = await service.list_sessions(
         user_id=auth.user_id,
@@ -207,17 +229,22 @@ async def get_sessions(
     )
 
 
-@router.get("/sessions/{session_id}/messages", response_model=SessionMessagesResponse)
+@router.get(
+    "/sessions/{session_id}/messages",
+    response_model=SessionMessagesResponse,
+    summary="Get session messages",
+    description="Get all messages for a session (encrypted). Returns encrypted messages that client must decrypt with their key.",
+    operation_id="get_session_messages",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Session not found or access denied"},
+    },
+)
 async def get_session_messages(
     session_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SessionMessagesResponse:
-    """
-    Get all messages for a session (encrypted).
-
-    Returns encrypted messages that client must decrypt with their key.
-    """
     service = ChatService(db)
 
     try:
@@ -245,17 +272,22 @@ async def get_session_messages(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete chat session",
+    description="Delete a session and all its messages (GDPR compliance). This is a permanent deletion - messages cannot be recovered.",
+    operation_id="delete_session",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Session not found or access denied"},
+    },
+)
 async def delete_session(
     session_id: str,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Delete a session and all its messages (GDPR compliance).
-
-    This is a permanent deletion - messages cannot be recovered.
-    """
     service = ChatService(db)
     deleted = await service.delete_session(
         session_id=session_id,
@@ -266,17 +298,20 @@ async def delete_session(
         raise HTTPException(status_code=404, detail="Session not found or access denied")
 
 
-@router.delete("/sessions", response_model=DeleteSessionsResponse)
+@router.delete(
+    "/sessions",
+    response_model=DeleteSessionsResponse,
+    summary="Delete all sessions",
+    description="Delete all sessions for user in current context (GDPR compliance). This is a permanent deletion. Deletes only sessions in the current context (personal or org).",
+    operation_id="delete_all_sessions",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def delete_all_sessions(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Delete all sessions for user in current context (GDPR compliance).
-
-    This is a permanent deletion - messages cannot be recovered.
-    Deletes only sessions in the current context (personal or org).
-    """
     service = ChatService(db)
     count = await service.delete_all_sessions(
         user_id=auth.user_id,
@@ -290,30 +325,27 @@ async def delete_all_sessions(
 # =============================================================================
 
 
-@router.post("/encrypted/stream")
+@router.post(
+    "/encrypted/stream",
+    summary="Stream encrypted chat response",
+    description=(
+        "Send encrypted message and stream encrypted response via SSE. "
+        "SSE event types: session (session_id), encrypted_chunk (encrypted content), "
+        "thinking (encrypted thinking), stored (final stored messages), done (complete), error (error occurred)."
+    ),
+    operation_id="chat_stream_encrypted",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        400: {"description": "Invalid model or encryption not set up"},
+        404: {"description": "Session not found or access denied"},
+    },
+)
 async def chat_stream_encrypted(
     request: SendEncryptedMessageRequest,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ):
-    """
-    Send encrypted message and stream encrypted response.
-
-    This is the main chat endpoint. The flow is:
-    1. Client encrypts message TO enclave's public key
-    2. Server relays encrypted message to enclave (cannot read it)
-    3. Enclave decrypts, processes with LLM, re-encrypts for storage
-    4. Encrypted response chunks streamed back via SSE
-    5. Client decrypts response with their private key
-
-    SSE event types:
-    - session: {session_id} - Sent first with session ID
-    - chunk: {encrypted_content} - Encrypted response chunk
-    - stored: {user_message, assistant_message} - Final stored messages
-    - done: {} - Streaming complete
-    - error: {message} - Error occurred
-    """
     logger.debug(
         "Encrypted chat request - user_id=%s, org_id=%s, model=%s, session_id=%s, history_count=%d, has_facts=%s",
         auth.user_id,
@@ -455,16 +487,20 @@ async def chat_stream_encrypted(
 # =============================================================================
 
 
-@router.get("/encryption-status")
+@router.get(
+    "/encryption-status",
+    response_model=EncryptionCheckResponse,
+    summary="Check encryption status",
+    description="Check if user can send encrypted messages in current context. Returns status for both personal and org contexts.",
+    operation_id="get_encryption_status",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+    },
+)
 async def get_encryption_status(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Check if user can send encrypted messages in current context.
-
-    Returns status for both personal and org contexts.
-    """
     service = ChatService(db)
 
     can_send, error = await service.verify_can_send_encrypted(
