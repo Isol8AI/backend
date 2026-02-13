@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
 
     # Start GooseTown simulation
     from core.database import get_session_factory
+
     _town_simulation = TownSimulation(db_factory=get_session_factory())
     await _town_simulation.start()
 

@@ -240,18 +240,21 @@ class BulkDistributionResponse(BaseModel):
 
 class CreateOrgKeysResponse(BaseModel):
     """Response from POST /organizations/{org_id}/keys."""
+
     status: str = Field(..., description="'created'")
     org_id: str = Field(..., description="Organization ID")
 
 
 class DistributeOrgKeyResponse(BaseModel):
     """Response from POST /organizations/{org_id}/distribute-key."""
+
     status: str = Field(..., description="'distributed'")
     membership_id: str = Field(..., description="Membership ID that received the key")
 
 
 class AdminRecoveryKeyResponse(BaseModel):
     """Response from GET /organizations/{org_id}/admin-recovery-key."""
+
     org_public_key: str = Field(..., description="Org X25519 public key (32 bytes hex)")
     admin_encrypted_private_key: str = Field(..., description="Org private key encrypted with admin passcode (hex)")
     admin_iv: str = Field(..., description="AES-GCM IV (16 bytes hex)")

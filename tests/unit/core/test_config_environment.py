@@ -14,9 +14,7 @@ class TestEnvironmentSetting:
         """
         from core.config import settings
 
-        assert settings.ENVIRONMENT != "prod", (
-            f"ENVIRONMENT should not default to 'prod', got '{settings.ENVIRONMENT}'"
-        )
+        assert settings.ENVIRONMENT != "prod", f"ENVIRONMENT should not default to 'prod', got '{settings.ENVIRONMENT}'"
 
     def test_environment_reflects_env_var(self):
         """When ENVIRONMENT env var is set, settings picks it up."""

@@ -82,6 +82,7 @@ class AgentChatWSRequest(BaseModel):
 
 class AgentStateResponse(BaseModel):
     """Response from GET /agents/{agent_name}/state."""
+
     agent_name: str = Field(..., description="Agent name")
     encryption_mode: str = Field(..., description="'zero_trust' or 'background'")
     has_state: bool = Field(..., description="Whether agent has saved state")

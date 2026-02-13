@@ -5,6 +5,7 @@ These routes are HTTP endpoints called by API Gateway when WebSocket events
 occur ($connect, $disconnect, $default). They use custom headers from the
 Lambda authorizer context, not standard auth.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
@@ -62,9 +63,7 @@ async def ws_client():
     app.dependency_overrides[get_db] = mock_get_db
     app.dependency_overrides[get_session_factory] = mock_get_session_factory
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()
@@ -160,8 +159,10 @@ async def test_ws_message_unknown_connection_returns_401(ws_client):
 @pytest.mark.asyncio
 async def test_ws_message_ping_returns_200(ws_client):
     """POST /ws/message with ping type returns 200."""
-    with patch("routers.websocket_chat.get_connection_service") as mock_cs, \
-         patch("routers.websocket_chat.get_management_api_client") as mock_mgmt:
+    with (
+        patch("routers.websocket_chat.get_connection_service") as mock_cs,
+        patch("routers.websocket_chat.get_management_api_client") as mock_mgmt,
+    ):
         mock_cs.return_value.get_connection.return_value = {
             "user_id": "user_123",
             "org_id": None,

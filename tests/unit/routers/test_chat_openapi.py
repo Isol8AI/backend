@@ -1,4 +1,5 @@
 """Test that chat router endpoints are properly documented in OpenAPI."""
+
 import pytest
 
 

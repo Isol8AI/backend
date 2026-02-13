@@ -1,4 +1,5 @@
 """Test that all remaining router endpoints are properly documented in OpenAPI."""
+
 import pytest
 
 

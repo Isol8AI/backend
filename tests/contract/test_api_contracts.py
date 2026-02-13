@@ -8,6 +8,7 @@ With mocked database dependencies, endpoints that require external services
 (enclave, DynamoDB, Clerk webhook verification) are excluded from automated
 fuzz testing since they cannot be meaningfully tested without infrastructure.
 """
+
 import schemathesis
 from schemathesis.checks import not_a_server_error
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -89,19 +90,26 @@ app = _make_app()
 # - /webhooks/* need Clerk signature verification + real webhook payloads
 # - /agents POST/DELETE/message need enclave for encryption
 schema = schemathesis.openapi.from_asgi("/api/v1/openapi.json", app=app)
-schema = schema.exclude(
-    path_regex="^/api/v1/ws/",
-).exclude(
-    path_regex="^/api/v1/chat/enclave/",
-).exclude(
-    path_regex="^/api/v1/webhooks/",
-).exclude(
-    # Agent write operations need enclave; reads (GET /agents, GET /{name}, GET /{name}/state) work fine
-    operation_id="create_agent",
-).exclude(
-    operation_id="delete_agent",
-).exclude(
-    operation_id="send_agent_message",
+schema = (
+    schema.exclude(
+        path_regex="^/api/v1/ws/",
+    )
+    .exclude(
+        path_regex="^/api/v1/chat/enclave/",
+    )
+    .exclude(
+        path_regex="^/api/v1/webhooks/",
+    )
+    .exclude(
+        # Agent write operations need enclave; reads (GET /agents, GET /{name}, GET /{name}/state) work fine
+        operation_id="create_agent",
+    )
+    .exclude(
+        operation_id="delete_agent",
+    )
+    .exclude(
+        operation_id="send_agent_message",
+    )
 )
 
 

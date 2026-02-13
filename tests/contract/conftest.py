@@ -4,6 +4,7 @@ Contract test fixtures.
 Uses httpx AsyncClient with ASGITransport and mocked auth/enclave dependencies.
 No real database, enclave, or Clerk needed.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from httpx import ASGITransport, AsyncClient
@@ -71,9 +72,7 @@ async def contract_client(mock_auth):
     app.dependency_overrides[get_db] = mock_get_db
     app.dependency_overrides[get_session_factory] = mock_get_session_factory
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()

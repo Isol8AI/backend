@@ -1,4 +1,5 @@
 """Smoke test that OpenAPI spec is valid and complete."""
+
 import pytest
 
 
