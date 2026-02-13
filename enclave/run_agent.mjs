@@ -163,8 +163,7 @@ if (!config.agents.defaults.memorySearch) {
   config.agents.defaults.memorySearch = {
     provider: "local",
     local: {
-      modelPath:
-        "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf",
+      modelPath: "/opt/openclaw/models/embeddinggemma-300M-Q8_0.gguf",
     },
     query: {
       maxResults: 20,
