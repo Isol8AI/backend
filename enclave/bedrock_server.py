@@ -100,6 +100,12 @@ class BedrockServer:
                 region=self.region,
             )
 
+            # Set KMS_KEY_ID if provided by parent (needed for background-mode encryption)
+            kms_key_id = data.get("kms_key_id")
+            if kms_key_id:
+                os.environ["KMS_KEY_ID"] = kms_key_id
+                print(f"[Enclave] KMS_KEY_ID set: {kms_key_id[:8]}...", flush=True)
+
             print("[Enclave] AWS credentials set (Bedrock + KMS)", flush=True)
             if credentials.get("expiration"):
                 print(f"[Enclave] Credentials expire: {credentials['expiration']}", flush=True)

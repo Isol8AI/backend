@@ -377,16 +377,22 @@ class NitroEnclaveClient(EnclaveInterface):
 
     def _push_credentials_sync(self) -> None:
         """Push credentials to enclave (sync version)."""
+        import os
+
         logger.info("Pushing credentials to enclave...")
         creds = self._get_iam_credentials()
 
-        response = self._send_command(
-            {
-                "command": "SET_CREDENTIALS",
-                "credentials": creds,
-            },
-            timeout=10.0,
-        )
+        command = {
+            "command": "SET_CREDENTIALS",
+            "credentials": creds,
+        }
+
+        # Pass KMS_KEY_ID so enclave can use KMS for background-mode encryption
+        kms_key_id = os.environ.get("KMS_KEY_ID", "")
+        if kms_key_id:
+            command["kms_key_id"] = kms_key_id
+
+        response = self._send_command(command, timeout=10.0)
 
         if response.get("status") != "success":
             raise RuntimeError(f"Failed to set enclave credentials: {response}")
