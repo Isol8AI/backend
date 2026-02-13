@@ -49,7 +49,6 @@ RUN dnf install -y \
     tar \
     gzip \
     iproute \
-    curl \
     && dnf clean all
 
 # Install Node.js 22 (required for OpenClaw) - must happen before Python symlink change
@@ -89,6 +88,7 @@ RUN npm link --ignore-scripts
 
 # Download embedding model for local vector memory search (329MB, Q8_0 quantization)
 # Pre-baked so the enclave never needs HuggingFace network access at runtime
+# Uses curl-minimal (pre-installed in amazonlinux:2023; full curl conflicts with it)
 RUN mkdir -p /opt/openclaw/models && \
     curl -fSL -o /opt/openclaw/models/embeddinggemma-300M-Q8_0.gguf \
     "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
