@@ -91,7 +91,9 @@ class DistributeOrgKeyRequest(BaseModel):
     """Request to distribute org key to a member."""
 
     membership_id: str = Field(..., description="Membership ID of the member to receive the key")
-    encrypted_org_key: EncryptedPayloadSchema = Field(..., description="Org private key encrypted to member's public key")
+    encrypted_org_key: EncryptedPayloadSchema = Field(
+        ..., description="Org private key encrypted to member's public key"
+    )
 
 
 class BatchDistributeOrgKeyRequest(BaseModel):

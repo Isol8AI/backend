@@ -195,9 +195,7 @@ class TestBackgroundStrategy:
             "auth_tag": "12" * 16,
         }
         strategy = BackgroundStrategy()
-        result = strategy.extract_state_from_response(
-            {"encrypted_state": kms_data}
-        )
+        result = strategy.extract_state_from_response({"encrypted_state": kms_data})
 
         assert result["encrypted_state"] is None
         assert result["kms_envelope"] is not None

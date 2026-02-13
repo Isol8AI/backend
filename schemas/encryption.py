@@ -237,7 +237,9 @@ class EncryptedChatResponse(BaseModel):
 
     session_id: str
     message_id: str
-    encrypted_response: EncryptedPayloadSchema = Field(..., description="Assistant response encrypted to user's public key")
+    encrypted_response: EncryptedPayloadSchema = Field(
+        ..., description="Assistant response encrypted to user's public key"
+    )
     model_used: str
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
