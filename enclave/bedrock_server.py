@@ -378,9 +378,11 @@ class BedrockServer:
                 state_bytes = self._decrypt_state(encrypted_state_dict, encryption_mode)
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
+                self._log_tarball_contents(tmpfs_path)
             else:
                 self._create_fresh_agent(tmpfs_path, agent_name, model)
                 print("[Enclave] Created fresh agent directory", flush=True)
+                self._log_tarball_contents(tmpfs_path)
 
             # Decrypt user message
             encrypted_message = EncryptedPayload.from_dict(data["encrypted_message"])
@@ -580,6 +582,20 @@ You are {agent_name}, a personal AI companion.
         # Create sessions directory
         (agent_subdir / "sessions").mkdir(exist_ok=True)
 
+    def _log_tarball_contents(self, agent_dir: Path) -> None:
+        """Log the contents of an extracted agent tarball for diagnostics."""
+        file_count = 0
+        total_size = 0
+        for root, dirs, files in os.walk(agent_dir):
+            for f in files:
+                filepath = os.path.join(root, f)
+                size = os.path.getsize(filepath)
+                rel = os.path.relpath(filepath, agent_dir)
+                print(f"[Enclave] Tarball: {rel} ({size} bytes)", flush=True)
+                file_count += 1
+                total_size += size
+        print(f"[Enclave] Tarball total: {file_count} files, {total_size} bytes", flush=True)
+
     def _read_agent_state(self, agent_dir: Path, agent_name: str) -> dict:
         """
         Read OpenClaw agent state files.
@@ -754,6 +770,7 @@ You are {agent_name}, a personal AI companion.
                 state_bytes = self._decrypt_state(encrypted_state_dict, encryption_mode)
                 self._unpack_tarball(state_bytes, tmpfs_path)
                 print(f"[Enclave] Extracted existing state ({len(state_bytes)} bytes)", flush=True)
+                self._log_tarball_contents(tmpfs_path)
             else:
                 # Decrypt soul content if provided (encrypted by client to enclave key)
                 soul_content = None
@@ -770,6 +787,7 @@ You are {agent_name}, a personal AI companion.
                 default_model = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
                 self._create_fresh_agent(tmpfs_path, agent_name, default_model, soul_content)
                 print("[Enclave] Created fresh agent directory", flush=True)
+                self._log_tarball_contents(tmpfs_path)
 
             # Decrypt user message
             encrypted_message = EncryptedPayload.from_dict(encrypted_message_dict)
@@ -1143,6 +1161,16 @@ You are {agent_name}, a personal AI companion.
                         f"[Enclave] Chunk #{chunk_count} sent at {send_time:.3f} (encrypt+send took {send_time - event_time:.3f}s)",
                         flush=True,
                     )
+
+                elif event["type"] == "reasoning":
+                    # Reasoning/thinking tokens from models like Kimi K2 Thinking, DeepSeek R1
+                    reasoning_text = event["text"]
+                    encrypted_thinking = encrypt_to_public_key(
+                        client_public_key,
+                        reasoning_text.encode("utf-8"),
+                        "enclave-to-client-transport",
+                    )
+                    self._send_event(conn, {"encrypted_thinking": encrypted_thinking.to_dict()})
 
                 elif event["type"] == "metadata":
                     input_tokens = event["usage"].get("inputTokens", 0)

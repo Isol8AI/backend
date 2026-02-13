@@ -319,6 +319,9 @@ class NitroEnclaveClient(EnclaveInterface):
                 if event.get("encrypted_content"):
                     yield StreamChunk(encrypted_content=EncryptedPayload.from_dict(event["encrypted_content"]))
 
+                if event.get("encrypted_thinking"):
+                    yield StreamChunk(encrypted_thinking=EncryptedPayload.from_dict(event["encrypted_thinking"]))
+
                 if event.get("is_final"):
                     yield StreamChunk(
                         stored_user_message=EncryptedPayload.from_dict(event["stored_user_message"]),

@@ -307,6 +307,13 @@ class BedrockClient:
                         print(f"[Bedrock] Yielding content chunk at {time.time():.3f}", flush=True)
                         yield {"type": "content", "text": text}
 
+                    # Check for reasoning/thinking content (e.g., Kimi K2 Thinking, DeepSeek R1)
+                    reasoning = event["delta"].get("reasoningContent", {})
+                    reasoning_text = reasoning.get("text", "")
+                    if reasoning_text:
+                        print(f"[Bedrock] Yielding reasoning chunk at {time.time():.3f}", flush=True)
+                        yield {"type": "reasoning", "text": reasoning_text}
+
                 # Check for stop reason
                 elif "stopReason" in event:
                     reason = event.get("stopReason", "end_turn")
