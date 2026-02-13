@@ -9,6 +9,7 @@ from .session import Session
 from .message import Message, MessageRole
 from .audit_log import AuditLog, AuditEventType
 from .agent_state import AgentState, EncryptionMode
+from .town import TownAgent, TownState, TownConversation, TownRelationship
 
 __all__ = [
     "Base",
@@ -24,4 +25,8 @@ __all__ = [
     "AuditEventType",
     "AgentState",
     "EncryptionMode",
+    "TownAgent",
+    "TownState",
+    "TownConversation",
+    "TownRelationship",
 ]

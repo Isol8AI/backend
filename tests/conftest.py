@@ -25,6 +25,7 @@ from models.organization_membership import OrganizationMembership, MemberRole
 from models.session import Session
 from models.user import User
 from models.agent_state import AgentState
+from models.town import TownAgent, TownState, TownConversation, TownRelationship
 
 # Check TEST_DATABASE_URL first (explicit), then DATABASE_URL (CI sets this), then fallback to remote
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL") or os.getenv(
@@ -70,6 +71,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     # Cleanup: delete all test data
     async with session_factory() as cleanup_session:
         await cleanup_session.execute(text(f"SET search_path TO {TEST_SCHEMA}"))
+        await cleanup_session.execute(TownRelationship.__table__.delete())
+        await cleanup_session.execute(TownConversation.__table__.delete())
+        await cleanup_session.execute(TownState.__table__.delete())
+        await cleanup_session.execute(TownAgent.__table__.delete())
         await cleanup_session.execute(AgentState.__table__.delete())
         await cleanup_session.execute(Message.__table__.delete())
         await cleanup_session.execute(Session.__table__.delete())
