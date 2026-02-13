@@ -3,8 +3,6 @@
 import os
 from unittest.mock import patch
 
-from pydantic_settings import BaseSettings
-
 
 class TestEnvironmentSetting:
     """Tests for Settings.ENVIRONMENT configuration."""

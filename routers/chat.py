@@ -28,7 +28,6 @@ from schemas.chat import (
     SessionListResponse,
     SessionMessagesResponse,
     EnclaveInfoResponse,
-    EnclaveHealthResponse,
     DeleteSessionsResponse,
     EncryptionCheckResponse,
 )

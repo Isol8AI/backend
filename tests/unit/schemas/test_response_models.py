@@ -1,6 +1,4 @@
 """Tests for Pydantic response models."""
-import pytest
-
 from schemas.user_schemas import SyncUserResponse, UserPublicKeyResponse, CreateKeysResponse
 from schemas.chat import EnclaveHealthResponse, EncryptionCheckResponse
 from schemas.organization_encryption import (
