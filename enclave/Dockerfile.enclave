@@ -82,6 +82,7 @@ COPY --from=openclaw-builder /build/node_modules/ ./node_modules/
 COPY --from=openclaw-builder /build/skills/ ./skills/
 COPY --from=openclaw-builder /build/assets/ ./assets/
 COPY --from=openclaw-builder /build/patches/ ./patches/
+COPY --from=openclaw-builder /build/extensions/ ./extensions/
 
 # Link globally so 'openclaw' CLI is available (skip postinstall, scripts/ not in final image)
 RUN npm link --ignore-scripts
