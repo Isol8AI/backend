@@ -32,21 +32,26 @@ class TestClerkWebhookEndpoint:
                 mock_service.create_user = AsyncMock()
                 MockService.return_value = mock_service
 
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.post(
-                        "/api/v1/webhooks/clerk",
-                        json=payload,
-                        headers={
-                            "svix-id": "test",
-                            "svix-timestamp": "123",
-                            "svix-signature": "test",
-                        },
-                    )
+                with patch("routers.webhooks.BillingService") as MockBilling:
+                    mock_billing = MagicMock()
+                    mock_billing.create_customer_for_user = AsyncMock()
+                    MockBilling.return_value = mock_billing
 
-                assert response.status_code == 200
-                assert response.json()["status"] == "processed"
-                assert response.json()["event"] == "user.created"
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/api/v1/webhooks/clerk",
+                            json=payload,
+                            headers={
+                                "svix-id": "test",
+                                "svix-timestamp": "123",
+                                "svix-signature": "test",
+                            },
+                        )
+
+                    assert response.status_code == 200
+                    assert response.json()["status"] == "processed"
+                    assert response.json()["event"] == "user.created"
 
     @pytest.mark.asyncio
     async def test_processes_user_deleted_event(self):
@@ -99,20 +104,25 @@ class TestClerkWebhookEndpoint:
                 mock_service.create_organization = AsyncMock()
                 MockService.return_value = mock_service
 
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.post(
-                        "/api/v1/webhooks/clerk",
-                        json=payload,
-                        headers={
-                            "svix-id": "test",
-                            "svix-timestamp": "123",
-                            "svix-signature": "test",
-                        },
-                    )
+                with patch("routers.webhooks.BillingService") as MockBilling:
+                    mock_billing = MagicMock()
+                    mock_billing.create_customer_for_org = AsyncMock()
+                    MockBilling.return_value = mock_billing
 
-                assert response.status_code == 200
-                assert response.json()["status"] == "processed"
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/api/v1/webhooks/clerk",
+                            json=payload,
+                            headers={
+                                "svix-id": "test",
+                                "svix-timestamp": "123",
+                                "svix-signature": "test",
+                            },
+                        )
+
+                    assert response.status_code == 200
+                    assert response.json()["status"] == "processed"
 
     @pytest.mark.asyncio
     async def test_processes_membership_created_event(self):
@@ -281,3 +291,138 @@ class TestWebhookVerification:
 
             assert exc_info.value.status_code == 401
             assert "Invalid webhook signature" in exc_info.value.detail
+
+
+# =============================================================================
+# Test Billing Account Creation on Webhooks
+# =============================================================================
+
+
+class TestBillingAccountCreationOnWebhook:
+    """Tests that billing accounts are created when users/orgs are created."""
+
+    @pytest.mark.asyncio
+    async def test_user_created_creates_billing_account(self):
+        """user.created webhook should call BillingService.create_customer_for_user."""
+        from main import app
+
+        payload = {
+            "type": "user.created",
+            "data": {
+                "id": "user_billing_new",
+                "email_addresses": [{"email_address": "new@test.com"}],
+            },
+        }
+
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = payload
+
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
+                mock_service = MagicMock()
+                mock_service.create_user = AsyncMock()
+                MockService.return_value = mock_service
+
+                with patch("routers.webhooks.BillingService") as MockBilling:
+                    mock_billing = MagicMock()
+                    mock_billing.create_customer_for_user = AsyncMock()
+                    MockBilling.return_value = mock_billing
+
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/api/v1/webhooks/clerk",
+                            json=payload,
+                            headers={
+                                "svix-id": "test",
+                                "svix-timestamp": "123",
+                                "svix-signature": "test",
+                            },
+                        )
+
+                    assert response.status_code == 200
+                    mock_billing.create_customer_for_user.assert_called_once_with(
+                        clerk_user_id="user_billing_new",
+                        email="new@test.com",
+                    )
+
+    @pytest.mark.asyncio
+    async def test_org_created_creates_billing_account(self):
+        """organization.created webhook should call BillingService.create_customer_for_org."""
+        from main import app
+
+        payload = {
+            "type": "organization.created",
+            "data": {"id": "org_billing_new", "name": "New Org"},
+        }
+
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = payload
+
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
+                mock_service = MagicMock()
+                mock_service.create_organization = AsyncMock()
+                MockService.return_value = mock_service
+
+                with patch("routers.webhooks.BillingService") as MockBilling:
+                    mock_billing = MagicMock()
+                    mock_billing.create_customer_for_org = AsyncMock()
+                    MockBilling.return_value = mock_billing
+
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/api/v1/webhooks/clerk",
+                            json=payload,
+                            headers={
+                                "svix-id": "test",
+                                "svix-timestamp": "123",
+                                "svix-signature": "test",
+                            },
+                        )
+
+                    assert response.status_code == 200
+                    mock_billing.create_customer_for_org.assert_called_once_with(
+                        clerk_org_id="org_billing_new",
+                        org_name="New Org",
+                    )
+
+    @pytest.mark.asyncio
+    async def test_billing_failure_does_not_fail_webhook(self):
+        """Billing account creation failure should not fail the webhook."""
+        from main import app
+
+        payload = {
+            "type": "user.created",
+            "data": {"id": "user_billing_fail"},
+        }
+
+        with patch("routers.webhooks.verify_webhook", new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = payload
+
+            with patch("routers.webhooks.ClerkSyncService") as MockService:
+                mock_service = MagicMock()
+                mock_service.create_user = AsyncMock()
+                MockService.return_value = mock_service
+
+                with patch("routers.webhooks.BillingService") as MockBilling:
+                    mock_billing = MagicMock()
+                    mock_billing.create_customer_for_user = AsyncMock(
+                        side_effect=Exception("Stripe down")
+                    )
+                    MockBilling.return_value = mock_billing
+
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/api/v1/webhooks/clerk",
+                            json=payload,
+                            headers={
+                                "svix-id": "test",
+                                "svix-timestamp": "123",
+                                "svix-signature": "test",
+                            },
+                        )
+
+                    # Webhook should still succeed even if billing fails
+                    assert response.status_code == 200
+                    assert response.json()["status"] == "processed"

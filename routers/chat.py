@@ -21,6 +21,7 @@ from core.auth import AuthContext, get_current_user
 from core.config import get_available_models, settings
 from core.database import get_db, get_session_factory
 from core.services.chat_service import ChatService
+from core.services.usage_service import UsageService
 from schemas.encryption import EncryptedPayloadSchema, SendEncryptedMessageRequest
 from schemas.chat import (
     CreateSessionRequest,
@@ -459,6 +460,28 @@ async def chat_stream_encrypted(
                         # Send stored message info
                         logger.debug("Messages stored for session_id=%s", session_id)
                         yield f"data: {json.dumps({'type': 'stored', 'model_used': chunk.model_used, 'input_tokens': chunk.input_tokens, 'output_tokens': chunk.output_tokens})}\n\n"
+
+                        # Record usage (non-blocking)
+                        if chunk.input_tokens or chunk.output_tokens:
+                            try:
+                                async with session_factory() as usage_db:
+                                    usage_service = UsageService(usage_db)
+                                    if auth.org_id:
+                                        account = await usage_service.get_billing_account_for_org(auth.org_id)
+                                    else:
+                                        account = await usage_service.get_billing_account_for_user(auth.user_id)
+                                    if account:
+                                        await usage_service.record_usage(
+                                            billing_account_id=account.id,
+                                            clerk_user_id=auth.user_id,
+                                            model_id=chunk.model_used or request.model,
+                                            input_tokens=chunk.input_tokens,
+                                            output_tokens=chunk.output_tokens,
+                                            source="chat",
+                                            session_id=session_id,
+                                        )
+                            except Exception as e:
+                                logger.warning("Failed to record SSE chat usage: %s", e)
 
             logger.debug("SSE stream complete for session_id=%s, chunks=%d", session_id, chunk_count)
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

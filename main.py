@@ -19,7 +19,7 @@ from core.auth import get_current_user
 from core.database import get_db, close_memory_pool
 from core.enclave import startup_enclave, shutdown_enclave
 from core.services.town_simulation import TownSimulation
-from routers import users, chat, organizations, context, webhooks, debug_encryption, websocket_chat, agents, town
+from routers import users, chat, organizations, context, webhooks, debug_encryption, websocket_chat, agents, town, billing
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,10 @@ openapi_tags = [
     {
         "name": "town",
         "description": "GooseTown AI agent simulation endpoints.",
+    },
+    {
+        "name": "billing",
+        "description": "Billing, usage tracking, and subscription management.",
     },
     {
         "name": "health",
@@ -175,6 +179,9 @@ app.include_router(websocket_chat.router, prefix="/api/v1/ws")
 
 # Agent routes (OpenClaw integration)
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
+
+# Billing routes
+app.include_router(billing.router, prefix="/api/v1/billing", tags=["billing"])
 
 # GooseTown routes
 app.include_router(town.router, prefix="/api/v1/town", tags=["town"])

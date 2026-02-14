@@ -15,6 +15,7 @@ from svix.webhooks import Webhook, WebhookVerificationError
 
 from core.config import settings
 from core.database import get_session_factory
+from core.services.billing_service import BillingService
 from core.services.clerk_sync_service import ClerkSyncService
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,19 @@ async def handle_clerk_webhook(
             # User events
             if event_type == "user.created":
                 await service.create_user(data)
+                # Create billing account (non-blocking)
+                try:
+                    billing = BillingService(db)
+                    email = ""
+                    email_addresses = data.get("email_addresses", [])
+                    if email_addresses:
+                        email = email_addresses[0].get("email_address", "")
+                    await billing.create_customer_for_user(
+                        clerk_user_id=data.get("id", ""),
+                        email=email,
+                    )
+                except Exception as e:
+                    logger.warning("Failed to create billing account for user %s: %s", data.get("id"), e)
             elif event_type == "user.updated":
                 await service.update_user(data)
             elif event_type == "user.deleted":
@@ -94,6 +108,15 @@ async def handle_clerk_webhook(
             # Organization events
             elif event_type == "organization.created":
                 await service.create_organization(data)
+                # Create billing account (non-blocking)
+                try:
+                    billing = BillingService(db)
+                    await billing.create_customer_for_org(
+                        clerk_org_id=data.get("id", ""),
+                        org_name=data.get("name", ""),
+                    )
+                except Exception as e:
+                    logger.warning("Failed to create billing account for org %s: %s", data.get("id"), e)
             elif event_type == "organization.updated":
                 await service.update_organization(data)
             elif event_type == "organization.deleted":

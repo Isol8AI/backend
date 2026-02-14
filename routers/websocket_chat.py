@@ -29,6 +29,7 @@ from core.database import get_session_factory as db_get_session_factory
 from core.services.chat_service import ChatService
 from core.services.connection_service import ConnectionService, ConnectionServiceError
 from core.services.management_api_client import ManagementApiClient, ManagementApiClientError
+from core.services.usage_service import UsageService
 from core.enclave import get_enclave, AgentHandler, AgentStreamRequest
 from core.services.agent_service import AgentService
 from schemas.agent import AgentChatWSRequest
@@ -405,6 +406,28 @@ async def _process_chat_message_background(
                         },
                     )
 
+                    # Record usage (non-blocking — failures logged, never block chat)
+                    if chunk.input_tokens or chunk.output_tokens:
+                        try:
+                            async with session_factory() as usage_db:
+                                usage_service = UsageService(usage_db)
+                                if org_id:
+                                    account = await usage_service.get_billing_account_for_org(org_id)
+                                else:
+                                    account = await usage_service.get_billing_account_for_user(user_id)
+                                if account:
+                                    await usage_service.record_usage(
+                                        billing_account_id=account.id,
+                                        clerk_user_id=user_id,
+                                        model_id=chunk.model_used or request.model,
+                                        input_tokens=chunk.input_tokens,
+                                        output_tokens=chunk.output_tokens,
+                                        source="chat",
+                                        session_id=session_id,
+                                    )
+                        except Exception as e:
+                            logger.warning("Failed to record chat usage: %s", e)
+
         logger.debug(
             "Stream complete for connection_id=%s, session_id=%s, chunks=%d",
             connection_id,
@@ -600,6 +623,25 @@ async def _process_agent_chat_background(
                     await db.commit()
 
                 logger.debug("Agent state updated for %s/%s (mode=%s)", user_id, agent_name, encryption_mode)
+
+                # Record agent usage (non-blocking)
+                if chunk.input_tokens or chunk.output_tokens:
+                    try:
+                        async with session_factory() as usage_db:
+                            usage_service = UsageService(usage_db)
+                            account = await usage_service.get_billing_account_for_user(user_id)
+                            if account:
+                                await usage_service.record_usage(
+                                    billing_account_id=account.id,
+                                    clerk_user_id=user_id,
+                                    model_id=chunk.model_used or "",
+                                    input_tokens=chunk.input_tokens,
+                                    output_tokens=chunk.output_tokens,
+                                    source="agent",
+                                    agent_name=agent_name,
+                                )
+                    except Exception as e:
+                        logger.warning("Failed to record agent usage: %s", e)
 
         management_api.send_message(connection_id, {"type": "done"})
 

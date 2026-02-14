@@ -46,3 +46,25 @@ class TestAvailableModels:
         model_ids = [m["id"].lower() for m in FALLBACK_MODELS]
         assert any("llama" in mid for mid in model_ids), "Llama model expected"
         assert any("claude" in mid or "anthropic" in mid for mid in model_ids), "Claude model expected"
+
+
+class TestBillingConfig:
+    """Test billing-related configuration."""
+
+    def test_stripe_settings_have_defaults(self):
+        """Stripe settings should have safe defaults for local dev."""
+        from core.config import settings
+        assert hasattr(settings, "STRIPE_SECRET_KEY")
+        assert hasattr(settings, "STRIPE_WEBHOOK_SECRET")
+        assert hasattr(settings, "STRIPE_METER_ID")
+        assert hasattr(settings, "BILLING_MARKUP")
+        assert settings.BILLING_MARKUP == 1.4
+
+    def test_billing_plan_budgets_defined(self):
+        """Plan budget constants should be defined."""
+        from core.config import PLAN_BUDGETS, FREE_TIER_LIMIT
+        assert "free" in PLAN_BUDGETS
+        assert "starter" in PLAN_BUDGETS
+        assert "pro" in PLAN_BUDGETS
+        assert "usage_only" in PLAN_BUDGETS
+        assert FREE_TIER_LIMIT == 2_000_000
