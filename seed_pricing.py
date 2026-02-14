@@ -65,7 +65,7 @@ async def seed():
             existing = await db.execute(
                 select(ModelPricing).where(
                     ModelPricing.model_id == price_data["model_id"],
-                    ModelPricing.is_active == True,
+                    ModelPricing.is_active.is_(True),
                 )
             )
             if existing.scalar_one_or_none():

@@ -1,13 +1,12 @@
 """Tests for UsageService."""
 
-from datetime import date, datetime, timezone
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
 
-from core.services.usage_service import UsageService, UsageServiceError
+from core.services.usage_service import UsageService
 from models.billing import BillingAccount, ModelPricing, UsageEvent, UsageDaily
 
 
@@ -251,7 +250,7 @@ class TestStripeReporting:
         self, mock_stripe, service, billing_account, pricing, db_session
     ):
         """Should report usage to Stripe meter after recording."""
-        event = await service.record_usage(
+        await service.record_usage(
             billing_account_id=billing_account.id,
             clerk_user_id="user_stripe_test",
             model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",

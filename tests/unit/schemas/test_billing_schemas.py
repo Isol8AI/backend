@@ -1,15 +1,12 @@
 """Tests for billing Pydantic schemas."""
 
 from datetime import date
-from decimal import Decimal
 
 import pytest
 
 from schemas.billing import (
     BillingAccountResponse,
     CheckoutRequest,
-    CheckoutResponse,
-    PortalResponse,
     UsageResponse,
     UsagePeriod,
     ModelUsage,

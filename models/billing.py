@@ -1,7 +1,7 @@
 """Database models for billing and usage tracking."""
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -52,7 +52,7 @@ class ModelPricing(Base):
     )
 
     __table_args__ = (
-        Index("idx_model_pricing_active", "model_id", unique=True, postgresql_where=(is_active == True)),
+        Index("idx_model_pricing_active", "model_id", unique=True, postgresql_where=is_active.is_(True)),
     )
 
     def __repr__(self) -> str:
@@ -91,8 +91,8 @@ class BillingAccount(Base):
             "(clerk_user_id IS NULL AND clerk_org_id IS NOT NULL)",
             name="chk_billing_entity",
         ),
-        Index("idx_billing_clerk_user", "clerk_user_id", unique=True, postgresql_where=(clerk_user_id != None)),
-        Index("idx_billing_clerk_org", "clerk_org_id", unique=True, postgresql_where=(clerk_org_id != None)),
+        Index("idx_billing_clerk_user", "clerk_user_id", unique=True, postgresql_where=clerk_user_id.isnot(None)),
+        Index("idx_billing_clerk_org", "clerk_org_id", unique=True, postgresql_where=clerk_org_id.isnot(None)),
     )
 
     def __repr__(self) -> str:
@@ -135,7 +135,7 @@ class UsageEvent(Base):
         Index(
             "idx_usage_event_stripe_null",
             "id",
-            postgresql_where=(stripe_meter_event_id == None),
+            postgresql_where=stripe_meter_event_id.is_(None),
         ),
     )
 

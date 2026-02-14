@@ -1,13 +1,13 @@
 """Tests for usage tracking hooks in chat and agent flows."""
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
 
 from core.services.usage_service import UsageService
-from models.billing import BillingAccount, ModelPricing, UsageEvent, UsageDaily
+from models.billing import BillingAccount, ModelPricing, UsageDaily
 
 
 class TestUsageTrackingIntegration:

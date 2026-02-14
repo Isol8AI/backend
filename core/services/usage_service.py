@@ -1,7 +1,7 @@
 """Service for tracking LLM usage and calculating costs."""
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -40,7 +40,7 @@ class UsageService:
         result = await self.db.execute(
             select(ModelPricing).where(
                 ModelPricing.model_id == model_id,
-                ModelPricing.is_active == True,
+                ModelPricing.is_active.is_(True),
             )
         )
         return result.scalar_one_or_none()

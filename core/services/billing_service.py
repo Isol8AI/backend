@@ -2,8 +2,6 @@
 
 import logging
 import os
-from typing import Optional
-
 import stripe
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
