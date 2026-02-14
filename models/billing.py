@@ -51,9 +51,7 @@ class ModelPricing(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        Index("idx_model_pricing_active", "model_id", unique=True, postgresql_where=is_active.is_(True)),
-    )
+    __table_args__ = (Index("idx_model_pricing_active", "model_id", unique=True, postgresql_where=is_active.is_(True)),)
 
     def __repr__(self) -> str:
         return f"<ModelPricing(model_id={self.model_id}, active={self.is_active})>"
@@ -70,9 +68,7 @@ class BillingAccount(Base):
     stripe_customer_id = Column(String, nullable=False, unique=True)
     stripe_subscription_id = Column(String, nullable=True)
     plan_tier = Column(String, nullable=False, default="free", server_default="free")
-    markup_multiplier = Column(
-        Numeric(5, 3), nullable=False, default=Decimal("1.400"), server_default="1.400"
-    )
+    markup_multiplier = Column(Numeric(5, 3), nullable=False, default=Decimal("1.400"), server_default="1.400")
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -106,9 +102,7 @@ class UsageEvent(Base):
     __tablename__ = "usage_event"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    billing_account_id = Column(
-        UUID(as_uuid=True), ForeignKey("billing_account.id"), nullable=False
-    )
+    billing_account_id = Column(UUID(as_uuid=True), ForeignKey("billing_account.id"), nullable=False)
     clerk_user_id = Column(String, nullable=False)
     model_id = Column(String, nullable=False)
     input_tokens = Column(Integer, nullable=False)
@@ -149,9 +143,7 @@ class UsageDaily(Base):
     __tablename__ = "usage_daily"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    billing_account_id = Column(
-        UUID(as_uuid=True), ForeignKey("billing_account.id"), nullable=False
-    )
+    billing_account_id = Column(UUID(as_uuid=True), ForeignKey("billing_account.id"), nullable=False)
     date = Column(Date, nullable=False)
     model_id = Column(String, nullable=False)
     source = Column(String, nullable=False)

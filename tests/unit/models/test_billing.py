@@ -22,9 +22,7 @@ class TestModelPricing:
         await db_session.commit()
 
         result = await db_session.execute(
-            select(ModelPricing).where(
-                ModelPricing.model_id == "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-            )
+            select(ModelPricing).where(ModelPricing.model_id == "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
         )
         saved = result.scalar_one()
         assert saved.display_name == "Claude 3.5 Sonnet"
@@ -76,9 +74,7 @@ class TestBillingAccount:
         db_session.add(account)
         await db_session.commit()
 
-        result = await db_session.execute(
-            select(BillingAccount).where(BillingAccount.clerk_org_id == "org_test_456")
-        )
+        result = await db_session.execute(select(BillingAccount).where(BillingAccount.clerk_org_id == "org_test_456"))
         saved = result.scalar_one()
         assert saved.clerk_user_id is None
         assert saved.plan_tier == "free"
@@ -110,9 +106,7 @@ class TestUsageEvent:
         db_session.add(event)
         await db_session.commit()
 
-        result = await db_session.execute(
-            select(UsageEvent).where(UsageEvent.billing_account_id == account.id)
-        )
+        result = await db_session.execute(select(UsageEvent).where(UsageEvent.billing_account_id == account.id))
         saved = result.scalar_one()
         assert saved.input_tokens == 1200
         assert saved.output_tokens == 800
@@ -172,9 +166,7 @@ class TestUsageDaily:
         db_session.add(daily)
         await db_session.commit()
 
-        result = await db_session.execute(
-            select(UsageDaily).where(UsageDaily.billing_account_id == account.id)
-        )
+        result = await db_session.execute(select(UsageDaily).where(UsageDaily.billing_account_id == account.id))
         saved = result.scalar_one()
         assert saved.total_input_tokens == 50000
         assert saved.request_count == 25

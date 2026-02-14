@@ -84,10 +84,10 @@ settings = Settings()
 
 # Billing plan budgets in microdollars (1 microdollar = $0.000001)
 PLAN_BUDGETS = {
-    "free": 2_000_000,        # $2
-    "starter": 15_000_000,    # $15
-    "pro": 45_000_000,        # $45
-    "usage_only": 0,          # No included budget
+    "free": 2_000_000,  # $2
+    "starter": 15_000_000,  # $15
+    "pro": 45_000_000,  # $45
+    "usage_only": 0,  # No included budget
 }
 
 FREE_TIER_LIMIT = PLAN_BUDGETS["free"]

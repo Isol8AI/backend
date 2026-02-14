@@ -19,7 +19,18 @@ from core.auth import get_current_user
 from core.database import get_db, close_memory_pool
 from core.enclave import startup_enclave, shutdown_enclave
 from core.services.town_simulation import TownSimulation
-from routers import users, chat, organizations, context, webhooks, debug_encryption, websocket_chat, agents, town, billing
+from routers import (
+    users,
+    chat,
+    organizations,
+    context,
+    webhooks,
+    debug_encryption,
+    websocket_chat,
+    agents,
+    town,
+    billing,
+)
 
 logger = logging.getLogger(__name__)
 

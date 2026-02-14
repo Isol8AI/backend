@@ -54,6 +54,7 @@ class TestBillingConfig:
     def test_stripe_settings_have_defaults(self):
         """Stripe settings should have safe defaults for local dev."""
         from core.config import settings
+
         assert hasattr(settings, "STRIPE_SECRET_KEY")
         assert hasattr(settings, "STRIPE_WEBHOOK_SECRET")
         assert hasattr(settings, "STRIPE_METER_ID")
@@ -63,6 +64,7 @@ class TestBillingConfig:
     def test_billing_plan_budgets_defined(self):
         """Plan budget constants should be defined."""
         from core.config import PLAN_BUDGETS, FREE_TIER_LIMIT
+
         assert "free" in PLAN_BUDGETS
         assert "starter" in PLAN_BUDGETS
         assert "pro" in PLAN_BUDGETS

@@ -47,9 +47,7 @@ class TestUsageTrackingIntegration:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_for_personal_chat(
-        self, mock_stripe, db_session, model_pricing, user_billing_account
-    ):
+    async def test_record_usage_for_personal_chat(self, mock_stripe, db_session, model_pricing, user_billing_account):
         """Should resolve user billing account and record usage for personal chat."""
         usage_service = UsageService(db_session)
 
@@ -76,9 +74,7 @@ class TestUsageTrackingIntegration:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_for_org_chat(
-        self, mock_stripe, db_session, model_pricing, org_billing_account
-    ):
+    async def test_record_usage_for_org_chat(self, mock_stripe, db_session, model_pricing, org_billing_account):
         """Should resolve org billing account and record usage for org chat."""
         usage_service = UsageService(db_session)
 
@@ -102,9 +98,7 @@ class TestUsageTrackingIntegration:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_for_agent(
-        self, mock_stripe, db_session, model_pricing, user_billing_account
-    ):
+    async def test_record_usage_for_agent(self, mock_stripe, db_session, model_pricing, user_billing_account):
         """Should record usage for agent chat with agent_name."""
         usage_service = UsageService(db_session)
 
@@ -136,9 +130,7 @@ class TestUsageTrackingIntegration:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_usage_creates_daily_rollup(
-        self, mock_stripe, db_session, model_pricing, user_billing_account
-    ):
+    async def test_usage_creates_daily_rollup(self, mock_stripe, db_session, model_pricing, user_billing_account):
         """Should create a daily rollup entry when recording usage."""
         usage_service = UsageService(db_session)
 
@@ -165,9 +157,7 @@ class TestUsageTrackingIntegration:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_stripe_failure_does_not_block(
-        self, mock_stripe, db_session, model_pricing, user_billing_account
-    ):
+    async def test_stripe_failure_does_not_block(self, mock_stripe, db_session, model_pricing, user_billing_account):
         """Stripe reporting failure should not prevent usage recording."""
         mock_stripe.billing.MeterEvent.create.side_effect = Exception("Stripe down")
 

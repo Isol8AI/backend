@@ -406,9 +406,7 @@ class TestBillingAccountCreationOnWebhook:
 
                 with patch("routers.webhooks.BillingService") as MockBilling:
                     mock_billing = MagicMock()
-                    mock_billing.create_customer_for_user = AsyncMock(
-                        side_effect=Exception("Stripe down")
-                    )
+                    mock_billing.create_customer_for_user = AsyncMock(side_effect=Exception("Stripe down"))
                     MockBilling.return_value = mock_billing
 
                     transport = ASGITransport(app=app)

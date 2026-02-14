@@ -35,6 +35,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 class BillingServiceError(Exception):
     """Base exception for billing service errors."""
+
     pass
 
 
@@ -44,16 +45,12 @@ class BillingService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_customer_for_user(
-        self, clerk_user_id: str, email: str
-    ) -> BillingAccount:
+    async def create_customer_for_user(self, clerk_user_id: str, email: str) -> BillingAccount:
         """Create Stripe customer + billing account for a personal user.
 
         Idempotent: returns existing account if already created.
         """
-        existing = await self.db.execute(
-            select(BillingAccount).where(BillingAccount.clerk_user_id == clerk_user_id)
-        )
+        existing = await self.db.execute(select(BillingAccount).where(BillingAccount.clerk_user_id == clerk_user_id))
         account = existing.scalar_one_or_none()
         if account:
             return account
@@ -71,16 +68,12 @@ class BillingService:
         await self.db.commit()
         return account
 
-    async def create_customer_for_org(
-        self, clerk_org_id: str, org_name: str
-    ) -> BillingAccount:
+    async def create_customer_for_org(self, clerk_org_id: str, org_name: str) -> BillingAccount:
         """Create Stripe customer + billing account for an organization.
 
         Idempotent: returns existing account if already created.
         """
-        existing = await self.db.execute(
-            select(BillingAccount).where(BillingAccount.clerk_org_id == clerk_org_id)
-        )
+        existing = await self.db.execute(select(BillingAccount).where(BillingAccount.clerk_org_id == clerk_org_id))
         account = existing.scalar_one_or_none()
         if account:
             return account
@@ -98,9 +91,7 @@ class BillingService:
         await self.db.commit()
         return account
 
-    async def create_checkout_session(
-        self, billing_account: BillingAccount, tier: str
-    ) -> str:
+    async def create_checkout_session(self, billing_account: BillingAccount, tier: str) -> str:
         """Create a Stripe Checkout session for subscribing to a plan.
 
         Returns the checkout URL.
@@ -135,9 +126,7 @@ class BillingService:
         )
         return session.url
 
-    async def update_subscription(
-        self, billing_account: BillingAccount, subscription_id: str, tier: str
-    ) -> None:
+    async def update_subscription(self, billing_account: BillingAccount, subscription_id: str, tier: str) -> None:
         """Update billing account after subscription change."""
         billing_account.stripe_subscription_id = subscription_id
         billing_account.plan_tier = tier

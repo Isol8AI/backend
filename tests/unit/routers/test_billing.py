@@ -85,9 +85,7 @@ class TestCheckout:
     @patch("core.services.billing_service.stripe")
     async def test_create_checkout(self, mock_stripe, async_client, billing_account):
         """Should return Stripe checkout URL."""
-        mock_stripe.checkout.Session.create.return_value = MagicMock(
-            url="https://checkout.stripe.com/test_session"
-        )
+        mock_stripe.checkout.Session.create.return_value = MagicMock(url="https://checkout.stripe.com/test_session")
 
         response = await async_client.post(
             "/api/v1/billing/checkout",
@@ -112,9 +110,7 @@ class TestStripeWebhook:
 
     @pytest.mark.asyncio
     @patch("routers.billing.stripe")
-    async def test_subscription_created_webhook(
-        self, mock_stripe, async_client, billing_account, db_session
-    ):
+    async def test_subscription_created_webhook(self, mock_stripe, async_client, billing_account, db_session):
         """Should update billing account on subscription.created."""
         mock_stripe.Webhook.construct_event.return_value = {
             "type": "customer.subscription.created",

@@ -30,9 +30,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _get_billing_account(
-    auth: AuthContext, db: AsyncSession
-) -> BillingAccount:
+async def _get_billing_account(auth: AuthContext, db: AsyncSession) -> BillingAccount:
     """Resolve billing account from auth context."""
     usage_service = UsageService(db)
     if auth.is_org_context and auth.org_id:
@@ -195,9 +193,7 @@ async def handle_stripe_webhook(
     sig = request.headers.get("stripe-signature", "")
 
     try:
-        event = stripe.Webhook.construct_event(
-            body, sig, settings.STRIPE_WEBHOOK_SECRET
-        )
+        event = stripe.Webhook.construct_event(body, sig, settings.STRIPE_WEBHOOK_SECRET)
     except Exception as e:
         logger.error("Stripe webhook signature verification failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
@@ -212,11 +208,7 @@ async def handle_stripe_webhook(
         subscription_id = event_data["id"]
         tier = event_data.get("metadata", {}).get("plan_tier", "starter")
 
-        result = await db.execute(
-            select(BillingAccount).where(
-                BillingAccount.stripe_customer_id == customer_id
-            )
-        )
+        result = await db.execute(select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id))
         account = result.scalar_one_or_none()
         if account:
             await billing_service.update_subscription(account, subscription_id, tier)
@@ -225,25 +217,15 @@ async def handle_stripe_webhook(
         customer_id = event_data["customer"]
         tier = event_data.get("metadata", {}).get("plan_tier", "starter")
 
-        result = await db.execute(
-            select(BillingAccount).where(
-                BillingAccount.stripe_customer_id == customer_id
-            )
-        )
+        result = await db.execute(select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id))
         account = result.scalar_one_or_none()
         if account:
-            await billing_service.update_subscription(
-                account, event_data["id"], tier
-            )
+            await billing_service.update_subscription(account, event_data["id"], tier)
 
     elif event_type == "customer.subscription.deleted":
         customer_id = event_data["customer"]
 
-        result = await db.execute(
-            select(BillingAccount).where(
-                BillingAccount.stripe_customer_id == customer_id
-            )
-        )
+        result = await db.execute(select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id))
         account = result.scalar_one_or_none()
         if account:
             await billing_service.cancel_subscription(account)

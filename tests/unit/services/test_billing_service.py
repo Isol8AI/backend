@@ -88,9 +88,7 @@ class TestBillingServiceCheckout:
     @patch("core.services.billing_service.stripe")
     async def test_create_checkout_session(self, mock_stripe, service, billing_account):
         """Should create Stripe Checkout session."""
-        mock_stripe.checkout.Session.create.return_value = MagicMock(
-            url="https://checkout.stripe.com/test"
-        )
+        mock_stripe.checkout.Session.create.return_value = MagicMock(url="https://checkout.stripe.com/test")
 
         url = await service.create_checkout_session(
             billing_account=billing_account,
@@ -122,9 +120,7 @@ class TestBillingServicePortal:
     @patch("core.services.billing_service.stripe")
     async def test_create_portal_session(self, mock_stripe, service, billing_account):
         """Should create Stripe Portal session."""
-        mock_stripe.billing_portal.Session.create.return_value = MagicMock(
-            url="https://billing.stripe.com/test"
-        )
+        mock_stripe.billing_portal.Session.create.return_value = MagicMock(url="https://billing.stripe.com/test")
 
         url = await service.create_portal_session(billing_account=billing_account)
 
@@ -155,9 +151,7 @@ class TestBillingServiceSubscription:
         await service.update_subscription(billing_account, "sub_123", "starter")
 
         db_session.expire_all()
-        result = await db_session.execute(
-            select(BillingAccount).where(BillingAccount.id == account_id)
-        )
+        result = await db_session.execute(select(BillingAccount).where(BillingAccount.id == account_id))
         updated = result.scalar_one()
         assert updated.stripe_subscription_id == "sub_123"
         assert updated.plan_tier == "starter"
@@ -173,9 +167,7 @@ class TestBillingServiceSubscription:
         await service.cancel_subscription(billing_account)
 
         db_session.expire_all()
-        result = await db_session.execute(
-            select(BillingAccount).where(BillingAccount.id == account_id)
-        )
+        result = await db_session.execute(select(BillingAccount).where(BillingAccount.id == account_id))
         updated = result.scalar_one()
         assert updated.stripe_subscription_id is None
         assert updated.plan_tier == "free"

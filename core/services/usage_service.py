@@ -20,12 +20,13 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 
 # Fallback pricing when model not found in pricing table.
 # Generous estimate to avoid undercharging.
-FALLBACK_INPUT_COST = Decimal("0.000003")   # $3/1M tokens
+FALLBACK_INPUT_COST = Decimal("0.000003")  # $3/1M tokens
 FALLBACK_OUTPUT_COST = Decimal("0.000015")  # $15/1M tokens
 
 
 class UsageServiceError(Exception):
     """Base exception for usage service errors."""
+
     pass
 
 
@@ -47,23 +48,17 @@ class UsageService:
 
     async def get_billing_account(self, billing_account_id: UUID) -> Optional[BillingAccount]:
         """Fetch a billing account by ID."""
-        result = await self.db.execute(
-            select(BillingAccount).where(BillingAccount.id == billing_account_id)
-        )
+        result = await self.db.execute(select(BillingAccount).where(BillingAccount.id == billing_account_id))
         return result.scalar_one_or_none()
 
     async def get_billing_account_for_user(self, clerk_user_id: str) -> Optional[BillingAccount]:
         """Fetch billing account for a personal user."""
-        result = await self.db.execute(
-            select(BillingAccount).where(BillingAccount.clerk_user_id == clerk_user_id)
-        )
+        result = await self.db.execute(select(BillingAccount).where(BillingAccount.clerk_user_id == clerk_user_id))
         return result.scalar_one_or_none()
 
     async def get_billing_account_for_org(self, clerk_org_id: str) -> Optional[BillingAccount]:
         """Fetch billing account for an organization."""
-        result = await self.db.execute(
-            select(BillingAccount).where(BillingAccount.clerk_org_id == clerk_org_id)
-        )
+        result = await self.db.execute(select(BillingAccount).where(BillingAccount.clerk_org_id == clerk_org_id))
         return result.scalar_one_or_none()
 
     async def record_usage(
@@ -87,9 +82,7 @@ class UsageService:
         # 1. Look up pricing
         pricing = await self.get_active_model_pricing(model_id)
         if not pricing:
-            logger.warning(
-                "No active pricing for model %s, using fallback", model_id
-            )
+            logger.warning("No active pricing for model %s, using fallback", model_id)
             input_cost_per_token = FALLBACK_INPUT_COST
             output_cost_per_token = FALLBACK_OUTPUT_COST
         else:
@@ -180,9 +173,7 @@ class UsageService:
         )
         await self.db.execute(stmt)
 
-    async def _report_to_stripe(
-        self, stripe_customer_id: str, billable: Decimal, event: UsageEvent
-    ) -> None:
+    async def _report_to_stripe(self, stripe_customer_id: str, billable: Decimal, event: UsageEvent) -> None:
         """Report usage to Stripe Meters API. Non-blocking."""
         try:
             value = int(billable * 1_000_000)  # Convert to microdollars
@@ -261,10 +252,7 @@ class UsageService:
             .group_by(UsageDaily.date)
             .order_by(UsageDaily.date)
         )
-        by_day = [
-            {"date": row.date, "cost": float(row.cost)}
-            for row in day_result.all()
-        ]
+        by_day = [{"date": row.date, "cost": float(row.cost)} for row in day_result.all()]
 
         total_cost = sum(m["cost"] for m in by_model)
         total_requests = sum(m["requests"] for m in by_model)

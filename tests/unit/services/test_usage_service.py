@@ -43,9 +43,7 @@ class TestUsageServiceRecordUsage:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_creates_event(
-        self, mock_stripe, service, billing_account, pricing, db_session
-    ):
+    async def test_record_usage_creates_event(self, mock_stripe, service, billing_account, pricing, db_session):
         """Should create a UsageEvent with calculated costs."""
         await service.record_usage(
             billing_account_id=billing_account.id,
@@ -56,9 +54,7 @@ class TestUsageServiceRecordUsage:
             source="chat",
         )
 
-        result = await db_session.execute(
-            select(UsageEvent).where(UsageEvent.billing_account_id == billing_account.id)
-        )
+        result = await db_session.execute(select(UsageEvent).where(UsageEvent.billing_account_id == billing_account.id))
         event = result.scalar_one()
         assert event.input_tokens == 1000
         assert event.output_tokens == 500
@@ -72,9 +68,7 @@ class TestUsageServiceRecordUsage:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_upserts_daily(
-        self, mock_stripe, service, billing_account, pricing, db_session
-    ):
+    async def test_record_usage_upserts_daily(self, mock_stripe, service, billing_account, pricing, db_session):
         """Should create/update a UsageDaily rollup."""
         account_id = billing_account.id  # Capture before any expiry
 
@@ -87,9 +81,7 @@ class TestUsageServiceRecordUsage:
             source="chat",
         )
 
-        result = await db_session.execute(
-            select(UsageDaily).where(UsageDaily.billing_account_id == account_id)
-        )
+        result = await db_session.execute(select(UsageDaily).where(UsageDaily.billing_account_id == account_id))
         daily = result.scalar_one()
         assert daily.total_input_tokens == 1000
         assert daily.total_output_tokens == 500
@@ -108,9 +100,7 @@ class TestUsageServiceRecordUsage:
         # Expire cached objects so SQLAlchemy re-fetches the updated row from DB
         db_session.expire_all()
 
-        result = await db_session.execute(
-            select(UsageDaily).where(UsageDaily.billing_account_id == account_id)
-        )
+        result = await db_session.execute(select(UsageDaily).where(UsageDaily.billing_account_id == account_id))
         daily = result.scalar_one()
         assert daily.total_input_tokens == 3000
         assert daily.total_output_tokens == 1500
@@ -118,9 +108,7 @@ class TestUsageServiceRecordUsage:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_unknown_model_uses_fallback(
-        self, mock_stripe, service, billing_account, db_session
-    ):
+    async def test_record_usage_unknown_model_uses_fallback(self, mock_stripe, service, billing_account, db_session):
         """Should use fallback pricing when model not in pricing table."""
         await service.record_usage(
             billing_account_id=billing_account.id,
@@ -131,9 +119,7 @@ class TestUsageServiceRecordUsage:
             source="chat",
         )
 
-        result = await db_session.execute(
-            select(UsageEvent).where(UsageEvent.billing_account_id == billing_account.id)
-        )
+        result = await db_session.execute(select(UsageEvent).where(UsageEvent.billing_account_id == billing_account.id))
         event = result.scalar_one()
         # Fallback pricing should still produce non-zero costs
         assert event.total_cost > 0
@@ -170,9 +156,7 @@ class TestUsageServiceQueries:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_get_monthly_billable(
-        self, mock_stripe, service, billing_account, pricing, db_session
-    ):
+    async def test_get_monthly_billable(self, mock_stripe, service, billing_account, pricing, db_session):
         """Should return total billable in microdollars for current month."""
         await service.record_usage(
             billing_account_id=billing_account.id,
@@ -195,9 +179,7 @@ class TestUsageServiceQueries:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_get_usage_breakdown(
-        self, mock_stripe, service, billing_account, pricing, db_session
-    ):
+    async def test_get_usage_breakdown(self, mock_stripe, service, billing_account, pricing, db_session):
         """Should return per-model and per-day breakdown."""
         await service.record_usage(
             billing_account_id=billing_account.id,
@@ -246,9 +228,7 @@ class TestStripeReporting:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_record_usage_reports_to_stripe(
-        self, mock_stripe, service, billing_account, pricing, db_session
-    ):
+    async def test_record_usage_reports_to_stripe(self, mock_stripe, service, billing_account, pricing, db_session):
         """Should report usage to Stripe meter after recording."""
         await service.record_usage(
             billing_account_id=billing_account.id,
@@ -271,9 +251,7 @@ class TestStripeReporting:
 
     @pytest.mark.asyncio
     @patch("core.services.usage_service.stripe")
-    async def test_stripe_failure_does_not_block(
-        self, mock_stripe, service, billing_account, pricing, db_session
-    ):
+    async def test_stripe_failure_does_not_block(self, mock_stripe, service, billing_account, pricing, db_session):
         """Should still record usage locally even if Stripe fails."""
         mock_stripe.billing.MeterEvent.create.side_effect = Exception("Stripe down")
 
