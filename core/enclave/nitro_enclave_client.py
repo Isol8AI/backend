@@ -581,6 +581,81 @@ class NitroEnclaveClient(EnclaveInterface):
                 error="Request timed out",
             )
 
+    async def extract_agent_files(
+        self,
+        kms_envelope: dict,
+        user_public_key: str,
+    ) -> EncryptedPayload:
+        """
+        Extract files from a KMS-encrypted agent tarball.
+
+        Sends EXTRACT_AGENT_FILES command to enclave. The enclave decrypts
+        the KMS envelope, extracts files from the tarball, encrypts the file
+        manifest to the user's transport key, and returns it.
+
+        Args:
+            kms_envelope: KMS envelope dict (hex strings: encrypted_dek, iv, ciphertext, auth_tag)
+            user_public_key: Client's ephemeral transport public key (hex string)
+
+        Returns:
+            EncryptedPayload containing the encrypted file manifest
+        """
+        if self._credentials_expiring_soon():
+            await self._push_credentials_async()
+
+        command = {
+            "command": "EXTRACT_AGENT_FILES",
+            "encrypted_state": kms_envelope,
+            "user_public_key": user_public_key,
+        }
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: self._send_command(command, timeout=30.0),
+        )
+
+        if response.get("status") != "success":
+            raise RuntimeError(response.get("error", "Failed to extract agent files"))
+
+        return EncryptedPayload.from_dict(response["encrypted_files"])
+
+    async def pack_agent_files(
+        self,
+        files: list,
+    ) -> dict:
+        """
+        Pack files into a new KMS-encrypted agent tarball.
+
+        Sends PACK_AGENT_FILES command to enclave. The enclave decrypts
+        each file's content, packs them into a tarball, KMS-encrypts
+        the tarball, and returns the new KMS envelope.
+
+        Args:
+            files: List of dicts with 'path' and 'encrypted_content' (EncryptedPayload dict)
+
+        Returns:
+            KMS envelope dict (hex strings) for storage
+        """
+        if self._credentials_expiring_soon():
+            await self._push_credentials_async()
+
+        command = {
+            "command": "PACK_AGENT_FILES",
+            "files": files,
+        }
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: self._send_command(command, timeout=30.0),
+        )
+
+        if response.get("status") != "success":
+            raise RuntimeError(response.get("error", "Failed to pack agent files"))
+
+        return response["kms_envelope"]
+
     async def agent_chat_streaming(
         self,
         encrypted_message: EncryptedPayload,

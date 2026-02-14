@@ -80,6 +80,12 @@ class AgentChatWSRequest(BaseModel):
     )
 
 
+class UpdateAgentStateRequest(BaseModel):
+    """Request to update agent encrypted state (e.g. after editing SOUL.md)."""
+
+    encrypted_state: EncryptedPayloadSchema
+
+
 class AgentStateResponse(BaseModel):
     """Response from GET /agents/{agent_name}/state."""
 
@@ -87,3 +93,30 @@ class AgentStateResponse(BaseModel):
     encryption_mode: str = Field(..., description="'zero_trust' or 'background'")
     has_state: bool = Field(..., description="Whether agent has saved state")
     encrypted_tarball: Optional[str] = Field(None, description="JSON-serialized encrypted state (hex)")
+
+
+class ExtractAgentFilesRequest(BaseModel):
+    """Request to extract files from a background-mode agent's encrypted tarball."""
+
+    ephemeral_public_key: str = Field(..., description="Client transport public key (hex)")
+
+
+class ExtractAgentFilesResponse(BaseModel):
+    """Response with encrypted file manifest from agent tarball."""
+
+    encrypted_files: EncryptedPayloadSchema
+
+
+class AgentFileEntry(BaseModel):
+    """A single file to write into an agent tarball."""
+
+    path: str = Field(..., description="Relative file path within agent directory")
+    encrypted_content: EncryptedPayloadSchema = Field(
+        ..., description="File content encrypted to enclave transport key"
+    )
+
+
+class PackAgentFilesRequest(BaseModel):
+    """Request to pack files into a new agent tarball (background mode)."""
+
+    files: List[AgentFileEntry] = Field(..., description="Files to pack into the tarball")

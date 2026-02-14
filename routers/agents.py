@@ -25,6 +25,10 @@ from schemas.agent import (
     AgentListResponse,
     SendAgentMessageRequest,
     AgentMessageResponse,
+    UpdateAgentStateRequest,
+    ExtractAgentFilesRequest,
+    ExtractAgentFilesResponse,
+    PackAgentFilesRequest,
 )
 from schemas.encryption import EncryptedPayloadSchema
 
@@ -222,6 +226,152 @@ async def get_agent_state(
         "encrypted_state": api_payload,
         "encryption_mode": state.encryption_mode,
     }
+
+
+@router.put(
+    "/{agent_name}/state",
+    summary="Update agent state",
+    description="Upload a modified encrypted tarball. Works for zero_trust mode (client encrypts to user's public key).",
+    operation_id="update_agent_state",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Agent not found"},
+    },
+)
+async def update_agent_state(
+    agent_name: str,
+    request: UpdateAgentStateRequest,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentService(db)
+    state = await service.get_agent_state(
+        user_id=auth.user_id,
+        agent_name=agent_name,
+    )
+
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{agent_name}' not found",
+        )
+
+    encrypted_state_bytes = _serialize_encrypted_payload(request.encrypted_state.to_crypto())
+    await service.update_agent_state(
+        user_id=auth.user_id,
+        agent_name=agent_name,
+        encrypted_tarball=encrypted_state_bytes,
+    )
+    await db.commit()
+
+    return {"status": "ok"}
+
+
+@router.post(
+    "/{agent_name}/files/extract",
+    response_model=ExtractAgentFilesResponse,
+    summary="Extract agent files (background mode)",
+    description="Extract files from a background-mode agent's KMS-encrypted tarball via enclave.",
+    operation_id="extract_agent_files",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Agent not found or no state"},
+        400: {"description": "Agent is not in background mode"},
+    },
+)
+async def extract_agent_files(
+    agent_name: str,
+    request: ExtractAgentFilesRequest,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentService(db)
+    state = await service.get_agent_state(
+        user_id=auth.user_id,
+        agent_name=agent_name,
+    )
+
+    if not state or not state.encrypted_tarball:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{agent_name}' not found or has no state",
+        )
+
+    if state.encryption_mode != "background":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Extract endpoint is only for background-mode agents",
+        )
+
+    enclave = get_enclave()
+    kms_envelope = json.loads(state.encrypted_tarball.decode())
+
+    response = await enclave.extract_agent_files(
+        kms_envelope=kms_envelope,
+        user_public_key=request.ephemeral_public_key,
+    )
+
+    return ExtractAgentFilesResponse(
+        encrypted_files=EncryptedPayloadSchema.from_crypto(response),
+    )
+
+
+@router.post(
+    "/{agent_name}/files/pack",
+    summary="Pack agent files (background mode)",
+    description="Pack modified files into a new KMS-encrypted tarball via enclave.",
+    operation_id="pack_agent_files",
+    responses={
+        401: {"description": "Missing or invalid Clerk JWT token"},
+        404: {"description": "Agent not found"},
+        400: {"description": "Agent is not in background mode"},
+    },
+)
+async def pack_agent_files(
+    agent_name: str,
+    request: PackAgentFilesRequest,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentService(db)
+    state = await service.get_agent_state(
+        user_id=auth.user_id,
+        agent_name=agent_name,
+    )
+
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{agent_name}' not found",
+        )
+
+    if state.encryption_mode != "background":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pack endpoint is only for background-mode agents",
+        )
+
+    enclave = get_enclave()
+    files_for_enclave = [
+        {
+            "path": f.path,
+            "encrypted_content": f.encrypted_content.to_crypto().to_dict(),
+        }
+        for f in request.files
+    ]
+
+    kms_envelope = await enclave.pack_agent_files(files=files_for_enclave)
+
+    # Store updated KMS envelope
+    kms_envelope_serialized = json.dumps(kms_envelope).encode()
+    await service.update_agent_state(
+        user_id=auth.user_id,
+        agent_name=agent_name,
+        encrypted_tarball=kms_envelope_serialized,
+    )
+    await db.commit()
+
+    return {"status": "ok"}
 
 
 # =============================================================================

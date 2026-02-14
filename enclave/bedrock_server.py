@@ -729,6 +729,147 @@ You are {agent_name}, a personal AI companion.
         with open(session_file, "a") as f:
             f.write(json.dumps(record) + "\n")
 
+    def handle_extract_agent_files(self, data: dict) -> dict:
+        """
+        Extract files from a KMS-encrypted agent tarball.
+
+        Decrypts the KMS envelope, extracts files, encrypts the file manifest
+        to the user's transport key.
+
+        Required fields:
+        - encrypted_state: KMS envelope dict (hex strings)
+        - user_public_key: Client's ephemeral transport public key (hex)
+        """
+        tmpfs_path = None
+        try:
+            encrypted_state_dict = data["encrypted_state"]
+            user_public_key = hex_to_bytes(data["user_public_key"])
+
+            print("[Enclave] EXTRACT_AGENT_FILES: decrypting KMS state", flush=True)
+
+            # Decrypt state from KMS
+            state_bytes = self._decrypt_state(encrypted_state_dict, "background")
+
+            # Extract tarball to tmpfs
+            tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
+            os.makedirs(tmpfs_base, exist_ok=True)
+            tmpfs_path = Path(tempfile.mkdtemp(dir=tmpfs_base, prefix="extract_"))
+            self._unpack_tarball(state_bytes, tmpfs_path)
+
+            # Read all files
+            file_list = []
+            for item in tmpfs_path.rglob("*"):
+                if item.is_file():
+                    rel_path = str(item.relative_to(tmpfs_path))
+                    try:
+                        content = item.read_text(encoding="utf-8")
+                    except UnicodeDecodeError:
+                        content = item.read_bytes().hex()
+                    file_list.append({"path": rel_path, "content": content})
+
+            print(f"[Enclave] Extracted {len(file_list)} files", flush=True)
+
+            # Encrypt file manifest to user's transport key
+            manifest_json = json.dumps(file_list).encode("utf-8")
+            encrypted_files = encrypt_to_public_key(
+                user_public_key,
+                manifest_json,
+                "enclave-to-client-transport",
+            )
+
+            return {
+                "status": "success",
+                "command": "EXTRACT_AGENT_FILES",
+                "encrypted_files": encrypted_files.to_dict(),
+            }
+
+        except Exception as e:
+            print(f"[Enclave] EXTRACT_AGENT_FILES error: {e}", flush=True)
+            import traceback
+
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "command": "EXTRACT_AGENT_FILES",
+                "error": str(e),
+            }
+        finally:
+            if tmpfs_path and tmpfs_path.exists():
+                shutil.rmtree(tmpfs_path, ignore_errors=True)
+
+    def handle_pack_agent_files(self, data: dict) -> dict:
+        """
+        Pack files into a new KMS-encrypted agent tarball.
+
+        Decrypts each file's content (encrypted to enclave transport key),
+        writes them to a tmpfs directory, packs into a tarball, and
+        KMS-encrypts the result.
+
+        Required fields:
+        - files: List of {path, encrypted_content (EncryptedPayload dict)}
+        """
+        tmpfs_path = None
+        try:
+            files = data["files"]
+
+            print(f"[Enclave] PACK_AGENT_FILES: packing {len(files)} files", flush=True)
+
+            # Create tmpfs directory
+            tmpfs_base = os.environ.get("OPENCLAW_TMPFS", "/tmp/openclaw")
+            os.makedirs(tmpfs_base, exist_ok=True)
+            tmpfs_path = Path(tempfile.mkdtemp(dir=tmpfs_base, prefix="pack_"))
+
+            # Decrypt and write each file
+            for f in files:
+                rel_path = f["path"]
+                encrypted_content = EncryptedPayload.from_dict(f["encrypted_content"])
+                content_bytes = decrypt_with_private_key(
+                    self.keypair.private_key,
+                    encrypted_content,
+                    "client-to-enclave-transport",
+                )
+
+                file_path = tmpfs_path / rel_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_bytes(content_bytes)
+
+            # Pack directory into tarball
+            tarball_bytes = self._pack_directory(tmpfs_path)
+            print(f"[Enclave] Packed tarball: {len(tarball_bytes)} bytes", flush=True)
+
+            # KMS-encrypt the tarball
+            kms_key_id = os.environ.get("KMS_KEY_ID", "")
+            if not kms_key_id:
+                raise ValueError("KMS_KEY_ID required for background mode")
+
+            kms_envelope = encrypt_with_kms(tarball_bytes, kms_key_id)
+            kms_envelope_hex = {
+                "encrypted_dek": kms_envelope["encrypted_dek"].hex(),
+                "iv": kms_envelope["iv"].hex(),
+                "ciphertext": kms_envelope["ciphertext"].hex(),
+                "auth_tag": kms_envelope["auth_tag"].hex(),
+            }
+
+            return {
+                "status": "success",
+                "command": "PACK_AGENT_FILES",
+                "kms_envelope": kms_envelope_hex,
+            }
+
+        except Exception as e:
+            print(f"[Enclave] PACK_AGENT_FILES error: {e}", flush=True)
+            import traceback
+
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "command": "PACK_AGENT_FILES",
+                "error": str(e),
+            }
+        finally:
+            if tmpfs_path and tmpfs_path.exists():
+                shutil.rmtree(tmpfs_path, ignore_errors=True)
+
     def handle_agent_chat_stream(self, data: dict, conn: socket.socket) -> None:
         """
         Process encrypted agent chat with streaming response.
@@ -1241,6 +1382,8 @@ You are {agent_name}, a personal AI companion.
             "CHAT": lambda: self.handle_chat(request),
             "RUN_TESTS": self.handle_run_tests,
             "RUN_AGENT": lambda: self.handle_run_agent(request),
+            "EXTRACT_AGENT_FILES": lambda: self.handle_extract_agent_files(request),
+            "PACK_AGENT_FILES": lambda: self.handle_pack_agent_files(request),
         }
 
         handler = handlers.get(command)
