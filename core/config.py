@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     CREDENTIAL_ENCRYPTION_KEY: Optional[str] = os.getenv("CREDENTIAL_ENCRYPTION_KEY")
 
     # CORS Configuration (comma-separated origins)
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://town.isol8.co"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://dev.town.isol8.co,https://staging.town.isol8.co,https://town.isol8.co"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     WS_CONNECTIONS_TABLE: str = os.getenv("WS_CONNECTIONS_TABLE", "isol8-websocket-connections")
     WS_MANAGEMENT_API_URL: str = os.getenv("WS_MANAGEMENT_API_URL", "")  # Set by Terraform
 
+    # Billing / Stripe
+    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    STRIPE_METER_ID: str = os.getenv("STRIPE_METER_ID", "")
+    BILLING_MARKUP: float = float(os.getenv("BILLING_MARKUP", "1.4"))
+
     @field_validator("ENCLAVE_CID", mode="before")
     @classmethod
     def validate_enclave_cid(cls, v):
@@ -75,6 +81,16 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Billing plan budgets in microdollars (1 microdollar = $0.000001)
+PLAN_BUDGETS = {
+    "free": 2_000_000,        # $2
+    "starter": 15_000_000,    # $15
+    "pro": 45_000_000,        # $45
+    "usage_only": 0,          # No included budget
+}
+
+FREE_TIER_LIMIT = PLAN_BUDGETS["free"]
 
 # Fallback models used when Bedrock discovery is unavailable (e.g., local dev without AWS creds).
 # IDs use inference profile format (us. prefix) for models that require it.
