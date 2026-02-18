@@ -114,13 +114,15 @@ class TestTownState:
     """Test GET /api/v1/town/state (AI Town worldState format)."""
 
     @pytest.mark.asyncio
-    async def test_get_state_empty(self, async_client):
+    async def test_get_state_defaults(self, async_client):
         response = await async_client.get("/api/v1/town/state")
 
         assert response.status_code == 200
         data = response.json()
-        assert data["world"]["players"] == []
-        assert data["world"]["agents"] == []
+        assert len(data["world"]["players"]) == 5
+        assert len(data["world"]["agents"]) == 5
+        assert data["world"]["players"][0]["id"] == "p:0"
+        assert data["world"]["agents"][0]["id"] == "a:0"
         assert data["world"]["conversations"] == []
         assert "currentTime" in data["engine"]
 
@@ -155,15 +157,16 @@ class TestTownDescriptions:
     """Test GET /api/v1/town/descriptions (AI Town gameDescriptions)."""
 
     @pytest.mark.asyncio
-    async def test_get_descriptions_empty(self, async_client):
+    async def test_get_descriptions_defaults(self, async_client):
         response = await async_client.get("/api/v1/town/descriptions")
 
         assert response.status_code == 200
         data = response.json()
         assert "worldMap" in data
         assert data["worldMap"]["width"] > 0
-        assert data["playerDescriptions"] == []
-        assert data["agentDescriptions"] == []
+        assert len(data["playerDescriptions"]) == 5
+        assert len(data["agentDescriptions"]) == 5
+        assert data["playerDescriptions"][0]["name"] == "Lucky"
 
     @pytest.mark.asyncio
     async def test_get_descriptions_with_agents(self, async_client, db_session, test_user):
