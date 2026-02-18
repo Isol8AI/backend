@@ -151,48 +151,32 @@ ENGINE_ID = "engine_default"
 # ---------------------------------------------------------------------------
 
 
-async def _build_ai_town_state(db: AsyncSession) -> dict:
-    """Build AI Town-compatible world state from the database.
+def _build_default_state() -> dict:
+    """Build AI Town state from DEFAULT_CHARACTERS.
 
+    Used when no agents are registered in the DB (or DB tables don't exist yet).
     Returns a dict matching SerializedWorld + engine status.
     """
-    service = TownService(db)
-    db_states = await service.get_town_state()
     now_ms = int(time.time() * 1000)
 
     players = []
     agents = []
     player_descriptions = []
     agent_descriptions = []
-    next_id = 0
 
-    for i, s in enumerate(db_states):
+    for i, char in enumerate(DEFAULT_CHARACTERS):
         player_id = f"p:{i}"
         agent_id = f"a:{i}"
-        next_id = i + 1
-
-        # Convert pixel positions to tile coordinates (tileDim = 32)
-        tile_x = s["position_x"] / 32.0
-        tile_y = s["position_y"] / 32.0
-
-        # Determine facing direction from target
-        facing = {"dx": 0, "dy": 1}
-        speed = 0.0
-        pathfinding = None
-
-        if s.get("target_location"):
-            # Agent is walking — set speed and pathfinding
-            speed = 0.75
-            facing = {"dx": 1, "dy": 0}  # simplified
+        pos = DEFAULT_SPAWN_POSITIONS[i % len(DEFAULT_SPAWN_POSITIONS)]
 
         players.append(
             {
                 "id": player_id,
-                "position": {"x": tile_x, "y": tile_y},
-                "facing": facing,
-                "speed": speed,
+                "position": {"x": pos["x"], "y": pos["y"]},
+                "facing": {"dx": 0, "dy": 1},
+                "speed": 0.0,
                 "lastInput": now_ms,
-                "pathfinding": pathfinding,
+                "pathfinding": None,
                 "activity": None,
             }
         )
@@ -208,9 +192,87 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
             }
         )
 
-        # Use personality_summary or fall back to defaults
-        char_idx = i % len(DEFAULT_CHARACTERS)
-        char = DEFAULT_CHARACTERS[char_idx]
+        player_descriptions.append(
+            {
+                "playerId": player_id,
+                "name": char["name"],
+                "description": char["identity"],
+                "character": char["character"],
+            }
+        )
+
+        agent_descriptions.append(
+            {
+                "agentId": agent_id,
+                "identity": char["identity"],
+                "plan": char["plan"],
+            }
+        )
+
+    return {
+        "world": {
+            "nextId": len(DEFAULT_CHARACTERS),
+            "players": players,
+            "agents": agents,
+            "conversations": [],
+        },
+        "engine": {
+            "currentTime": now_ms,
+            "lastStepTs": now_ms - 16,
+        },
+        "playerDescriptions": player_descriptions,
+        "agentDescriptions": agent_descriptions,
+    }
+
+
+async def _build_ai_town_state(db: AsyncSession) -> dict:
+    """Build AI Town-compatible world state from the database.
+
+    Falls back to default characters if the DB is empty or tables don't exist.
+    """
+    try:
+        service = TownService(db)
+        db_states = await service.get_town_state()
+    except Exception:
+        logger.debug("Town tables not available, using defaults")
+        return _build_default_state()
+
+    if not db_states:
+        return _build_default_state()
+
+    now_ms = int(time.time() * 1000)
+    players = []
+    agents = []
+    player_descriptions = []
+    agent_descriptions = []
+
+    for i, s in enumerate(db_states):
+        player_id = f"p:{i}"
+        agent_id = f"a:{i}"
+        char = DEFAULT_CHARACTERS[i % len(DEFAULT_CHARACTERS)]
+
+        players.append(
+            {
+                "id": player_id,
+                "position": {"x": s["position_x"] / 32.0, "y": s["position_y"] / 32.0},
+                "facing": {"dx": 0, "dy": 1},
+                "speed": 0.75 if s.get("target_location") else 0.0,
+                "lastInput": now_ms,
+                "pathfinding": None,
+                "activity": None,
+            }
+        )
+
+        agents.append(
+            {
+                "id": agent_id,
+                "playerId": player_id,
+                "toRemember": None,
+                "lastConversation": None,
+                "lastInviteAttempt": None,
+                "inProgressOperation": None,
+            }
+        )
 
         player_descriptions.append(
             {
@@ -229,21 +291,17 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
             }
         )
 
-    world = {
-        "nextId": next_id,
-        "players": players,
-        "agents": agents,
-        "conversations": [],
-    }
-
-    engine = {
-        "currentTime": now_ms,
-        "lastStepTs": now_ms - 16,  # ~1 frame ago
-    }
-
     return {
-        "world": world,
-        "engine": engine,
+        "world": {
+            "nextId": len(db_states),
+            "players": players,
+            "agents": agents,
+            "conversations": [],
+        },
+        "engine": {
+            "currentTime": now_ms,
+            "lastStepTs": now_ms - 16,
+        },
         "playerDescriptions": player_descriptions,
         "agentDescriptions": agent_descriptions,
     }

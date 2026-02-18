@@ -94,4 +94,3 @@ openapi.json
 # Misc
 # ========================
 .ruff_cache/
-data/
