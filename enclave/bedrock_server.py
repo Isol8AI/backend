@@ -51,7 +51,7 @@ from crypto_primitives import (
 )
 from bedrock_client import BedrockClient, BedrockResponse, build_converse_messages, ConverseTurn
 from kms_encryption import encrypt_with_kms, decrypt_with_kms, set_kms_credentials
-from agent_bridge import run_agent_streaming
+from agent_bridge import run_agent_streaming, collect_response_text
 
 # vsock constants
 VSOCK_PORT = 5000
@@ -394,17 +394,25 @@ class BedrockServer:
             message = message_bytes.decode("utf-8")
             print(f"[Enclave] Decrypted message: {message[:50]}...", flush=True)
 
-            # Run OpenClaw CLI
-            result = self._run_openclaw(tmpfs_path, message, agent_name, model)
+            # Run OpenClaw via Node.js bridge (same path as streaming)
+            response_text = collect_response_text(
+                run_agent_streaming(
+                    state_dir=str(tmpfs_path),
+                    agent_name=agent_name,
+                    message=message,
+                    provider="amazon-bedrock",
+                    env=self._get_aws_env(),
+                )
+            )
 
-            if not result["success"]:
+            if not response_text:
                 return {
                     "status": "error",
                     "command": "RUN_AGENT",
-                    "error": result["error"],
+                    "error": "No response from agent bridge",
                 }
 
-            print(f"[Enclave] OpenClaw response: {result['response'][:50]}...", flush=True)
+            print(f"[Enclave] OpenClaw response: {response_text[:50]}...", flush=True)
 
             # Pack updated state
             tarball_bytes = self._pack_directory(tmpfs_path)
@@ -416,7 +424,7 @@ class BedrockServer:
             # Encrypt response for transport (to user's key)
             encrypted_response = encrypt_to_public_key(
                 user_public_key,
-                result["response"].encode("utf-8"),
+                response_text.encode("utf-8"),
                 "enclave-to-client-transport",
             )
 
@@ -613,7 +621,7 @@ You are {agent_name}, a personal AI companion.
         agent_subdir = agent_dir / "agents" / agent_name
 
         # --- Model resolution ---
-        model = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+        model = "us.anthropic.claude-opus-4-5-20251101-v1:0"
         config_file = agent_dir / "openclaw.json"
         if config_file.exists():
             try:
@@ -925,7 +933,7 @@ You are {agent_name}, a personal AI companion.
                     soul_content = soul_bytes.decode("utf-8")
                     print(f"[Enclave] Decrypted soul content ({len(soul_content)} chars)", flush=True)
 
-                default_model = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+                default_model = "us.anthropic.claude-opus-4-5-20251101-v1:0"
                 self._create_fresh_agent(tmpfs_path, agent_name, default_model, soul_content)
                 print("[Enclave] Created fresh agent directory", flush=True)
                 self._log_tarball_contents(tmpfs_path)
@@ -1147,62 +1155,6 @@ You are {agent_name}, a personal AI companion.
             if tmpfs_path and tmpfs_path.exists():
                 shutil.rmtree(tmpfs_path, ignore_errors=True)
                 print(f"[Enclave] Cleaned up tmpfs: {tmpfs_path}", flush=True)
-
-    def _run_openclaw(self, agent_dir: Path, message: str, agent_name: str, model: str, timeout: int = 120) -> dict:
-        """Run the OpenClaw CLI with a message."""
-        env = os.environ.copy()
-        env["OPENCLAW_STATE_DIR"] = str(agent_dir)
-        env["OPENCLAW_HOME"] = str(agent_dir)
-        env["HOME"] = str(agent_dir)
-
-        cmd = [
-            "openclaw",
-            "agent",
-            "--message",
-            message,
-            "--agent",
-            agent_name,
-            "--model",
-            model,
-            "--non-interactive",
-        ]
-
-        print(f"[Enclave] Running: {' '.join(cmd)}", flush=True)
-
-        try:
-            result = subprocess.run(
-                cmd,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=str(agent_dir),
-            )
-
-            if result.returncode == 0:
-                return {
-                    "success": True,
-                    "response": result.stdout.strip(),
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": result.stderr.strip() or f"Exit code: {result.returncode}",
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                }
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": f"Command timed out after {timeout} seconds",
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-            }
 
     def _send_event(self, conn: socket.socket, event: dict) -> None:
         """Send newline-delimited JSON event."""
