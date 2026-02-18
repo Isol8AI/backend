@@ -547,7 +547,7 @@ jobs:
       name: staging
       url: https://api-staging.isol8.co
     env:
-      CORS_ORIGINS: https://staging.isol8.co
+      CORS_ORIGINS: https://staging.isol8.co,https://staging.town.isol8.co
 
     steps:
       - name: Configure AWS credentials (OIDC)
@@ -645,7 +645,7 @@ jobs:
       name: production
       url: https://api.isol8.co
     env:
-      CORS_ORIGINS: https://app.isol8.co
+      CORS_ORIGINS: https://app.isol8.co,https://town.isol8.co
 
     steps:
       - name: Configure AWS credentials (OIDC)

@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # Credential encryption key (for user/org AWS creds stored in Clerk)
     CREDENTIAL_ENCRYPTION_KEY: Optional[str] = os.getenv("CREDENTIAL_ENCRYPTION_KEY")
 
-    # CORS Configuration (comma-separated origins)
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://dev.town.isol8.co,https://staging.town.isol8.co,https://town.isol8.co"
+    # CORS Configuration (comma-separated origins; deployed values set by Terraform)
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:
