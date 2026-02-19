@@ -176,8 +176,6 @@ def _build_default_state() -> dict:
                 "facing": {"dx": 0, "dy": 1},
                 "speed": 0.0,
                 "lastInput": now_ms,
-                "pathfinding": None,
-                "activity": None,
             }
         )
 
@@ -185,10 +183,6 @@ def _build_default_state() -> dict:
             {
                 "id": agent_id,
                 "playerId": player_id,
-                "toRemember": None,
-                "lastConversation": None,
-                "lastInviteAttempt": None,
-                "inProgressOperation": None,
             }
         )
 
@@ -258,8 +252,6 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
                 "facing": {"dx": 0, "dy": 1},
                 "speed": 0.75 if s.get("target_location") else 0.0,
                 "lastInput": now_ms,
-                "pathfinding": None,
-                "activity": None,
             }
         )
 
@@ -267,10 +259,6 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
             {
                 "id": agent_id,
                 "playerId": player_id,
-                "toRemember": None,
-                "lastConversation": None,
-                "lastInviteAttempt": None,
-                "inProgressOperation": None,
             }
         )
 
