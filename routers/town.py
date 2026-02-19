@@ -9,14 +9,16 @@ Serves two sets of endpoints:
 import asyncio
 import json
 import logging
+import random
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import AuthContext, get_current_user
+from core.auth import AuthContext, get_current_user, get_optional_user
 from core.database import get_db
 from core.services.town_service import TownService
 from schemas.town import (
@@ -133,17 +135,77 @@ DEFAULT_CHARACTERS = [
 ]
 
 # Default spawn positions for agents (tile coordinates on the 64x48 map)
+# Clustered within the initial viewport so all are visible without scrolling.
 DEFAULT_SPAWN_POSITIONS = [
-    {"x": 12, "y": 10},
-    {"x": 25, "y": 15},
-    {"x": 35, "y": 20},
-    {"x": 18, "y": 30},
-    {"x": 40, "y": 25},
+    {"x": 8, "y": 6},
+    {"x": 18, "y": 4},
+    {"x": 14, "y": 10},
+    {"x": 22, "y": 8},
+    {"x": 10, "y": 13},
 ]
+
+# Available character sprites (f1-f8 in data/characters.ts)
+AVAILABLE_CHARACTERS = ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"]
+
+# Characters already assigned to default AI agents
+AGENT_CHARACTERS = {c["character"] for c in DEFAULT_CHARACTERS}
 
 # Persistent world ID (single world for now)
 WORLD_ID = "world_default"
 ENGINE_ID = "engine_default"
+
+MAX_HUMAN_PLAYERS = 8
+
+# ---------------------------------------------------------------------------
+# In-memory game state for human players & inputs
+# ---------------------------------------------------------------------------
+
+# user_id -> {player_id, position, facing, character, name}
+_human_players: dict[str, dict] = {}
+_next_input_id: int = 0
+_completed_inputs: dict[str, dict] = {}  # input_id -> {kind, value} or {kind, message}
+
+
+def _allocate_input(result: dict) -> str:
+    """Create a completed input and return its ID."""
+    global _next_input_id
+    input_id = f"o:{_next_input_id}"
+    _next_input_id += 1
+    _completed_inputs[input_id] = result
+    return input_id
+
+
+def _next_player_id() -> str:
+    """Allocate a player ID for a human player."""
+    base = len(DEFAULT_CHARACTERS)
+    existing_ids = {hp["player_id"] for hp in _human_players.values()}
+    for n in range(base, base + MAX_HUMAN_PLAYERS + 1):
+        pid = f"p:{n}"
+        if pid not in existing_ids:
+            return pid
+    return f"p:{base + len(_human_players)}"
+
+
+def _pick_spawn_position() -> dict:
+    """Pick a random spawn position that isn't occupied."""
+    occupied = {(hp["position"]["x"], hp["position"]["y"]) for hp in _human_players.values()}
+    for _ in range(20):
+        x = random.randint(5, 25)
+        y = random.randint(3, 15)
+        if (x, y) not in occupied:
+            return {"x": x, "y": y}
+    return {"x": 12, "y": 8}
+
+
+def _pick_character() -> str:
+    """Pick a random character sprite not already used by an AI agent."""
+    human_chars = {hp["character"] for hp in _human_players.values()}
+    available = [c for c in AVAILABLE_CHARACTERS if c not in AGENT_CHARACTERS and c not in human_chars]
+    if not available:
+        available = [c for c in AVAILABLE_CHARACTERS if c not in human_chars]
+    if not available:
+        available = AVAILABLE_CHARACTERS
+    return random.choice(available)
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +214,7 @@ ENGINE_ID = "engine_default"
 
 
 def _build_default_state() -> dict:
-    """Build AI Town state from DEFAULT_CHARACTERS.
+    """Build AI Town state from DEFAULT_CHARACTERS + human players.
 
     Used when no agents are registered in the DB (or DB tables don't exist yet).
     Returns a dict matching SerializedWorld + engine status.
@@ -203,9 +265,33 @@ def _build_default_state() -> dict:
             }
         )
 
+    next_id = len(DEFAULT_CHARACTERS)
+
+    # Include human players
+    for user_id, hp in _human_players.items():
+        players.append(
+            {
+                "id": hp["player_id"],
+                "human": user_id,
+                "position": hp["position"],
+                "facing": hp["facing"],
+                "speed": 0.0,
+                "lastInput": now_ms,
+            }
+        )
+        player_descriptions.append(
+            {
+                "playerId": hp["player_id"],
+                "name": hp.get("name", "Human"),
+                "description": f"{hp.get('name', 'Human')} is a human player",
+                "character": hp["character"],
+            }
+        )
+        next_id += 1
+
     return {
         "world": {
-            "nextId": len(DEFAULT_CHARACTERS),
+            "nextId": next_id,
             "players": players,
             "agents": agents,
             "conversations": [],
@@ -279,9 +365,32 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
             }
         )
 
+    # Append human players
+    next_id = len(db_states)
+    for user_id, hp in _human_players.items():
+        players.append(
+            {
+                "id": hp["player_id"],
+                "human": user_id,
+                "position": hp["position"],
+                "facing": hp["facing"],
+                "speed": 0.0,
+                "lastInput": now_ms,
+            }
+        )
+        player_descriptions.append(
+            {
+                "playerId": hp["player_id"],
+                "name": hp.get("name", "Human"),
+                "description": f"{hp.get('name', 'Human')} is a human player",
+                "character": hp["character"],
+            }
+        )
+        next_id += 1
+
     return {
         "world": {
-            "nextId": len(db_states),
+            "nextId": next_id,
             "players": players,
             "agents": agents,
             "conversations": [],
@@ -350,9 +459,19 @@ async def get_game_descriptions(
 
 
 @router.get("/user-status")
-async def get_user_status(worldId: Optional[str] = Query(None)):
-    """Return current user's player identity. Stub for now."""
-    return None
+async def get_user_status(
+    worldId: Optional[str] = Query(None),
+    auth: AuthContext | None = Depends(get_optional_user),
+):
+    """Return the current user's token identifier.
+
+    Returns the Clerk user_id if authenticated (used by the frontend to match
+    the human player via `player.human === humanTokenIdentifier`).
+    Returns null if not signed in.
+    """
+    if auth is None:
+        return None
+    return auth.user_id
 
 
 @router.post("/heartbeat")
@@ -362,21 +481,112 @@ async def heartbeat_world():
 
 
 @router.post("/join")
-async def join_world():
-    """Join the world as a human player. Stub for now."""
-    return None
+async def join_world(
+    auth: AuthContext = Depends(get_current_user),
+):
+    """Join the world as a human player.
+
+    Creates a player entity with a random sprite and spawn position.
+    Returns an input ID that the frontend polls via /input-status.
+    """
+    user_id = auth.user_id
+
+    if user_id in _human_players:
+        return _allocate_input({"kind": "error", "message": "You are already in this game!"})
+
+    if len(_human_players) >= MAX_HUMAN_PLAYERS:
+        return _allocate_input({"kind": "error", "message": f"Only {MAX_HUMAN_PLAYERS} human players allowed at once."})
+
+    player_id = _next_player_id()
+    character = _pick_character()
+    position = _pick_spawn_position()
+
+    _human_players[user_id] = {
+        "player_id": player_id,
+        "position": position,
+        "facing": {"dx": 0, "dy": 1},
+        "character": character,
+        "name": "Me",
+    }
+
+    return _allocate_input({"kind": "ok", "value": player_id})
 
 
 @router.post("/leave")
-async def leave_world():
-    """Leave the world. Stub for now."""
-    return None
+async def leave_world(
+    auth: AuthContext = Depends(get_current_user),
+):
+    """Leave the world. Removes the human player."""
+    user_id = auth.user_id
+
+    if user_id not in _human_players:
+        return _allocate_input({"kind": "ok", "value": None})
+
+    del _human_players[user_id]
+    return _allocate_input({"kind": "ok", "value": None})
+
+
+class SendWorldInputRequest(BaseModel):
+    engineId: Optional[str] = None
+    name: str
+    args: dict
 
 
 @router.post("/input")
-async def send_world_input():
-    """Send a game input (moveTo, join, leave, etc.). Stub for now."""
-    return None
+async def send_world_input(
+    request: SendWorldInputRequest = Body(...),
+    auth: AuthContext = Depends(get_current_user),
+):
+    """Handle game inputs (moveTo, join, leave, etc.).
+
+    Returns an input ID that the frontend polls via /input-status.
+    """
+    user_id = auth.user_id
+    name = request.name
+    args = request.args
+
+    if name == "moveTo":
+        player_id = args.get("playerId")
+        destination = args.get("destination")
+
+        if not player_id or not destination:
+            return _allocate_input({"kind": "error", "message": "Missing playerId or destination"})
+
+        # Find the human player that owns this player_id
+        hp = _human_players.get(user_id)
+        if not hp or hp["player_id"] != player_id:
+            return _allocate_input({"kind": "error", "message": "Player not found"})
+
+        # Update position immediately (no pathfinding yet — Task 5)
+        hp["position"] = {"x": destination["x"], "y": destination["y"]}
+        return _allocate_input({"kind": "ok", "value": None})
+
+    if name == "join":
+        # Handled by /join endpoint, but also accept via /input
+        character = args.get("character", _pick_character())
+        if user_id in _human_players:
+            return _allocate_input({"kind": "error", "message": "You are already in this game!"})
+        if len(_human_players) >= MAX_HUMAN_PLAYERS:
+            return _allocate_input({"kind": "error", "message": f"Only {MAX_HUMAN_PLAYERS} human players allowed."})
+
+        player_id = _next_player_id()
+        position = _pick_spawn_position()
+        _human_players[user_id] = {
+            "player_id": player_id,
+            "position": position,
+            "facing": {"dx": 0, "dy": 1},
+            "character": character,
+            "name": args.get("name", "Me"),
+        }
+        return _allocate_input({"kind": "ok", "value": player_id})
+
+    if name == "leave":
+        if user_id in _human_players:
+            del _human_players[user_id]
+        return _allocate_input({"kind": "ok", "value": None})
+
+    # Unknown input type — succeed silently for forward compatibility
+    return _allocate_input({"kind": "ok", "value": None})
 
 
 @router.get("/previous-conversation")
@@ -401,15 +611,30 @@ async def write_message():
 
 
 @router.post("/send-input")
-async def send_input():
-    """Send an input to the game engine. Stub for now."""
-    return None
+async def send_input(
+    request: SendWorldInputRequest = Body(...),
+    auth: AuthContext = Depends(get_current_user),
+):
+    """Send an input to the game engine (alias for /input)."""
+    return await send_world_input(request=request, auth=auth)
 
 
 @router.get("/input-status")
 async def get_input_status(inputId: Optional[str] = Query(None)):
-    """Check status of a submitted input. Stub for now."""
-    return {"status": "completed", "result": None}
+    """Check status of a submitted input.
+
+    Returns the completed result if the input has been processed.
+    The frontend polls this via watchQuery until it gets a non-null result.
+    """
+    if not inputId:
+        return None
+
+    result = _completed_inputs.get(inputId)
+    if result is None:
+        # Input not found or not yet processed
+        return None
+
+    return result
 
 
 @router.get("/music")

@@ -11,6 +11,7 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
 
 # JWKS cache with TTL
 _jwks_cache: dict = {"data": None, "expires_at": None}  # TODO: Change this to an actual cache backend
@@ -167,3 +168,36 @@ async def require_org_admin(auth: AuthContext = Depends(get_current_user)) -> Au
     if not auth.is_org_admin:
         raise HTTPException(status_code=403, detail="This action requires organization admin privileges")
     return auth
+
+
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_optional),
+) -> AuthContext | None:
+    """Like get_current_user but returns None instead of raising on missing/invalid auth.
+
+    Use for endpoints that work for both authenticated and anonymous users.
+    """
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+    jwks_url = f"{settings.CLERK_ISSUER}/.well-known/jwks.json"
+
+    try:
+        jwks = await _get_cached_jwks(jwks_url)
+        unverified_header = jwt.get_unverified_header(token)
+        rsa_key = _find_rsa_key(jwks, unverified_header["kid"])
+        if not rsa_key:
+            return None
+
+        payload = jwt.decode(
+            token,
+            rsa_key,
+            algorithms=["RS256"],
+            audience=settings.CLERK_AUDIENCE,
+            issuer=settings.CLERK_ISSUER,
+        )
+
+        return AuthContext(user_id=payload["sub"])
+    except Exception:
+        return None
