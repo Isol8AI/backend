@@ -126,6 +126,13 @@ async def ws_disconnect(
 
     logger.info("WebSocket disconnect: connection_id=%s", x_connection_id)
 
+    # Clean up town viewer subscription if active
+    try:
+        from routers.town import remove_town_viewer
+        remove_town_viewer(x_connection_id)
+    except Exception:
+        pass  # Best effort
+
     try:
         connection_service = get_connection_service()
         connection_service.delete_connection(x_connection_id)
@@ -179,6 +186,16 @@ async def ws_message(
 
     if msg_type == "pong":
         # Client acknowledged our ping - no action needed
+        return Response(status_code=200)
+
+    if msg_type == "town_subscribe":
+        from routers.town import add_town_viewer
+        add_town_viewer(x_connection_id)
+        return Response(status_code=200)
+
+    if msg_type == "town_unsubscribe":
+        from routers.town import remove_town_viewer
+        remove_town_viewer(x_connection_id)
         return Response(status_code=200)
 
     if msg_type == "agent_chat":

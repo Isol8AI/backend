@@ -6,7 +6,6 @@ Serves two sets of endpoints:
    return plain dicts matching AI Town's TypeScript class constructors
 """
 
-import asyncio
 import json
 import logging
 import random
@@ -14,12 +13,13 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import AuthContext, get_current_user, get_optional_user
 from core.database import get_db
+from core.services.management_api_client import ManagementApiClient, ManagementApiClientError
 from core.services.town_service import TownService
 from schemas.town import (
     TownOptInRequest,
@@ -164,6 +164,97 @@ MAX_HUMAN_PLAYERS = 8
 _human_players: dict[str, dict] = {}
 _next_input_id: int = 0
 _completed_inputs: dict[str, dict] = {}  # input_id -> {kind, value} or {kind, message}
+
+# ---------------------------------------------------------------------------
+# Real-time state push via API Gateway WebSocket
+# ---------------------------------------------------------------------------
+# Town viewers subscribe via the shared API Gateway WebSocket (same one used
+# for chat).  When game state changes (join/leave/move), we push the combined
+# state to every viewer in a single message — giving the frontend the same
+# atomic update guarantee that Convex subscriptions provide.
+# ---------------------------------------------------------------------------
+
+_town_viewer_connections: set[str] = set()
+
+# Lazy singleton — created on first push.  Returns None in local dev where
+# WS_MANAGEMENT_API_URL is not set (no-op push).
+_town_mgmt_api: Optional[ManagementApiClient] = None
+_town_mgmt_api_failed: bool = False
+
+
+def _get_town_mgmt_api() -> Optional[ManagementApiClient]:
+    global _town_mgmt_api, _town_mgmt_api_failed
+    if _town_mgmt_api is not None:
+        return _town_mgmt_api
+    if _town_mgmt_api_failed:
+        return None
+    try:
+        _town_mgmt_api = ManagementApiClient()
+        return _town_mgmt_api
+    except ManagementApiClientError:
+        # No WS_MANAGEMENT_API_URL — local dev, push is a no-op
+        _town_mgmt_api_failed = True
+        logger.info("ManagementApiClient unavailable — town WS push disabled")
+        return None
+
+
+def _build_ws_message() -> dict:
+    """Build the combined state payload for WebSocket clients.
+
+    Bundles all game-state query results into one dict.  The ``type`` field
+    lets the frontend distinguish town messages from chat messages on the
+    shared WebSocket.
+    """
+    state = _build_default_state()
+    world_map = _load_map_data()
+    return {
+        "type": "town_state",
+        "worldState": {"world": state["world"], "engine": state["engine"]},
+        "gameDescriptions": {
+            "worldMap": world_map,
+            "playerDescriptions": state["playerDescriptions"],
+            "agentDescriptions": state["agentDescriptions"],
+        },
+    }
+
+
+def _notify_state_changed():
+    """Push updated state to all connected town viewers via API Gateway.
+
+    Called after any mutation that changes game state (join, leave, moveTo).
+    Dead connections (GoneException) are silently removed.
+    """
+    if not _town_viewer_connections:
+        return
+    mgmt = _get_town_mgmt_api()
+    if mgmt is None:
+        return
+    message = _build_ws_message()
+    dead: list[str] = []
+    for conn_id in _town_viewer_connections:
+        try:
+            if not mgmt.send_message(conn_id, message):
+                dead.append(conn_id)
+        except ManagementApiClientError:
+            dead.append(conn_id)
+    for conn_id in dead:
+        _town_viewer_connections.discard(conn_id)
+
+
+def add_town_viewer(connection_id: str):
+    """Register a WebSocket connection as a town viewer and push initial state."""
+    _town_viewer_connections.add(connection_id)
+    mgmt = _get_town_mgmt_api()
+    if mgmt is not None:
+        try:
+            mgmt.send_message(connection_id, _build_ws_message())
+        except ManagementApiClientError:
+            _town_viewer_connections.discard(connection_id)
+
+
+def remove_town_viewer(connection_id: str):
+    """Unregister a WebSocket connection from town updates."""
+    _town_viewer_connections.discard(connection_id)
 
 
 def _allocate_input(result: dict) -> str:
@@ -509,7 +600,9 @@ async def join_world(
         "name": "Me",
     }
 
-    return _allocate_input({"kind": "ok", "value": player_id})
+    input_id = _allocate_input({"kind": "ok", "value": player_id})
+    _notify_state_changed()
+    return input_id
 
 
 @router.post("/leave")
@@ -523,7 +616,9 @@ async def leave_world(
         return _allocate_input({"kind": "ok", "value": None})
 
     del _human_players[user_id]
-    return _allocate_input({"kind": "ok", "value": None})
+    input_id = _allocate_input({"kind": "ok", "value": None})
+    _notify_state_changed()
+    return input_id
 
 
 class SendWorldInputRequest(BaseModel):
@@ -559,7 +654,9 @@ async def send_world_input(
 
         # Update position immediately (no pathfinding yet — Task 5)
         hp["position"] = {"x": destination["x"], "y": destination["y"]}
-        return _allocate_input({"kind": "ok", "value": None})
+        input_id = _allocate_input({"kind": "ok", "value": None})
+        _notify_state_changed()
+        return input_id
 
     if name == "join":
         # Handled by /join endpoint, but also accept via /input
@@ -578,12 +675,16 @@ async def send_world_input(
             "character": character,
             "name": args.get("name", "Me"),
         }
-        return _allocate_input({"kind": "ok", "value": player_id})
+        input_id = _allocate_input({"kind": "ok", "value": player_id})
+        _notify_state_changed()
+        return input_id
 
     if name == "leave":
         if user_id in _human_players:
             del _human_players[user_id]
-        return _allocate_input({"kind": "ok", "value": None})
+        input_id = _allocate_input({"kind": "ok", "value": None})
+        _notify_state_changed()
+        return input_id
 
     # Unknown input type — succeed silently for forward compatibility
     return _allocate_input({"kind": "ok", "value": None})
@@ -754,26 +855,3 @@ async def get_conversations(
     return TownConversationsListResponse(conversations=responses)
 
 
-@router.websocket("/stream")
-async def town_stream(websocket: WebSocket):
-    """WebSocket endpoint for real-time town state broadcasts."""
-    await websocket.accept()
-
-    from main import get_town_simulation
-
-    sim = get_town_simulation()
-    if not sim:
-        await websocket.close(code=1011, reason="Simulation not running")
-        return
-
-    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-    sim.add_viewer(queue)
-
-    try:
-        while True:
-            message = await queue.get()
-            await websocket.send_text(message)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        sim.remove_viewer(queue)
