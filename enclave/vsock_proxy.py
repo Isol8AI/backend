@@ -33,8 +33,8 @@ AF_VSOCK = 40
 VMADDR_CID_HOST = 3  # Parent's CID from enclave perspective
 VSOCK_PROXY_PORT = 8443
 
-# Allowed destination hosts (whitelist for security)
-ALLOWED_HOSTS = [
+# Tiered allowlist
+_AWS_HOSTS = [
     "bedrock-runtime.us-east-1.amazonaws.com",
     "bedrock-runtime.us-west-2.amazonaws.com",
     "bedrock.us-east-1.amazonaws.com",
@@ -43,6 +43,12 @@ ALLOWED_HOSTS = [
     "kms.us-east-1.amazonaws.com",
     "kms.us-west-2.amazonaws.com",
 ]
+_TOOL_HOSTS = [
+    "api.search.brave.com",
+]
+_CHANNEL_HOSTS: list[str] = []  # Future: Telegram, Discord, Slack APIs
+
+ALLOWED_HOSTS = _AWS_HOSTS + _TOOL_HOSTS + _CHANNEL_HOSTS
 
 
 def parse_connect_request(data: bytes) -> tuple:

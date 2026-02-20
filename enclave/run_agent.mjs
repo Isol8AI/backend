@@ -114,10 +114,18 @@ try {
 
 // Enclave safety overrides:
 //   - exec/bash: ENABLED (tmpfs sandbox, files persist in tarball)
-//   - web/media/browser: DISABLED (vsock whitelist blocks outbound)
+//   - web search: ENABLED when BRAVE_API_KEY is set (vsock allowlist permits api.search.brave.com)
+//   - web fetch/media/browser: DISABLED (unnecessary attack surface)
+const braveKey = process.env.BRAVE_API_KEY || "";
 config.tools = {
   ...(config.tools || {}),
-  web: { enabled: false },
+  web: {
+    search: {
+      enabled: !!braveKey,
+      provider: "brave",
+    },
+    fetch: { enabled: false },
+  },
   media: { enabled: false },
   browser: { enabled: false },
 };

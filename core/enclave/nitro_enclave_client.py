@@ -395,6 +395,13 @@ class NitroEnclaveClient(EnclaveInterface):
         if kms_key_id:
             command["kms_key_id"] = kms_key_id
 
+        # Collect service API keys for OpenClaw tools
+        service_keys = {}
+        if settings.BRAVE_API_KEY:
+            service_keys["BRAVE_API_KEY"] = settings.BRAVE_API_KEY
+        if service_keys:
+            command["service_keys"] = service_keys
+
         response = self._send_command(command, timeout=10.0)
 
         if response.get("status") != "success":

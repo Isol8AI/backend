@@ -106,6 +106,14 @@ class BedrockServer:
                 os.environ["KMS_KEY_ID"] = kms_key_id
                 print(f"[Enclave] KMS_KEY_ID set: {kms_key_id[:8]}...", flush=True)
 
+            # Store service API keys (e.g., BRAVE_API_KEY for web search)
+            service_keys = data.get("service_keys", {})
+            for key, value in service_keys.items():
+                if key.startswith(("BRAVE_", "FIRECRAWL_")):  # allowlist prefixes
+                    os.environ[key] = value
+            if service_keys:
+                print(f"[Enclave] Service keys set: {list(service_keys.keys())}", flush=True)
+
             print("[Enclave] AWS credentials set (Bedrock + KMS)", flush=True)
             if credentials.get("expiration"):
                 print(f"[Enclave] Credentials expire: {credentials['expiration']}", flush=True)

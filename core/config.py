@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     BEDROCK_ENABLED: bool = os.getenv("BEDROCK_ENABLED", "true").lower() == "true"
 
+    # Tool API Keys (passed to enclave for OpenClaw tools)
+    BRAVE_API_KEY: str = os.getenv("BRAVE_API_KEY", "")
+
     # Credential encryption key (for user/org AWS creds stored in Clerk)
     CREDENTIAL_ENCRYPTION_KEY: Optional[str] = os.getenv("CREDENTIAL_ENCRYPTION_KEY")
 
