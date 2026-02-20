@@ -129,6 +129,7 @@ async def ws_disconnect(
     # Clean up town viewer subscription if active
     try:
         from routers.town import remove_town_viewer
+
         remove_town_viewer(x_connection_id)
     except Exception:
         pass  # Best effort
@@ -190,11 +191,13 @@ async def ws_message(
 
     if msg_type == "town_subscribe":
         from routers.town import add_town_viewer
+
         add_town_viewer(x_connection_id)
         return Response(status_code=200)
 
     if msg_type == "town_unsubscribe":
         from routers.town import remove_town_viewer
+
         remove_town_viewer(x_connection_id)
         return Response(status_code=200)
 

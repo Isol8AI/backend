@@ -853,5 +853,3 @@ async def get_conversations(
         )
 
     return TownConversationsListResponse(conversations=responses)
-
-
