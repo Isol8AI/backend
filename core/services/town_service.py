@@ -218,9 +218,7 @@ class TownService:
                 existing.home_location = home_location
                 existing.last_active_at = datetime.now(timezone.utc)
                 # Update position too
-                state_result = await self.db.execute(
-                    select(TownState).where(TownState.agent_id == existing.id)
-                )
+                state_result = await self.db.execute(select(TownState).where(TownState.agent_id == existing.id))
                 state = state_result.scalar_one_or_none()
                 if state:
                     state.position_x = position_x

@@ -28,14 +28,17 @@ class TestTownSimulationConstants:
 
     def test_tick_interval_is_fast_enough(self):
         from core.services.town_simulation import TICK_INTERVAL
+
         assert TICK_INTERVAL <= 3.0, "Tick should be <=3s for smooth animation"
 
     def test_agent_speed_reasonable(self):
         from core.services.town_simulation import AGENT_SPEED
+
         assert 0.1 <= AGENT_SPEED <= 2.0, "Speed should be in tile/tick range"
 
     def test_decision_cooldown_reasonable(self):
         from core.services.town_simulation import DECISION_COOLDOWN
+
         assert DECISION_COOLDOWN >= 5.0, "Agents shouldn't decide too fast"
 
 
