@@ -9,47 +9,45 @@ import logging
 import math
 import random
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Optional, Tuple
+
+from core.town_constants import (
+    DEFAULT_CHARACTERS,
+    SYSTEM_USER_ID,
+    TOWN_LOCATIONS,
+)
 
 logger = logging.getLogger(__name__)
 
-# Town locations with pixel coordinates (matching the PixiJS tilemap)
-TOWN_LOCATIONS: Dict[str, Dict] = {
-    "home": {"x": 100.0, "y": 100.0, "label": "Home"},
-    "cafe": {"x": 400.0, "y": 200.0, "label": "Cafe"},
-    "plaza": {"x": 300.0, "y": 400.0, "label": "Town Plaza"},
-    "library": {"x": 600.0, "y": 150.0, "label": "Library"},
-    "park": {"x": 500.0, "y": 400.0, "label": "Park"},
-    "shop": {"x": 200.0, "y": 350.0, "label": "General Store"},
-}
-
-TICK_INTERVAL = 10.0  # seconds between simulation ticks
-AGENT_SPEED = 15.0  # pixels per tick
-ARRIVAL_THRESHOLD = 10.0  # pixels to consider "arrived"
-DECISION_COOLDOWN = 60.0  # seconds between decisions
+TICK_INTERVAL = 2.0  # seconds between simulation ticks
+AGENT_SPEED = 0.6  # tiles per tick (~0.3 tiles/sec, natural walking pace)
+ARRIVAL_THRESHOLD = 0.5  # tiles to consider "arrived"
+DECISION_COOLDOWN = 10.0  # seconds idle before picking new destination
 CONVERSATION_COOLDOWN = 120.0  # seconds between conversations
-PROXIMITY_THRESHOLD = 50.0  # pixels to be "nearby"
+PROXIMITY_THRESHOLD = 3.0  # tiles to be "nearby"
 
 
 class TownSimulation:
     """Manages the GooseTown simulation loop."""
 
-    def __init__(self, db_factory):
+    def __init__(self, db_factory, notify_fn: Optional[Callable] = None):
         """Initialize with a database session factory.
 
         Args:
             db_factory: Callable that returns an async context manager for DB sessions
+            notify_fn: Optional callback to push state to WebSocket viewers
         """
         self._db_factory = db_factory
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._viewers: List[asyncio.Queue] = []
+        self._notify_fn = notify_fn
 
     async def start(self):
         """Start the simulation background task."""
         if self._running:
             return
         self._running = True
+        await self._seed_default_agents()
         self._task = asyncio.create_task(self._run_loop())
         logger.info("GooseTown simulation started")
 
@@ -64,14 +62,31 @@ class TownSimulation:
                 pass
         logger.info("GooseTown simulation stopped")
 
-    def add_viewer(self, queue: asyncio.Queue):
-        """Add a WebSocket viewer queue for state broadcasts."""
-        self._viewers.append(queue)
+    def set_notify_fn(self, fn: Callable):
+        """Set the WebSocket push callback (called after state changes)."""
+        self._notify_fn = fn
 
-    def remove_viewer(self, queue: asyncio.Queue):
-        """Remove a WebSocket viewer queue."""
-        if queue in self._viewers:
-            self._viewers.remove(queue)
+    async def _seed_default_agents(self):
+        """Seed default agents into the DB if they don't already exist."""
+        from core.services.town_service import TownService
+
+        try:
+            async with self._db_factory() as db:
+                service = TownService(db)
+                for agent in DEFAULT_CHARACTERS:
+                    await service.seed_agent(
+                        user_id=SYSTEM_USER_ID,
+                        agent_name=agent["agent_name"],
+                        display_name=agent["name"],
+                        personality_summary=agent["identity"][:200],
+                        position_x=agent["spawn"]["x"],
+                        position_y=agent["spawn"]["y"],
+                        home_location=agent["home"],
+                    )
+                await db.commit()
+            logger.info(f"Seeded {len(DEFAULT_CHARACTERS)} default agents")
+        except Exception as e:
+            logger.error(f"Failed to seed default agents: {e}", exc_info=True)
 
     async def _run_loop(self):
         """Main simulation tick loop."""
@@ -89,12 +104,11 @@ class TownSimulation:
 
         async with self._db_factory() as db:
             service = TownService(db)
-            agents = await service.get_active_agents()
+            states = await service.get_town_state()
 
-            if not agents:
+            if not states:
                 return
 
-            states = await service.get_town_state()
             now = datetime.now(timezone.utc)
 
             for agent_state in states:
@@ -124,7 +138,7 @@ class TownSimulation:
 
                         await service.update_agent_state(agent_id, **update)
 
-                # If idle and no target, maybe pick a new destination
+                # If idle and no target, pick a new destination after cooldown
                 elif agent_state["current_activity"] == "idle":
                     last_decision = agent_state.get("last_decision_at")
                     if not last_decision or (now - last_decision).total_seconds() > DECISION_COOLDOWN:
@@ -138,33 +152,12 @@ class TownSimulation:
 
             await db.commit()
 
-            # Broadcast state to viewers
-            if self._viewers:
-                updated_states = await service.get_town_state()
-                await self._broadcast(updated_states)
-
-    async def _broadcast(self, states: list):
-        """Send state update to all connected viewers."""
-        import json
-
-        message = json.dumps(
-            {
-                "type": "state_update",
-                "agents": states,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-            default=str,
-        )
-
-        dead_viewers = []
-        for queue in self._viewers:
+        # Push updated state to WebSocket viewers
+        if self._notify_fn:
             try:
-                queue.put_nowait(message)
-            except asyncio.QueueFull:
-                dead_viewers.append(queue)
-
-        for q in dead_viewers:
-            self._viewers.remove(q)
+                self._notify_fn()
+            except Exception as e:
+                logger.debug(f"WS notify failed: {e}")
 
     def _pick_random_location(self, exclude: Optional[str] = None) -> str:
         """Pick a random town location, excluding current."""

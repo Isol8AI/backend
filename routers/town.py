@@ -8,6 +8,7 @@ Serves two sets of endpoints:
 
 import json
 import logging
+import math
 import random
 import time
 from pathlib import Path
@@ -21,6 +22,14 @@ from core.auth import AuthContext, get_current_user, get_optional_user
 from core.database import get_db
 from core.services.management_api_client import ManagementApiClient, ManagementApiClientError
 from core.services.town_service import TownService
+from core.town_constants import (
+    AGENT_CHARACTERS,
+    AVAILABLE_CHARACTERS,
+    DEFAULT_CHARACTERS,
+    DEFAULT_SPAWN_POSITIONS,
+    TOWN_LOCATIONS,
+    WALK_SPEED_DISPLAY,
+)
 from schemas.town import (
     TownOptInRequest,
     TownOptOutRequest,
@@ -79,77 +88,6 @@ def _load_map_data() -> dict:
     return _map_data
 
 
-# ---------------------------------------------------------------------------
-# AI Town default character data (mirrors data/characters.ts)
-# ---------------------------------------------------------------------------
-
-DEFAULT_CHARACTERS = [
-    {
-        "name": "Lucky",
-        "character": "f1",
-        "identity": (
-            "Lucky is always happy and curious, and he loves cheese. He spends "
-            "most of his time reading about the history of science and traveling "
-            "through the galaxy on whatever ship will take him."
-        ),
-        "plan": "You want to hear all the gossip.",
-    },
-    {
-        "name": "Bob",
-        "character": "f4",
-        "identity": (
-            "Bob is always grumpy and he loves trees. He spends most of his time "
-            "gardening by himself. When spoken to he'll respond but try and get "
-            "out of the conversation as quickly as possible."
-        ),
-        "plan": "You want to avoid people as much as possible.",
-    },
-    {
-        "name": "Stella",
-        "character": "f6",
-        "identity": (
-            "Stella can never be trusted. She tries to trick people all the time. "
-            "She's incredibly charming and not afraid to use her charm."
-        ),
-        "plan": "You want to take advantage of others as much as possible.",
-    },
-    {
-        "name": "Alice",
-        "character": "f3",
-        "identity": (
-            "Alice is a famous scientist. She is smarter than everyone else and "
-            "has discovered mysteries of the universe no one else can understand."
-        ),
-        "plan": "You want to figure out how the world works.",
-    },
-    {
-        "name": "Pete",
-        "character": "f7",
-        "identity": (
-            "Pete is deeply religious and sees the hand of god or of the work of "
-            "the devil everywhere. He can't have a conversation without bringing "
-            "up his deep faith."
-        ),
-        "plan": "You want to convert everyone to your religion.",
-    },
-]
-
-# Default spawn positions for agents (tile coordinates on the 64x48 map)
-# Clustered within the initial viewport so all are visible without scrolling.
-DEFAULT_SPAWN_POSITIONS = [
-    {"x": 8, "y": 6},
-    {"x": 18, "y": 4},
-    {"x": 14, "y": 10},
-    {"x": 22, "y": 8},
-    {"x": 10, "y": 13},
-]
-
-# Available character sprites (f1-f8 in data/characters.ts)
-AVAILABLE_CHARACTERS = ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"]
-
-# Characters already assigned to default AI agents
-AGENT_CHARACTERS = {c["character"] for c in DEFAULT_CHARACTERS}
-
 # Persistent world ID (single world for now)
 WORLD_ID = "world_default"
 ENGINE_ID = "engine_default"
@@ -198,12 +136,29 @@ def _get_town_mgmt_api() -> Optional[ManagementApiClient]:
         return None
 
 
-def _build_ws_message() -> dict:
-    """Build the combined state payload for WebSocket clients.
+async def _build_ws_message_async() -> dict:
+    """Build the combined state payload for WebSocket clients (async, reads DB)."""
+    from core.database import async_session_factory
 
-    Bundles all game-state query results into one dict.  The ``type`` field
-    lets the frontend distinguish town messages from chat messages on the
-    shared WebSocket.
+    async with async_session_factory() as db:
+        state = await _build_ai_town_state(db)
+
+    world_map = _load_map_data()
+    return {
+        "type": "town_state",
+        "worldState": {"world": state["world"], "engine": state["engine"]},
+        "gameDescriptions": {
+            "worldMap": world_map,
+            "playerDescriptions": state["playerDescriptions"],
+            "agentDescriptions": state["agentDescriptions"],
+        },
+    }
+
+
+def _build_ws_message() -> dict:
+    """Build the combined state payload for WebSocket clients (sync fallback).
+
+    Uses default state. Prefer _build_ws_message_async() for DB-backed state.
     """
     state = _build_default_state()
     world_map = _load_map_data()
@@ -222,6 +177,7 @@ def _notify_state_changed():
     """Push updated state to all connected town viewers via API Gateway.
 
     Called after any mutation that changes game state (join, leave, moveTo).
+    Also called by TownSimulation after each tick.
     Dead connections (GoneException) are silently removed.
     """
     if not _town_viewer_connections:
@@ -229,9 +185,42 @@ def _notify_state_changed():
     mgmt = _get_town_mgmt_api()
     if mgmt is None:
         return
+
+    # Try async DB-backed state; fall back to defaults on failure
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+        # Schedule async message build as a fire-and-forget task
+        loop.create_task(_async_notify_viewers())
+        return
+    except RuntimeError:
+        pass
+
+    # No event loop — sync fallback
     message = _build_ws_message()
+    _push_to_viewers(message)
+
+
+async def _async_notify_viewers():
+    """Async helper: build state from DB and push to all viewers."""
+    mgmt = _get_town_mgmt_api()
+    if mgmt is None:
+        return
+    try:
+        message = await _build_ws_message_async()
+    except Exception:
+        message = _build_ws_message()
+    _push_to_viewers(message)
+
+
+def _push_to_viewers(message: dict):
+    """Send a message dict to all connected town viewers."""
+    mgmt = _get_town_mgmt_api()
+    if mgmt is None:
+        return
     dead: list[str] = []
-    for conn_id in _town_viewer_connections:
+    for conn_id in list(_town_viewer_connections):
         try:
             if not mgmt.send_message(conn_id, message):
                 dead.append(conn_id)
@@ -243,9 +232,28 @@ def _notify_state_changed():
 
 def add_town_viewer(connection_id: str):
     """Register a WebSocket connection as a town viewer and push initial state."""
+    import asyncio
+
     _town_viewer_connections.add(connection_id)
     mgmt = _get_town_mgmt_api()
-    if mgmt is not None:
+    if mgmt is None:
+        return
+
+    async def _send_initial():
+        try:
+            msg = await _build_ws_message_async()
+        except Exception:
+            msg = _build_ws_message()
+        try:
+            mgmt.send_message(connection_id, msg)
+        except ManagementApiClientError:
+            _town_viewer_connections.discard(connection_id)
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_send_initial())
+    except RuntimeError:
+        # No event loop — sync fallback
         try:
             mgmt.send_message(connection_id, _build_ws_message())
         except ManagementApiClientError:
@@ -320,12 +328,12 @@ def _build_default_state() -> dict:
     for i, char in enumerate(DEFAULT_CHARACTERS):
         player_id = f"p:{i}"
         agent_id = f"a:{i}"
-        pos = DEFAULT_SPAWN_POSITIONS[i % len(DEFAULT_SPAWN_POSITIONS)]
+        spawn = char.get("spawn", DEFAULT_SPAWN_POSITIONS[i % len(DEFAULT_SPAWN_POSITIONS)])
 
         players.append(
             {
                 "id": player_id,
-                "position": {"x": pos["x"], "y": pos["y"]},
+                "position": {"x": spawn["x"], "y": spawn["y"]},
                 "facing": {"dx": 0, "dy": 1},
                 "speed": 0.0,
                 "lastInput": now_ms,
@@ -417,17 +425,33 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
     player_descriptions = []
     agent_descriptions = []
 
+    _char_by_name = {c["agent_name"]: c for c in DEFAULT_CHARACTERS}
+
     for i, s in enumerate(db_states):
         player_id = f"p:{i}"
         agent_id = f"a:{i}"
-        char = DEFAULT_CHARACTERS[i % len(DEFAULT_CHARACTERS)]
+        char = _char_by_name.get(s.get("agent_name"), DEFAULT_CHARACTERS[i % len(DEFAULT_CHARACTERS)])
+
+        # Compute facing direction from current position toward target
+        target_loc = s.get("target_location")
+        facing = {"dx": 0, "dy": 1}  # default: face down
+        speed = 0.0
+        if target_loc:
+            target = TOWN_LOCATIONS.get(target_loc)
+            if target:
+                dx = target["x"] - s["position_x"]
+                dy = target["y"] - s["position_y"]
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > 0.01:
+                    facing = {"dx": dx / dist, "dy": dy / dist}
+                speed = WALK_SPEED_DISPLAY
 
         players.append(
             {
                 "id": player_id,
-                "position": {"x": s["position_x"] / 32.0, "y": s["position_y"] / 32.0},
-                "facing": {"dx": 0, "dy": 1},
-                "speed": 0.75 if s.get("target_location") else 0.0,
+                "position": {"x": s["position_x"], "y": s["position_y"]},
+                "facing": facing,
+                "speed": speed,
                 "lastInput": now_ms,
             }
         )
@@ -452,7 +476,7 @@ async def _build_ai_town_state(db: AsyncSession) -> dict:
             {
                 "agentId": agent_id,
                 "identity": s.get("personality_summary") or char["identity"],
-                "plan": char["plan"],
+                "plan": char.get("plan", ""),
             }
         )
 

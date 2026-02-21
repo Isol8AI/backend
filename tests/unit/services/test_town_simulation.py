@@ -1,6 +1,7 @@
 """Tests for TownSimulation engine."""
 
-from core.services.town_simulation import TownSimulation, TOWN_LOCATIONS
+from core.town_constants import TOWN_LOCATIONS
+from core.services.town_simulation import TownSimulation
 
 
 class TestTownLocations:
@@ -11,6 +12,8 @@ class TestTownLocations:
         assert "cafe" in TOWN_LOCATIONS
         assert "plaza" in TOWN_LOCATIONS
         assert "library" in TOWN_LOCATIONS
+        assert "park" in TOWN_LOCATIONS
+        assert "shop" in TOWN_LOCATIONS
 
     def test_locations_have_coordinates(self):
         for name, loc in TOWN_LOCATIONS.items():
@@ -18,6 +21,22 @@ class TestTownLocations:
             assert "y" in loc
             assert isinstance(loc["x"], (int, float))
             assert isinstance(loc["y"], (int, float))
+
+
+class TestTownSimulationConstants:
+    """Test simulation timing and speed constants."""
+
+    def test_tick_interval_is_fast_enough(self):
+        from core.services.town_simulation import TICK_INTERVAL
+        assert TICK_INTERVAL <= 3.0, "Tick should be <=3s for smooth animation"
+
+    def test_agent_speed_reasonable(self):
+        from core.services.town_simulation import AGENT_SPEED
+        assert 0.1 <= AGENT_SPEED <= 2.0, "Speed should be in tile/tick range"
+
+    def test_decision_cooldown_reasonable(self):
+        from core.services.town_simulation import DECISION_COOLDOWN
+        assert DECISION_COOLDOWN >= 5.0, "Agents shouldn't decide too fast"
 
 
 class TestTownSimulation:

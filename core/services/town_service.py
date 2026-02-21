@@ -120,6 +120,8 @@ class TownService:
                 "mood": state.mood,
                 "energy": state.energy,
                 "status_message": state.status_message,
+                "last_decision_at": state.last_decision_at,
+                "last_conversation_at": state.last_conversation_at,
             }
             for agent, state in rows
         ]
@@ -191,6 +193,62 @@ class TownService:
             select(TownConversation).order_by(TownConversation.started_at.desc()).limit(limit)
         )
         return list(result.scalars().all())
+
+    async def seed_agent(
+        self,
+        user_id: str,
+        agent_name: str,
+        display_name: str,
+        personality_summary: Optional[str] = None,
+        position_x: float = 0.0,
+        position_y: float = 0.0,
+        home_location: str = "home",
+    ) -> TownAgent:
+        """Seed a default agent directly, bypassing AgentState/encryption checks.
+
+        Used by TownSimulation.seed_default_agents() for system-generated agents.
+        If the agent already exists and is active, returns it unchanged.
+        """
+        existing = await self._get_town_agent(user_id, agent_name)
+        if existing:
+            if not existing.is_active:
+                existing.is_active = True
+                existing.display_name = display_name
+                existing.personality_summary = personality_summary
+                existing.home_location = home_location
+                existing.last_active_at = datetime.now(timezone.utc)
+                # Update position too
+                state_result = await self.db.execute(
+                    select(TownState).where(TownState.agent_id == existing.id)
+                )
+                state = state_result.scalar_one_or_none()
+                if state:
+                    state.position_x = position_x
+                    state.position_y = position_y
+                await self.db.flush()
+            return existing
+
+        town_agent = TownAgent(
+            user_id=user_id,
+            agent_name=agent_name,
+            display_name=display_name,
+            personality_summary=personality_summary,
+            home_location=home_location,
+        )
+        self.db.add(town_agent)
+        await self.db.flush()
+
+        state = TownState(
+            agent_id=town_agent.id,
+            position_x=position_x,
+            position_y=position_y,
+            current_location=home_location,
+        )
+        self.db.add(state)
+        await self.db.flush()
+
+        logger.info(f"Seeded default agent '{display_name}' at ({position_x}, {position_y})")
+        return town_agent
 
     async def _get_town_agent(self, user_id: str, agent_name: str) -> Optional[TownAgent]:
         """Get a town agent by user_id and agent_name."""

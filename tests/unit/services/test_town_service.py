@@ -138,6 +138,88 @@ class TestTownServiceState:
         assert states[0]["position_x"] == 0.0
 
 
+class TestTownServiceSeedAgent:
+    """Test seed_agent for default agents (bypasses encryption check)."""
+
+    @pytest.fixture
+    def service(self, db_session):
+        return TownService(db_session)
+
+    @pytest.mark.asyncio
+    async def test_seed_agent_creates_agent_and_state(self, service, db_session):
+        agent = await service.seed_agent(
+            user_id="system",
+            agent_name="lucky",
+            display_name="Lucky",
+            personality_summary="Happy and curious",
+            position_x=8.0,
+            position_y=6.0,
+            home_location="cafe",
+        )
+
+        assert agent is not None
+        assert agent.agent_name == "lucky"
+        assert agent.display_name == "Lucky"
+        assert agent.is_active is True
+        assert agent.home_location == "cafe"
+
+        states = await service.get_town_state()
+        assert len(states) == 1
+        assert states[0]["position_x"] == 8.0
+        assert states[0]["position_y"] == 6.0
+
+    @pytest.mark.asyncio
+    async def test_seed_agent_idempotent(self, service, db_session):
+        """Seeding same agent twice returns existing agent."""
+        agent1 = await service.seed_agent(
+            user_id="system",
+            agent_name="lucky",
+            display_name="Lucky",
+            position_x=8.0,
+            position_y=6.0,
+        )
+        agent2 = await service.seed_agent(
+            user_id="system",
+            agent_name="lucky",
+            display_name="Lucky Updated",
+            position_x=10.0,
+            position_y=10.0,
+        )
+
+        assert agent1.id == agent2.id
+        # Display name unchanged since agent was already active
+        assert agent2.display_name == "Lucky"
+
+    @pytest.mark.asyncio
+    async def test_seed_agent_reactivates_inactive(self, service, db_session):
+        """Seeding an inactive agent reactivates it."""
+        agent = await service.seed_agent(
+            user_id="system",
+            agent_name="lucky",
+            display_name="Lucky",
+            position_x=8.0,
+            position_y=6.0,
+        )
+        await db_session.flush()
+
+        # Deactivate
+        agent.is_active = False
+        await db_session.flush()
+
+        # Re-seed
+        reactivated = await service.seed_agent(
+            user_id="system",
+            agent_name="lucky",
+            display_name="Lucky Reactivated",
+            position_x=12.0,
+            position_y=20.0,
+        )
+
+        assert reactivated.id == agent.id
+        assert reactivated.is_active is True
+        assert reactivated.display_name == "Lucky Reactivated"
+
+
 class TestTownServiceRelationships:
     """Test relationship operations."""
 
