@@ -46,7 +46,7 @@ _AWS_HOSTS = [
 _TOOL_HOSTS = [
     "api.search.brave.com",
 ]
-_CHANNEL_HOSTS: list[str] = []  # Future: Telegram, Discord, Slack APIs
+_CHANNEL_HOSTS = []  # Future: Telegram, Discord, Slack APIs
 
 ALLOWED_HOSTS = _AWS_HOSTS + _TOOL_HOSTS + _CHANNEL_HOSTS
 
