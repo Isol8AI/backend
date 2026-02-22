@@ -163,6 +163,13 @@ config.models.bedrockDiscovery = { enabled: false };
 // Configure Bedrock embeddings for vector memory (Nova 2 via AWS SDK).
 // Uses IAM credentials passed from bedrock_server.py via env vars.
 // No local model loading = no cold start latency.
+//
+// IMPORTANT: Set OPENCLAW_STATE_DIR so resolveStateDir() points inside the
+// extracted tarball. Without this, the SQLite vector DB ends up at
+// ~/.openclaw/memory/ which is NOT packed back into the tarball, causing
+// vector memory to be lost between invocations.
+process.env.OPENCLAW_STATE_DIR = stateDir;
+
 if (!config.agents) {
   config.agents = {};
 }
@@ -173,6 +180,11 @@ if (!config.agents.defaults.memorySearch) {
   config.agents.defaults.memorySearch = {
     provider: "bedrock",
     model: "amazon.nova-2-multimodal-embeddings-v1:0",
+    store: {
+      driver: "sqlite",
+      path: `${stateDir}/memory/${agentName}.sqlite`,
+      vector: { enabled: true },
+    },
     query: {
       maxResults: 20,
       hybrid: { enabled: true, vectorWeight: 0.7, textWeight: 0.3 },
