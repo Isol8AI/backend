@@ -239,7 +239,7 @@ jobs:
           aws s3 sync enclave/ "s3://${{ env.ENCLAVE_BUCKET }}/dev/source/enclave/" --exclude "*.eif"
           # Upload agent submodule (required by Dockerfile.enclave)
           aws s3 sync agent/ "s3://${{ env.ENCLAVE_BUCKET }}/dev/source/agent/" \
-            --exclude "node_modules/*" --exclude ".git/*"
+            --exclude "node_modules/*" --exclude ".git/*" --no-follow-symlinks
           echo "Enclave source + agent submodule uploaded for EC2 build"
 
           # Delete any pre-built EIF so EC2 rebuilds from the new source.
