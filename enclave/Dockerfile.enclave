@@ -87,13 +87,6 @@ COPY --from=openclaw-builder /build/extensions/ ./extensions/
 # Link globally so 'openclaw' CLI is available (skip postinstall, scripts/ not in final image)
 RUN npm link --ignore-scripts
 
-# Download embedding model for local vector memory search (329MB, Q8_0 quantization)
-# Pre-baked so the enclave never needs HuggingFace network access at runtime
-# Uses curl-minimal (pre-installed in amazonlinux:2023; full curl conflicts with it)
-RUN mkdir -p /opt/openclaw/models && \
-    curl -fSL -o /opt/openclaw/models/embeddinggemma-300M-Q8_0.gguf \
-    "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
-
 # Verify installation (fail the build if openclaw CLI is not available)
 RUN openclaw --version
 

@@ -160,7 +160,9 @@ if (!config.models.providers["amazon-bedrock"]) {
 // No discovery needed — model is defined explicitly above
 config.models.bedrockDiscovery = { enabled: false };
 
-// Configure local embeddings for vector memory (no external API needed)
+// Configure Bedrock embeddings for vector memory (Nova 2 via AWS SDK).
+// Uses IAM credentials passed from bedrock_server.py via env vars.
+// No local model loading = no cold start latency.
 if (!config.agents) {
   config.agents = {};
 }
@@ -169,10 +171,8 @@ if (!config.agents.defaults) {
 }
 if (!config.agents.defaults.memorySearch) {
   config.agents.defaults.memorySearch = {
-    provider: "local",
-    local: {
-      modelPath: "/opt/openclaw/models/embeddinggemma-300M-Q8_0.gguf",
-    },
+    provider: "bedrock",
+    model: "amazon.nova-2-multimodal-embeddings-v1:0",
     query: {
       maxResults: 20,
       hybrid: { enabled: true, vectorWeight: 0.7, textWeight: 0.3 },
